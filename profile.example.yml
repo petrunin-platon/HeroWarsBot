@@ -1,0 +1,14 @@
+default_packs:
+  earth: ["angus", "avalon", "eden", "silva", "verdok"]
+  fire: ["araji", "ignis", "acheron"]
+  mix: ["rigel", "araji", "iyari", "lumira", "hyperion"]
+  water: ["hyperion", "sigurd", "tidus", "nova", "mairi"]
+global_thresholds:
+  critical_hp: 20
+  max_hp_delta: 30
+settings:
+  angus_manual_control: true
+  telegram:
+    active: false
+    chat_id: 'YOUR_CHAT_ID_HERE'
+    token: 'YOUR_BOT_TOKEN_HERE'

@@ -1,0 +1,25 @@
+# Системный кэш Python (мусорные файлы)
+__pycache__/
+*.pyc
+
+# Виртуальное окружение (библиотеки)
+venv/
+
+# Логи твоих личных боев
+logs/
+*.jsonl
+*.csv
+
+# Твои личные настройки и база титанита
+stats.json
+profile.yml
+pause.flag
+temp_sos.png
+
+# Файлы сторонней программы scrcpy и драйвера
+scrcpy.exe
+adb.exe
+*.dll
+scrcpy-server
+scrcpy-noconsole.vbs
+assets/

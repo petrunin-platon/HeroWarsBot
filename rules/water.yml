@@ -1,0 +1,55 @@
+rules:
+- name: 'AI: Анти-пак (Винрейт: 100%, ХП: 100%)'
+  condition:
+    enemies_contain:
+    - araji
+    - moloch
+    - vulcan
+  team:
+  - hyperion
+  - mairi
+  - nova
+  - sigurd
+  - tidus
+- name: 'AI: Анти-пак (Винрейт: 100%, ХП: 100%)'
+  condition:
+    enemies_contain:
+    - araji
+    - ignis
+    - moloch
+  team:
+  - hyperion
+  - mairi
+  - nova
+  - sigurd
+  - tidus
+- name: 'AI: Анти-пак (Винрейт: 100%, ХП: 100%)'
+  condition:
+    enemies_contain:
+    - ignis
+    - moloch
+    - vulcan
+  team:
+  - hyperion
+  - mairi
+  - nova
+  - sigurd
+  - tidus
+- name: 'AI: Анти-пак (Винрейт: 100%, ХП: 100%)'
+  condition:
+    enemies_contain:
+    - araji
+    - ignis
+    - vulcan
+  team:
+  - hyperion
+  - mairi
+  - nova
+  - sigurd
+  - tidus
+default_team:
+- hyperion
+- sigurd
+- tidus
+- nova
+- mairi

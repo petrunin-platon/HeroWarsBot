@@ -1,0 +1,317 @@
+rules:
+- name: Лечение Молоха
+  condition:
+    titan_hp_below:
+      moloch: 35
+  team:
+  - hyperion
+  - sigurd
+  - tidus
+  - mairi
+  - moloch
+- team:
+  - hyperion
+  - araji
+  - rigel
+  - iyari
+  - lumira
+  stats:
+    wins: 0
+    fails: 0
+  condition:
+    enemies_contain:
+    - angus
+    - eden
+    - verdok
+    - hyperion
+    - mairi
+  name: Анти-пак (Тактика) - 21
+  allowed_delta: 50
+- team:
+  - hyperion
+  - sigurd
+  - tidus
+  - nova
+  - mairi
+  stats:
+    wins: 0
+    fails: 0
+  condition:
+    titan_hp_below:
+      araji: 65
+  name: Авто-отхил (araji < 65%)
+  allowed_delta: 36
+- team:
+  - hyperion
+  - sigurd
+  - tidus
+  - nova
+  - rigel
+  stats:
+    wins: 0
+    fails: 0
+  condition:
+    enemies_contain:
+    - silva
+    - mairi
+    - araji
+    - ignis
+    - vulcan
+  name: Анти-пак (Тактика) - 19
+  allowed_delta: 38
+- team:
+  - hyperion
+  - sigurd
+  - tidus
+  - nova
+  - mairi
+  stats:
+    wins: 0
+    fails: 0
+  condition:
+    enemies_contain:
+    - eden
+    - verdok
+    - mairi
+    - araji
+    - ignis
+  name: Анти-пак (Тактика) - 18
+  allowed_delta: 54
+- name: Отхил Ашерона
+  condition:
+    titan_hp_below:
+      angus: 25
+  team:
+  - hyperion
+  - sigurd
+  - tidus
+  - mairi
+  - acheron
+- name: Отхил Ашерона
+  condition:
+    titan_hp_below:
+      acheron: 30
+  team:
+  - acheron
+  - hyperion
+  - sigurd
+  - tidus
+  - mairi
+- team:
+  - hyperion
+  - sigurd
+  - tidus
+  - nova
+  - mairi
+  stats:
+    wins: 0
+    fails: 0
+  condition:
+    enemies_contain:
+    - avalon
+    - eden
+    - silva
+    - hyperion
+    - nova
+  name: Анти-пак (Тактика) - 15
+  allowed_delta: 56
+- team:
+  - hyperion
+  - sigurd
+  - tidus
+  - nova
+  - mairi
+  stats:
+    wins: 0
+    fails: 0
+  condition:
+    enemies_contain:
+    - eden
+    - verdok
+    - hyperion
+    - sigurd
+    - ignis
+  name: Анти-пак (Тактика) - 14
+  allowed_delta: 100
+- team:
+  - hyperion
+  - araji
+  - rigel
+  - iyari
+  - lumira
+  stats:
+    wins: 0
+    fails: 0
+  condition:
+    enemies_contain:
+    - angus
+    - avalon
+    - eden
+    - verdok
+    - nova
+  name: Анти-пак (Тактика) - 13
+  allowed_delta: 100
+- team:
+  - hyperion
+  - sigurd
+  - tidus
+  - nova
+  - mairi
+  stats:
+    wins: 0
+    fails: 0
+  condition:
+    enemies_contain:
+    - angus
+    - avalon
+    - eden
+    - hyperion
+    - sigurd
+  name: Анти-пак (Тактика) - 12
+  allowed_delta: 42
+- team:
+  - hyperion
+  - sigurd
+  - tidus
+  - nova
+  - mairi
+  stats:
+    wins: 0
+    fails: 0
+  condition:
+    enemies_contain:
+    - avalon
+    - eden
+    - hyperion
+    - nova
+    - mairi
+  name: Анти-пак (Тактика) - 11
+  allowed_delta: 54
+- name: Авто-правило (Обучение) - 10
+  condition:
+    enemies_contain:
+    - angus
+    - eden
+    - silva
+    - verdok
+    - moloch
+  team:
+  - hyperion
+  - araji
+  - rigel
+  - moloch
+  - lumira
+  stats:
+    wins: 0
+    fails: 0
+  allowed_delta: 84
+- name: Отхил Молоха
+  condition:
+    titan_hp_below:
+      moloch: 25
+  team:
+  - hyperion
+  - sigurd
+  - tidus
+  - mairi
+  - moloch
+- name: Отхил Ияри с Маири
+  condition:
+    titan_hp_below:
+      iyari: 20
+  team:
+  - hyperion
+  - sigurd
+  - tidus
+  - mairi
+  - iyari
+- name: Отхил Ияри
+  condition:
+    titan_hp_below:
+      iyari: 20
+  team:
+  - hyperion
+  - sigurd
+  - tidus
+  - mairi
+  - iyari
+- name: Отхил Ригеля с Маири
+  condition:
+    titan_hp_below:
+      rigel: 20
+  team:
+  - hyperion
+  - sigurd
+  - tidus
+  - mairi
+  - rigel
+- name: Отхил Ригеля с Новой
+  condition:
+    titan_hp_below:
+      rigel: 20
+  team:
+  - hyperion
+  - sigurd
+  - tidus
+  - rigel
+  - nova
+- name: Авто-правило (Обучение от Шефа) - 4
+  condition:
+    enemies_contain:
+    - verdok
+    - sigurd
+    - nova
+    - vulcan
+    - moloch
+  team:
+  - hyperion
+  - araji
+  - rigel
+  - iyari
+  - lumira
+- name: Авто-правило (Обучение от Шефа) - 3
+  condition:
+    enemies_contain:
+    - angus
+    - verdok
+    - sigurd
+    - ignis
+    - moloch
+  team:
+  - araji
+  - hyperion
+  - rigel
+  - iyari
+  - lumira
+- name: Авто-правило (Обучение от Шефа) - 2
+  condition:
+    enemies_contain:
+    - eden
+    - silva
+    - verdok
+    - ignis
+    - moloch
+  team:
+  - araji
+  - hyperion
+  - rigel
+  - iyari
+  - lumira
+- name: 3 супер титана
+  condition:
+    enemies_contain:
+    - eden
+    - hyperion
+    - araji
+  team:
+  - hyperion
+  - sigurd
+  - tidus
+  - nova
+  - mairi
+default_team:
+- hyperion
+- araji
+- rigel
+- iyari
+- lumira
