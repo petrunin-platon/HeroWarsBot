@@ -27,7 +27,7 @@ The project relies on a modular architecture where every piece has its own stric
 ## 🌟 Key Features & Interface
 
 ### 🎛 Control Dashboard:
-** A modern, dark-themed graphical interface built on `CustomTkinter` with seamless English and Russian (RU/EN) localization.
+A modern, dark-themed graphical interface built on `CustomTkinter` with seamless English and Russian (RU/EN) localization.
 ![Dashboard](docs/screenshots/dashboard.png)
 
 This is the heart of the bot. Everything you need to control the farming process is packed into one clean interface:
@@ -37,7 +37,7 @@ This is the heart of the bot. Everything you need to control the farming process
 *   **Live Terminal:** The black console window shows exactly what the bot is thinking and doing in real-time (which room it found, what team it picked, HP stats). You can quickly save these logs or send them to the developer with a single click.
 
 ### ⚙️ Smart Rule Builder & Session Master:
-** A visual constructor that lets you create dynamic, custom tactics. You can command the bot to soft-pause or swap the team if a specific Titan's HP drops below a critical threshold, or if it encounters specific dangerous enemies.
+A visual constructor that lets you create dynamic, custom tactics. You can command the bot to soft-pause or swap the team if a specific Titan's HP drops below a critical threshold, or if it encounters specific dangerous enemies.
 ![Rule Builder](docs/screenshots/rule_builder.png)
 
 Take full control over the bot's logic without touching a single line of code. All settings are seamlessly mapped to the internal Rules Engine.
@@ -47,7 +47,7 @@ Take full control over the bot's logic without touching a single line of code. A
 *   **Microcontrol & Alerts:** Global toggles for manual Angus Ultimate timings (to perfectly counter enemies) and one-click Telegram setup for remote alerts.
 
 ### 🧠 Analytics & Machine Learning:
-** The bot logs every single battle into a `.jsonl` database. It automatically calculates the Winrate for each team composition. If a titan combo achieves a winrate of >= 80%, the bot suggests embedding it into its Knowledge Base as a "Golden Rule".
+The bot logs every single battle into a `.jsonl` database. It automatically calculates the Winrate for each team composition. If a titan combo achieves a winrate of >= 80%, the bot suggests embedding it into its Knowledge Base as a "Golden Rule".
 ![Analytics](docs/screenshots/analytics.png)
 
 The bot doesn't just blindly farm the Dungeon; it actively learns from every battle it fights.
@@ -66,8 +66,8 @@ To keep track of your daily progress, the bot features a comprehensive, built-in
 *   **Foolproof Synchronization:** If you play a few runs manually on your phone, you can just type your current titanite into the `Sync` field. The algorithm calculates the delta and updates your rooms and potions accordingly. It even has a built-in safeguard: the bot strictly remembers how much it farmed autonomously and will reject any manual input lower than its own baseline.
 
 ### 📱 Telegram Integration (SOS Protocol):
-** Complete remote control. Receive live battle screenshots directly in your Telegram chat if the bot encounters a critical HP drop. You can manually rollback the fight or change the team using inline buttons right from your phone.
-![Telegram Alerts](docs/screenshots/telegram.jpg)
+Complete remote control. Receive live battle screenshots directly in your Telegram chat if the bot encounters a critical HP drop. You can manually rollback the fight or change the team using inline buttons right from your phone.
+![Telegram Alerts](docs/screenshots/telegram.png)
 
 The bot keeps you in the loop, even when you're miles away from your PC.
 *   **Smart Alerts:** If a battle goes south (e.g., a Titan's HP unexpectedly drops below your safe threshold), the bot refuses to lose. It soft-pauses the game and instantly sends a live screenshot of the battlefield and HP metrics directly to your phone.
