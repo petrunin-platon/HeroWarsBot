@@ -1,25 +1,40 @@
-# Системный кэш Python (мусорные файлы)
+# === Python & Environment ===
 __pycache__/
-*.pyc
-
-# Виртуальное окружение (библиотеки)
+*.py[cod]
+*$py.class
+.venv/
 venv/
+ENV/
 
-# Логи твоих личных боев
+# === Секреты и локальные профили ===
+.env
+profile.yml
+
+# === Логи, Метрики и Машинное обучение ===
 logs/
+*.log
 *.jsonl
 *.csv
-
-# Твои личные настройки и база титанита
 stats.json
-profile.yml
+
+# === Флаги состояний и Дампы памяти (Computer Vision) ===
 pause.flag
 temp_sos.png
 
-# Файлы сторонней программы scrcpy и драйвера
-scrcpy.exe
-adb.exe
+# === Бинарники и сторонние утилиты ===
+*.exe
 *.dll
 scrcpy-server
 scrcpy-noconsole.vbs
+
+# === ЗАЩИТА ИС (Скрываем визуальные шаблоны, если нужно) ===
+# assets/ 
+# (Раскомментируй строку выше, если решишь не отдавать картинки для защиты от перепродажи)
+
+# === OS & IDE ===
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
 assets/

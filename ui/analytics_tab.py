@@ -190,8 +190,25 @@ class AnalyticsFrame(ctk.CTkFrame):
                 
                 team_str = ", ".join([get_text(lang, f"titan_{t}") for t in team])
                 
+                # ИНТЕЛЛЕКТУАЛЬНАЯ ПРОВЕРКА: Есть ли уже это правило в Базе Знаний?
+                is_implemented = False
                 if winrate >= 80:
-                    wr_color = "🟢 ИДЕАЛЬНО" if lang == "RU" else "🟢 PERFECT"
+                    path = f"rules/{room}.yml"
+                    if os.path.exists(path):
+                        with open(path, 'r', encoding='utf-8') as f:
+                            yml_data = yaml.safe_load(f) or {}
+                            for rule in yml_data.get("rules", []):
+                                cond = rule.get("condition", {})
+                                if "enemies_contain" in cond and sorted(cond["enemies_contain"]) == sorted(enemies):
+                                    if sorted(rule.get("team", [])) == sorted(team):
+                                        is_implemented = True
+                                        break
+                
+                if winrate >= 80:
+                    if is_implemented:
+                        wr_color = "🔵 В БАЗЕ" if lang == "RU" else "🔵 IN KB"
+                    else:
+                        wr_color = "🟢 ИДЕАЛЬНО" if lang == "RU" else "🟢 PERFECT"
                 elif winrate >= 50:
                     wr_color = "🟡 СРЕДНЕ" if lang == "RU" else "🟡 AVERAGE"
                 else:
@@ -204,7 +221,8 @@ class AnalyticsFrame(ctk.CTkFrame):
                 self.append_text(f"  {wr_color} | {pack_lbl}: {team_str}")
                 self.append_text(f"     {winrate_lbl}: {winrate:.1f}% ({wins}/{attempts}) | {hp_lbl}: {avg_hp_val:.1f}%")
                 
-                if winrate >= 80 and attempts >= 2:
+                # Добавляем в кандидаты ТОЛЬКО если правила еще нет в YAML
+                if winrate >= 80 and attempts >= 5 and not is_implemented:
                     self.golden_rules.append({
                         "room": room,
                         "enemies": list(enemies),
@@ -217,11 +235,11 @@ class AnalyticsFrame(ctk.CTkFrame):
         
         if self.golden_rules:
             self.btn_apply.configure(state="normal")
-            msg = f"\n[АЛГОРИТМ] 🤖 Найдено {len(self.golden_rules)} идеальных контр-паков! Готов к внедрению в базу знаний." if lang == "RU" else f"\n[ALGORITHM] 🤖 Found {len(self.golden_rules)} perfect counter-packs! Ready to deploy to Knowledge Base."
+            msg = f"\n[АЛГОРИТМ] 🤖 Найдено {len(self.golden_rules)} новых идеальных связок! Готов к внедрению в базу знаний." if lang == "RU" else f"\n[ALGORITHM] 🤖 Found {len(self.golden_rules)} new perfect counter-packs! Ready to deploy to Knowledge Base."
             self.append_text(msg)
         else:
             self.btn_apply.configure(state="disabled")
-            msg = "\n[АЛГОРИТМ] 🤖 Идеальных связок пока не найдено (нужно >=80% винрейт и мин. 2 боя). Фармите дальше!" if lang == "RU" else "\n[ALGORITHM] 🤖 Perfect matches not found yet (needs >=80% winrate and min 2 battles). Keep farming!"
+            msg = "\n[АЛГОРИТМ] 🤖 Новых идеальных связок пока не найдено. Фармите дальше!" if lang == "RU" else "\n[ALGORITHM] 🤖 New perfect matches not found yet. Keep farming!"
             self.append_text(msg)
 
     def apply_golden_rules(self):

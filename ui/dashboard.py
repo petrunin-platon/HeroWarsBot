@@ -36,9 +36,6 @@ class DashboardFrame(ctk.CTkFrame):
         self.lbl_device = ctk.CTkLabel(phone_frame, text="")
         self.lbl_device.pack(side="left", padx=10)
         
-        self.btn_wake = ctk.CTkButton(phone_frame, text="", width=90, height=24, fg_color="#28a745", hover_color="#218838", command=self.wake_phone)
-        self.btn_wake.pack(side="left", padx=5, pady=5)
-        
         self.btn_sleep = ctk.CTkButton(phone_frame, text="", width=90, height=24, fg_color="#6c757d", hover_color="#5a6268", command=self.sleep_phone)
         self.btn_sleep.pack(side="left", padx=5, pady=5)
         
@@ -60,7 +57,6 @@ class DashboardFrame(ctk.CTkFrame):
         self.log_box = ctk.CTkTextbox(self, wrap="word", font=("Consolas", 12), fg_color="#1e1e1e", text_color="#00ff00")
         self.log_box.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 10), padx=5)
         
-        # Настраиваем защиту от редактирования + Контекстное меню
         self.setup_readonly_and_menu(self.log_box)
         self.log_box.insert("end", "[СИСТЕМА] Интерфейс загружен. Ожидание подключения...\n")
 
@@ -76,21 +72,17 @@ class DashboardFrame(ctk.CTkFrame):
 
     def setup_readonly_and_menu(self, textbox):
         def prevent_edit(event):
-            # Разрешаем копирование (Ctrl+C, Cmd+C) и выделение (Ctrl+A, Cmd+A)
             if event.state & 0x0004 or event.state & 0x0008:
                 if event.keysym.lower() in ['c', 'a']:
                     return None
-            # Разрешаем навигацию (Стрелки, Home, End, PageUp, PageDown)
             if event.keysym in ['Up', 'Down', 'Left', 'Right', 'Prior', 'Next', 'Home', 'End']:
                 return None
-            # Жестко блокируем все остальные клавиши (ввод текста, Backspace, Delete, Enter)
             return "break"
             
         textbox.bind("<Key>", prevent_edit)
         textbox.bind("<<Paste>>", lambda e: "break")
         textbox.bind("<<Cut>>", lambda e: "break")
 
-        # Создаем нативное контекстное меню Tkinter
         self.context_menu = tk.Menu(self, tearoff=False, bg="#2b2b2b", fg="white", activebackground="#007bff")
         lang = getattr(self.controller, 'current_lang', 'RU')
         self.context_menu.add_command(label=get_text(lang, "ctx_copy"), command=lambda: self.copy_text(textbox))
@@ -99,7 +91,6 @@ class DashboardFrame(ctk.CTkFrame):
 
     def show_context_menu(self, event, textbox):
         try:
-            # Меню появится, только если есть выделенный текст
             if textbox.get(tk.SEL_FIRST, tk.SEL_LAST):
                 self.context_menu.tk_popup(event.x_root, event.y_root)
         except tk.TclError:
@@ -117,7 +108,6 @@ class DashboardFrame(ctk.CTkFrame):
         self.lbl_title.configure(text=get_text(lang, "dash_title"))
         self.lbl_device.configure(text=get_text(lang, "dash_device"))
         
-        self.btn_wake.configure(text=get_text(lang, "dash_btn_wake"))
         self.btn_sleep.configure(text=get_text(lang, "dash_btn_sleep"))
         self.btn_restart.configure(text=get_text(lang, "dash_btn_restart"))
         
@@ -140,23 +130,7 @@ class DashboardFrame(ctk.CTkFrame):
         self.btn_send.configure(text=get_text(lang, "dash_btn_send_log"))
         self.btn_clear.configure(text=get_text(lang, "dash_btn_clear_log"))
         
-        # Обновляем текст в контекстном меню
         self.context_menu.entryconfigure(0, label=get_text(lang, "ctx_copy"))
-
-    def wake_phone(self):
-        self.append_log("[СИСТЕМА] Пробуждение экрана...\n")
-        subprocess.Popen(["adb", "shell", "input", "keyevent", "224"], creationflags=0x08000000)
-        subprocess.Popen(["adb", "shell", "input", "swipe", "500", "1000", "500", "200"], creationflags=0x08000000)
-        try:
-            windows = gw.getWindowsWithTitle("HeroWarsBot_Arena")
-            if windows:
-                win = windows[0]
-                if win.isMinimized: win.restore()
-                win.activate()
-                time.sleep(0.2)
-                pyautogui.hotkey('alt', 'shift', 'o')
-        except Exception:
-            pass
 
     def sleep_phone(self):
         self.append_log("[СИСТЕМА] Выключаю физический дисплей (игра продолжит работать)...\n")
@@ -368,7 +342,6 @@ class DashboardFrame(ctk.CTkFrame):
         
         def on_decision(decision_text):
             if decision_text == "rollback":
-                # Это срабатывает при нажатии кнопки "Откатить" в GUI на самом ПК
                 def on_team_selected(new_team):
                     team_str = ",".join(new_team)
                     if self.bot_process and self.bot_process.poll() is None:
@@ -377,14 +350,12 @@ class DashboardFrame(ctk.CTkFrame):
                 TeamSelectorDialog(self.controller, on_team_selected, room_type="all", context="rollback")
                 
             elif decision_text.startswith("rb_custom:"):
-                # НОВАЯ ЛОГИКА ДЛЯ ТЕЛЕГРАМА (ПАРСИНГ ТЕКСТА)
                 team_str = decision_text.split(":")[1]
                 if self.bot_process and self.bot_process.poll() is None:
                     self.bot_process.stdin.write(f"ROLLBACK:{team_str}\n")
                     self.bot_process.stdin.flush()
                     
             else:
-                # Обработка команд MANUAL, STOP, IGNORE
                 if self.bot_process and self.bot_process.poll() is None:
                     self.bot_process.stdin.write(f"{decision_text.upper()}\n")
                     self.bot_process.stdin.flush()

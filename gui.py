@@ -1,11 +1,12 @@
 # gui.py
 import customtkinter as ctk
 import os
+import locale  # <-- НОВЫЙ ИМПОРТ ДЛЯ РАБОТЫ С ОС
 from i18n import get_text
 from ui.dashboard import DashboardFrame
 from ui.rules_tab import RulesFrame
 from ui.analytics_tab import AnalyticsFrame
-from ui.statistics_tab import StatisticsFrame # НОВЫЙ ИМПОРТ
+from ui.statistics_tab import StatisticsFrame
 from ui.about_tab import AboutFrame
 from ui.guide_tab import GuideFrame
 
@@ -16,7 +17,8 @@ class HeroWarsLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        self.current_lang = "RU"
+        # --- АВТООПРЕДЕЛЕНИЕ ЯЗЫКА СИСТЕМЫ ---
+        self.current_lang = self._detect_os_language()
 
         self.title(get_text(self.current_lang, "app_title"))
         self.geometry("1000x580")
@@ -47,7 +49,6 @@ class HeroWarsLauncher(ctk.CTk):
         self.btn_analytics = ctk.CTkButton(self.sidebar, text=get_text(self.current_lang, "btn_analytics"), command=lambda: self.select_frame("analytics"))
         self.btn_analytics.grid(row=3, column=0, padx=20, pady=10)
 
-        # НОВАЯ КНОПКА СТАТИСТИКИ
         self.btn_stats = ctk.CTkButton(self.sidebar, text=get_text(self.current_lang, "btn_stats"), command=lambda: self.select_frame("stats"))
         self.btn_stats.grid(row=4, column=0, padx=20, pady=10)
 
@@ -70,13 +71,28 @@ class HeroWarsLauncher(ctk.CTk):
             "dash": DashboardFrame(self, self),
             "rules": RulesFrame(self, self),
             "analytics": AnalyticsFrame(self, self),
-            "stats": StatisticsFrame(self, self), # НОВАЯ ВКЛАДКА
+            "stats": StatisticsFrame(self, self),
             "guide": GuideFrame(self, self),
             "about": AboutFrame(self, self)
         }
 
         self.select_frame("dash")
-        self.set_language("RU", force=True)
+        
+        # Принудительно отрисовываем UI под найденный язык ОС
+        self.set_language(self.current_lang, force=True)
+
+    def _detect_os_language(self):
+        """
+        Отказоустойчивое определение языка системы.
+        Если не удалось распознать (или ОС вернула None) - ставим EN.
+        """
+        try:
+            sys_lang, _ = locale.getdefaultlocale()
+            if sys_lang and sys_lang.lower().startswith('ru'):
+                return "RU"
+            return "EN"
+        except Exception:
+            return "EN"
 
     def select_frame(self, frame_name):
         # Обновляем статы при переходе на вкладку
@@ -96,11 +112,13 @@ class HeroWarsLauncher(ctk.CTk):
         if lang == "RU":
             self.btn_ru.configure(fg_color="#007bff")
             self.btn_en.configure(fg_color="#444444")
-            self.frames["dash"].append_log("[GUI] Выбран язык: Русский\n")
+            if not force:
+                self.frames["dash"].append_log("[GUI] Выбран язык: Русский\n")
         else:
             self.btn_ru.configure(fg_color="#444444")
             self.btn_en.configure(fg_color="#007bff")
-            self.frames["dash"].append_log("[GUI] Language selected: English\n")
+            if not force:
+                self.frames["dash"].append_log("[GUI] Language selected: English\n")
             
         self.title(get_text(lang, "app_title"))
         self.lbl_sidebar_title.configure(text=get_text(lang, "sidebar_title"))

@@ -1,1 +1,0 @@
-scrcpy.exe -S -w
