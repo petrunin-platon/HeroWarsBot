@@ -5,6 +5,7 @@ import threading
 import subprocess
 import sys
 import os
+import keyboard
 import datetime
 import webbrowser
 import time
@@ -140,8 +141,8 @@ class DashboardFrame(ctk.CTkFrame):
                 win = windows[0]
                 if win.isMinimized: win.restore()
                 win.activate()
-                time.sleep(0.2)
-                pyautogui.hotkey('alt', 'o')
+                time.sleep(0.3) # Чуть увеличили паузу для гарантии перехвата фокуса Windows
+                keyboard.send('alt+o') # <-- Бронебойный метод
                 self.append_log("[ИНФО] Экран телефона погашен для экономии батареи!\n")
             else:
                 self.append_log("[ОШИБКА] Окно трансляции не найдено.\n")
@@ -242,9 +243,19 @@ class DashboardFrame(ctk.CTkFrame):
         
         bot_env = os.environ.copy()
         bot_env["HEROWARS_LANG"] = lang
+        bot_env["PYTHONUNBUFFERED"] = "1" 
+        bot_env["PYTHONIOENCODING"] = "utf-8" # Гарантия кириллицы в логах Nuitka
         
+        # Интеллектуальный роутинг вызова процесса
+        is_compiled = getattr(sys, 'frozen', False) or getattr(sys, 'compiled', False) or not sys.executable.lower().endswith("python.exe")
+        
+        if is_compiled:
+            cmd = [sys.executable, "--bot-mode"]
+        else:
+            cmd = [sys.executable, "-X", "utf8", "-u", "main.py"]
+            
         self.bot_process = subprocess.Popen(
-            [sys.executable, "-X", "utf8", "-u", "main.py"], 
+            cmd, 
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, encoding='utf-8',
             creationflags=0x08000000,

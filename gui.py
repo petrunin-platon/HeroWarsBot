@@ -1,7 +1,21 @@
 # gui.py
+import sys
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+# =====================================================================
+# ИНТЕЛЛЕКТУАЛЬНЫЙ РОУТИНГ ДЛЯ .EXE (FORK PATTERN)
+# Если exe-файл запущен с флагом --bot-mode, он становится не интерфейсом,
+# а процессом логики бота (main.py), и работает в фоне.
+# =====================================================================
+if "--bot-mode" in sys.argv:
+    import main
+    sys.exit(0)
+
 import customtkinter as ctk
 import os
-import locale  # <-- НОВЫЙ ИМПОРТ ДЛЯ РАБОТЫ С ОС
 from i18n import get_text
 from ui.dashboard import DashboardFrame
 from ui.rules_tab import RulesFrame
@@ -17,8 +31,7 @@ class HeroWarsLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        # --- АВТООПРЕДЕЛЕНИЕ ЯЗЫКА СИСТЕМЫ ---
-        self.current_lang = self._detect_os_language()
+        self.current_lang = "RU"
 
         self.title(get_text(self.current_lang, "app_title"))
         self.geometry("1000x580")
@@ -77,25 +90,9 @@ class HeroWarsLauncher(ctk.CTk):
         }
 
         self.select_frame("dash")
-        
-        # Принудительно отрисовываем UI под найденный язык ОС
-        self.set_language(self.current_lang, force=True)
-
-    def _detect_os_language(self):
-        """
-        Отказоустойчивое определение языка системы.
-        Если не удалось распознать (или ОС вернула None) - ставим EN.
-        """
-        try:
-            sys_lang, _ = locale.getdefaultlocale()
-            if sys_lang and sys_lang.lower().startswith('ru'):
-                return "RU"
-            return "EN"
-        except Exception:
-            return "EN"
+        self.set_language("RU", force=True)
 
     def select_frame(self, frame_name):
-        # Обновляем статы при переходе на вкладку
         if frame_name == "stats":
             self.frames["stats"].refresh_data()
             
@@ -112,13 +109,11 @@ class HeroWarsLauncher(ctk.CTk):
         if lang == "RU":
             self.btn_ru.configure(fg_color="#007bff")
             self.btn_en.configure(fg_color="#444444")
-            if not force:
-                self.frames["dash"].append_log("[GUI] Выбран язык: Русский\n")
+            self.frames["dash"].append_log("[GUI] Выбран язык: Русский\n")
         else:
             self.btn_ru.configure(fg_color="#444444")
             self.btn_en.configure(fg_color="#007bff")
-            if not force:
-                self.frames["dash"].append_log("[GUI] Language selected: English\n")
+            self.frames["dash"].append_log("[GUI] Language selected: English\n")
             
         self.title(get_text(lang, "app_title"))
         self.lbl_sidebar_title.configure(text=get_text(lang, "sidebar_title"))

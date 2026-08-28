@@ -10,6 +10,16 @@ import cv2
 import numpy as np
 import threading
 import queue
+import builtins 
+
+# --- ПЕРЕОПРЕДЕЛЕНИЕ PRINT ДЛЯ GUI ---
+# Заставляем Python всегда сбрасывать буфер в терминал без задержек
+original_print = builtins.print
+def unbuffered_print(*args, **kwargs):
+    kwargs.setdefault('flush', True)
+    original_print(*args, **kwargs)
+builtins.print = unbuffered_print
+# -------------------------------------
 
 from config import CONFIG, LIMITS, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS
 from vision import get_window_rect, find_and_click_bulletproof, get_match_loc

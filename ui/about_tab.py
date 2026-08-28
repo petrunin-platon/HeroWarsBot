@@ -62,10 +62,10 @@ class AboutFrame(ctk.CTkScrollableFrame):
         btn_subframe = ctk.CTkFrame(info_frame, fg_color="transparent")
         btn_subframe.grid(row=0, column=1, sticky="e", padx=15, pady=10)
 
-        self.btn_github = ctk.CTkButton(btn_subframe, text="", width=180, height=30, command=lambda: self.safe_open_url("https://github.com/Platon-Petrunin"))
+        self.btn_github = ctk.CTkButton(btn_subframe, text="", width=180, height=30, command=lambda: self.safe_open_url("https://github.com/petrunin-platon/HeroWarsBot"))
         self.btn_github.pack(pady=(0, 18))
 
-        self.btn_mail = ctk.CTkButton(btn_subframe, text="", width=180, height=30, fg_color="#28a745", hover_color="#218838", command=lambda: webbrowser.open("mailto:Petrunin.platon@gmail.com"))
+        self.btn_mail = ctk.CTkButton(btn_subframe, text="", width=180, height=30, fg_color="#28a745", hover_color="#218838", command=lambda: webbrowser.open("mailto:petrunin.platon@gmail.com"))
         self.btn_mail.pack(pady=(0, 0))
 
         # БЛОК МОНЕТИЗАЦИИ И ПОДДЕРЖКИ

@@ -9,7 +9,15 @@ import random
 from config import CONFIG 
 
 pyautogui.PAUSE = 0 
-ASSETS_DIR = "assets"
+
+# ==============================================================================
+# ИНТЕЛЛЕКТУАЛЬНЫЙ ПОИСК ПУТЕЙ (ДЛЯ ПОДДЕРЖКИ NUITKA .EXE)
+# В режиме exe файл vision.py и папка assets лежат во временной директории ОС.
+# os.path.abspath(__file__) всегда укажет точный путь к распакованным ассетам,
+# не ломая при этом чтение rules/ и логов рядом с exe файлом.
+# ==============================================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # Кэш для шаблонов OpenCV (паттерн Singleton)
 TEMPLATE_CACHE = {}

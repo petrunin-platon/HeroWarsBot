@@ -14,7 +14,7 @@ def launch_scrcpy(target_title="HeroWarsBot_Arena"):
                 "--window-title", target_title,
                 "--stay-awake",         
                 # Флаг "--turn-screen-off" удален, чтобы дисплей физически загорался
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
         except FileNotFoundError:
             print("[ФАТАЛЬНАЯ ОШИБКА] Программа scrcpy не установлена или не добавлена в PATH!")
             return False

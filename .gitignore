@@ -38,3 +38,20 @@ scrcpy-noconsole.vbs
 Thumbs.db
 
 assets/
+
+# Сборка PyInstaller
+build/
+dist/
+*.spec
+
+# Кэш Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Логи и локальная база бота
+logs/
+stats.json
+pause.flag
+temp_sos.png
+profile.yml
