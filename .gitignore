@@ -9,6 +9,8 @@ ENV/
 # === Секреты и локальные профили ===
 .env
 profile.yml
+make_backup.py
+pack_assets.py
 
 # === Логи, Метрики и Машинное обучение ===
 logs/

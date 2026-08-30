@@ -1,11 +1,10 @@
+# team_manager.py
 import time
-import pyautogui
 from config import CONFIDENCE_THRESHOLD
-from vision import click_human, get_match_loc, find_and_click_bulletproof
+from vision import click_human, get_match_loc, find_and_click_bulletproof, swipe_scrcpy
 
 TITAN_THRESHOLD = 0.88 
 
-# ПОЛНЫЙ список всех титанов в игре
 GAME_ORDER = [
     "hyperion", "sigurd", "nova", "mairi", "tidus", "orm",
     "eden", "angus", "avalon", "silva", "verdok", "pallant",
@@ -32,133 +31,103 @@ def get_rois(window_rect):
     }
     return top_roi, bottom_roi
 
-def smart_swipe(window_rect, direction="down"):
-    left = window_rect["left"]
-    top = window_rect["top"]
-    w = window_rect["width"]
-    h = window_rect["height"]
-
-    start_x = left + int(w * 0.25) 
-    
-    if direction == "down":
-        start_y = top + int(h * 0.7)
-        end_y = top + int(h * 0.4)
-    else:
-        start_y = top + int(h * 0.4)
-        end_y = top + int(h * 0.7)
-
-    pyautogui.moveTo(start_x, start_y, duration=0.1) 
-    pyautogui.mouseDown() 
-    time.sleep(0.4) 
-    
-    pyautogui.moveTo(start_x, end_y, duration=0.8) 
-    
-    time.sleep(0.2) 
-    pyautogui.mouseUp() 
-    time.sleep(0.5) 
-
 def open_grid_if_needed(window_rect, sct):
     print("[КОМАНДА] Ожидаю окончания анимации окна (1.5 сек)...")
     time.sleep(1.5) 
     
     start_time = time.time()
     while time.time() - start_time < 8.0:
-        if get_match_loc('btn_4_dots.png', window_rect, sct, CONFIDENCE_THRESHOLD):
+        if get_match_loc('btn_4_dots.png', window_rect, sct, 0.7):
             print("[КОМАНДА] Сетка титанов открыта и готова к работе.")
-            time.sleep(0.5) 
+            time.sleep(0.3) 
             return True
             
-        coords_9 = get_match_loc('btn_9_dots.png', window_rect, sct, CONFIDENCE_THRESHOLD)
+        coords_9 = get_match_loc('btn_9_dots.png', window_rect, sct, 0.7)
         if coords_9:
-            print("[КОМАНДА] Сетка свернута. Нажимаю открыть...")
-            click_human(coords_9[0], coords_9[1])
-            pyautogui.moveTo(window_rect["left"] + 5, window_rect["top"] + 5, duration=0.1)
-            time.sleep(1.5) 
+            print("[КОМАНДА] Сетка свернута. Нажимаю открыть (через ADB)...")
+            click_human(coords_9[0], coords_9[1], exact=True)
+            time.sleep(1.2) 
         else:
             time.sleep(0.2)
             
     print("[ОШИБКА КОМАНДЫ] Не смог убедиться, что сетка открыта (не вижу 4 точки)!")
     return False
 
-def precise_select_titan(x, y, safe_x, safe_y):
-    """Супер-надежный клик для выбора титанов с долгими паузами (обход лагов scrcpy)"""
-    pyautogui.moveTo(x, y, duration=0.2)
-    time.sleep(0.3) # Подвели и ждем, чтобы Android зафиксировал курсор
-    pyautogui.mouseDown()
-    time.sleep(0.15)
-    pyautogui.mouseUp()
-    time.sleep(0.3) # Кликнули и ждем анимации
-    pyautogui.moveTo(safe_x, safe_y, duration=0.2) # Отводим в сейф-зону
-    time.sleep(0.5) # Ждем перед следующим действием
+def precise_select_titan(x, y):
+    """Снайперский точный клик по титану (через ADB)"""
+    click_human(x, y, exact=True)
+    time.sleep(0.15) # Ускорено 
 
 def verify_and_set_team(target_pack, available_titans, window_rect, sct):
     top_roi, bottom_roi = get_rois(window_rect)
     open_grid_if_needed(window_rect, sct)
-    
-    safe_mouse_x = window_rect["left"] + 5
-    safe_mouse_y = window_rect["top"] + 5
 
     sorted_pack = [t for t in GAME_ORDER if t in target_pack]
     for t in target_pack: 
         if t not in sorted_pack: sorted_pack.append(t)
 
-    for attempt in range(1, 4):
-        print(f"\n[КОМАНДА] --- Попытка сборки {attempt}/3 ---")
-        
-        smart_swipe(window_rect, direction="up") 
-        time.sleep(0.5)
-        smart_swipe(window_rect, direction="up") 
-        
-        # 1. УДАЛЕНИЕ ЛИШНИХ
-        print("[КОМАНДА] Очищаю слоты от нежелательных титанов...")
+    print(f"\n[КОМАНДА] Начинаю сборку состава: {sorted_pack}")
+    
+    # ВОЗВРАТ В НАЧАЛО СЕТКИ: Делаем 2 свайпа аппаратно через ADB
+    swipe_scrcpy(window_rect, direction="up") 
+    time.sleep(0.1)
+    swipe_scrcpy(window_rect, direction="up") 
+    
+    # 1. МЕХАНИКА ОЧИСТКИ (Максимум 3 прохода)
+    print("[КОМАНДА] Очищаю слоты от нежелательных титанов...")
+    for cleanup_pass in range(1, 4):
+        cleared_all = True
         for titan in GAME_ORDER:
             if titan not in sorted_pack:
                 coords = get_match_loc(f"{titan}.png", bottom_roi, sct, TITAN_THRESHOLD)
                 if coords:
-                    print(f"[КОМАНДА] Убираю: {titan}")
-                    precise_select_titan(coords[0], coords[1], safe_mouse_x, safe_mouse_y)
-                    
-        # 2. ДОБАВЛЕНИЕ НУЖНЫХ
-        print(f"[КОМАНДА] Добавляю состав: {sorted_pack}")
-        for titan in sorted_pack:
-            if get_match_loc(f"{titan}.png", bottom_roi, sct, TITAN_THRESHOLD):
-                print(f"[КОМАНДА] -> {titan} уже на месте.")
-                continue
-                
-            print(f"[КОМАНДА] -> Ищу {titan} в текущей видимой зоне...")
-            coords = get_match_loc(f"{titan}.png", top_roi, sct, TITAN_THRESHOLD)
-            if coords:
-                precise_select_titan(coords[0], coords[1], safe_mouse_x, safe_mouse_y)
-                continue
-                
-            print(f"[КОМАНДА] -> Не вижу. Скроллю список ВНИЗ...")
-            smart_swipe(window_rect, direction="down")
-            
-            coords = get_match_loc(f"{titan}.png", top_roi, sct, TITAN_THRESHOLD)
-            if coords:
-                precise_select_titan(coords[0], coords[1], safe_mouse_x, safe_mouse_y)
-            else:
-                print(f"[ОШИБКА] Не нашел {titan} в этой зоне. Соберу на следующем проходе.")
+                    print(f"[КОМАНДА] Убираю: {titan} (проход {cleanup_pass}/3)")
+                    precise_select_titan(coords[0], coords[1])
+                    cleared_all = False
+        if cleared_all:
+            break
+        time.sleep(0.3)
 
-        # 3. ФИНАЛЬНЫЙ КОНТРОЛЬ
-        print("[КОМАНДА] Выполняю контрольную проверку состава...")
-        all_perfect = True
-        
-        for titan in sorted_pack:
-            if not get_match_loc(f"{titan}.png", bottom_roi, sct, TITAN_THRESHOLD):
-                print(f"[ПРОВЕРКА] Провал: {titan} отсутствует в слотах!")
-                all_perfect = False
-                
-        for titan in GAME_ORDER:
-            if titan not in sorted_pack and get_match_loc(f"{titan}.png", bottom_roi, sct, TITAN_THRESHOLD):
-                print(f"[ПРОВЕРКА] Провал: {titan} остался в слотах, хотя его там быть не должно!")
-                all_perfect = False
-                
-        if all_perfect:
-            print("[КОМАНДА] Состав ИДЕАЛЬНО укомплектован!")
-            return True
-        else:
-            print("[КОМАНДА] Обнаружены ошибки состава. Запускаю корректировку...")
+    # 2. МЕХАНИКА ПОИСКА (Ровно 2 свайпа, как ты и просил)
+    for titan in sorted_pack:
+        if get_match_loc(f"{titan}.png", bottom_roi, sct, TITAN_THRESHOLD):
+            print(f"[КОМАНДА] -> {titan} уже на месте.")
+            continue
             
-    print("[ФАТАЛЬНАЯ ОШИБКА КОМАНДЫ] Не удалось собрать правильный состав за 3 попытки!")
+        print(f"[КОМАНДА] -> Ищу {titan}...")
+        
+        found = False
+        for swipe_idx in range(3): # 0 = без свайпа, 1 = первый свайп, 2 = второй свайп
+            coords = get_match_loc(f"{titan}.png", top_roi, sct, TITAN_THRESHOLD)
+            if coords:
+                precise_select_titan(coords[0], coords[1])
+                found = True
+                break
+            
+            if swipe_idx < 2:
+                print(f"[КОМАНДА] -> Не вижу. Делаю свайп ВНИЗ ({swipe_idx + 1}/2)...")
+                swipe_scrcpy(window_rect, direction="down")
+                
+        if not found:
+            print(f"[ОШИБКА] Не нашел {titan} даже после 2 свайпов!")
+
+    # 3. КОНТРОЛЬНАЯ ПРОВЕРКА
+    print("[КОМАНДА] Выполняю контрольную проверку состава...")
+    all_perfect = True
+    
+    for titan in sorted_pack:
+        if not get_match_loc(f"{titan}.png", bottom_roi, sct, TITAN_THRESHOLD):
+            print(f"[ПРОВЕРКА] Провал: {titan} отсутствует в слотах!")
+            all_perfect = False
+            
+    for titan in GAME_ORDER:
+        if titan not in sorted_pack and get_match_loc(f"{titan}.png", bottom_roi, sct, TITAN_THRESHOLD):
+            print(f"[ПРОВЕРКА] Провал: {titan} остался в слотах, хотя его там быть не должно!")
+            all_perfect = False
+            
+    if all_perfect:
+        print("[КОМАНДА] Состав ИДЕАЛЬНО укомплектован!")
+        return True
+        
+    print("[ФАТАЛЬНАЯ ОШИБКА КОМАНДЫ] Не удалось собрать правильный состав!")
     return False

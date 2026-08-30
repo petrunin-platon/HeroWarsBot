@@ -141,8 +141,8 @@ class DashboardFrame(ctk.CTkFrame):
                 win = windows[0]
                 if win.isMinimized: win.restore()
                 win.activate()
-                time.sleep(0.3) # Чуть увеличили паузу для гарантии перехвата фокуса Windows
-                keyboard.send('alt+o') # <-- Бронебойный метод
+                time.sleep(0.3) 
+                keyboard.send('alt+o') 
                 self.append_log("[ИНФО] Экран телефона погашен для экономии батареи!\n")
             else:
                 self.append_log("[ОШИБКА] Окно трансляции не найдено.\n")
@@ -239,14 +239,13 @@ class DashboardFrame(ctk.CTkFrame):
         self.btn_stop.configure(state="normal", fg_color="#dc3545", border_width=0, text_color="white")
         
         self.append_log("[СИСТЕМА] Калибровка окна игры...\n")
-        calibrate_window("HeroWarsBot_Arena", 956, 457)
+        calibrate_window("HeroWarsBot_Arena", 1606, 748)
         
         bot_env = os.environ.copy()
         bot_env["HEROWARS_LANG"] = lang
         bot_env["PYTHONUNBUFFERED"] = "1" 
-        bot_env["PYTHONIOENCODING"] = "utf-8" # Гарантия кириллицы в логах Nuitka
+        bot_env["PYTHONIOENCODING"] = "utf-8"
         
-        # Интеллектуальный роутинг вызова процесса
         is_compiled = getattr(sys, 'frozen', False) or getattr(sys, 'compiled', False) or not sys.executable.lower().endswith("python.exe")
         
         if is_compiled:

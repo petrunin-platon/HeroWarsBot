@@ -35,7 +35,7 @@ def launch_scrcpy(target_title="HeroWarsBot_Arena"):
         
     return True
 
-def calibrate_window(target_title="HeroWarsBot_Arena", base_width=956, base_height=457):
+def calibrate_window(target_title="HeroWarsBot_Arena", base_width=1606, base_height=748):
     windows = [w for w in gw.getAllWindows() if target_title in w.title]
     if not windows:
         return False

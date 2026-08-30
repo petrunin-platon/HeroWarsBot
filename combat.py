@@ -1,3 +1,4 @@
+# combat.py
 import cv2
 import numpy as np
 import time
@@ -6,6 +7,8 @@ import pygetwindow as gw
 from config import CONFIG, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS, ENEMY_TITANS
 from vision import click_human, get_match_loc, is_icon_present, get_asset_path, find_and_click_bulletproof, imread_cyrillic
 from analyzer import scan_enemy_team
+
+ACTION_THRESHOLD = 0.75 
 
 def combat_fast_click(target_x, target_y, safe_x, safe_y):
     pyautogui.moveTo(target_x, target_y, duration=0.0)
@@ -24,42 +27,86 @@ def find_smart_door(window_rect, sct):
         return None, []
         
     res = cv2.matchTemplate(screenshot_cv, attack_template, cv2.TM_CCOEFF_NORMED)
-    loc = np.where(res >= CONFIDENCE_THRESHOLD)
+    loc = np.where(res >= ACTION_THRESHOLD)
     
     attack_buttons = []
     h, w = attack_template.shape[:-1]
     
     for pt in zip(*loc[::-1]):
         center_x, center_y = pt[0] + w // 2, pt[1] + h // 2
-        if not any(abs(center_x - ax) < 20 for ax, ay in attack_buttons):
+        # Увеличена дистанция для фильтрации дублей кнопок на больших экранах
+        if not any(abs(center_x - ax) < 40 for ax, ay in attack_buttons):
             attack_buttons.append((center_x, center_y))
             
     if not attack_buttons:
         return None, []
         
-    room_type = "unknown"
+    # =====================================================================
+    # НОВЫЙ АЛГОРИТМ: КОНКУРЕНТНОЕ ЗРЕНИЕ С ОГРАНИЧЕНИЕМ ЗОНЫ (ROI)
+    # =====================================================================
+    # Динамические рамки сканирования (зависят от размера окна)
+    roi_w = int(screenshot_cv.shape[1] * 0.12)
+    roi_h_up = int(screenshot_cv.shape[0] * 0.45)
+    roi_h_down = int(screenshot_cv.shape[0] * 0.05)
+    
+    button_elements = []
+    
+    for bx, by in attack_buttons:
+        # Вырезаем только зону строго вокруг/над кнопкой атаки
+        x1 = max(0, bx - roi_w)
+        x2 = min(screenshot_cv.shape[1], bx + roi_w)
+        y1 = max(0, by - roi_h_up)
+        y2 = min(screenshot_cv.shape[0], by + roi_h_down)
+        
+        roi = screenshot_cv[y1:y2, x1:x2]
+        
+        best_element = "unknown"
+        highest_val = 0.0
+        
+        elements_to_check = [
+            ("water", "icon_water.png"),
+            ("mix", "icon_mix.png"), 
+            ("earth", "icon_earth.png"), 
+            ("fire", "icon_fire.png")
+        ]
+        
+        # Примеряем все иконки и выбираем ту, у которой процент совпадения максимальный
+        for elem, icon in elements_to_check:
+            tpl = imread_cyrillic(get_asset_path(icon))
+            if tpl is None: continue
+            if tpl.shape[0] > roi.shape[0] or tpl.shape[1] > roi.shape[1]: continue
+            
+            res_roi = cv2.matchTemplate(roi, tpl, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, _ = cv2.minMaxLoc(res_roi)
+            
+            if max_val > highest_val:
+                highest_val = max_val
+                best_element = elem
+                
+        button_elements.append({
+            "coords": (bx, by),
+            "element": best_element if highest_val > 0.50 else "unknown",
+            "score": highest_val
+        })
+        
+    # Выбираем приоритетную дверь (если их две)
     best_btn = None
+    room_type = "unknown"
+    
+    if len(button_elements) == 1:
+        best_btn = button_elements[0]["coords"]
+        room_type = button_elements[0]["element"]
+    else:
+        # Приоритет: Вода -> Смешанная -> Земля -> Огонь
+        priority_map = {"water": 1, "mix": 2, "earth": 3, "fire": 4, "unknown": 99}
+        button_elements.sort(key=lambda b: priority_map[b["element"]])
+        
+        best_btn = button_elements[0]["coords"]
+        room_type = button_elements[0]["element"]
 
-    if len(attack_buttons) == 1:
-        best_btn = attack_buttons[0]
-        if is_icon_present('icon_earth.png', screenshot_cv, CONFIDENCE_THRESHOLD): room_type = "earth"
-        elif is_icon_present('icon_water.png', screenshot_cv, CONFIDENCE_THRESHOLD): room_type = "water"
-        elif is_icon_present('icon_fire.png', screenshot_cv, CONFIDENCE_THRESHOLD): room_type = "fire"
-        elif is_icon_present('icon_mix.png', screenshot_cv, CONFIDENCE_THRESHOLD): room_type = "mix"
-
-    elif len(attack_buttons) >= 2:
-        priorities = [('icon_water.png', 'water'), ('icon_mix.png', 'mix'), ('icon_earth.png', 'earth'), ('icon_fire.png', 'fire')]
-        for icon_name, r_type in priorities:
-            icon_template = imread_cyrillic(get_asset_path(icon_name))
-            if icon_template is None: continue
-            icon_res = cv2.matchTemplate(screenshot_cv, icon_template, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(icon_res)
-            if max_val >= CONFIDENCE_THRESHOLD:
-                icon_center_x = max_loc[0] + icon_template.shape[1] // 2
-                best_btn = min(attack_buttons, key=lambda b: abs(b[0] - icon_center_x))
-                room_type = r_type
-                break
-
+    # =====================================================================
+    # ЛОГИКА ВХОДА В КОМНАТУ
+    # =====================================================================
     if best_btn:
         local_x = best_btn[0]
         enemies = scan_enemy_team(window_rect, sct, ENEMY_TITANS, local_x)
@@ -69,12 +116,12 @@ def find_smart_door(window_rect, sct):
             scr = np.array(sct.grab(window_rect))
             scr_cv = cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR)
             res = cv2.matchTemplate(scr_cv, attack_template, cv2.TM_CCOEFF_NORMED)
-            loc = np.where(res >= CONFIDENCE_THRESHOLD)
+            loc = np.where(res >= ACTION_THRESHOLD)
             
             dyn_buttons = []
             for pt in zip(*loc[::-1]):
                 cx, cy = pt[0] + w // 2, pt[1] + h // 2
-                if not any(abs(cx - ax) < 20 for ax, ay in dyn_buttons):
+                if not any(abs(cx - ax) < 40 for ax, ay in dyn_buttons):
                     dyn_buttons.append((cx, cy))
             
             if dyn_buttons:
@@ -85,7 +132,8 @@ def find_smart_door(window_rect, sct):
             pyautogui.moveTo(window_rect["left"] + 5, window_rect["top"] + 5, duration=0.0)
             time.sleep(0.15)
             
-            if not get_match_loc('btn_attack.png', window_rect, sct, CONFIDENCE_THRESHOLD):
+            if not get_match_loc('btn_attack.png', window_rect, sct, ACTION_THRESHOLD):
+                print(f"[КОМБАТ] Комната идентифицирована: {room_type.upper()} | Враги: {enemies}")
                 return room_type, enemies
                 
     return None, []
@@ -146,7 +194,7 @@ def execute_angus_ult(window_rect, sct):
 def execute_rollback(window_rect, sct):
     print("[ОТКАТ] Запускаю протокол отката боя...")
     
-    if not find_and_click_bulletproof('btn_retry.png', window_rect, sct, CONFIDENCE_THRESHOLD):
+    if not find_and_click_bulletproof('btn_retry.png', window_rect, sct, ACTION_THRESHOLD):
         print("[ОТКАТ] Не найдена кнопка 'btn_retry.png'!")
         return False
         
@@ -169,7 +217,6 @@ def execute_rollback(window_rect, sct):
             print(f"[ОТКАТ] Ошибка фокуса: {e}")
 
         start_time = time.time()
-        # 15 секунд на каждую попытку (всего 45 сек, чтобы точно не пропустить)
         while time.time() - start_time < 15.0:
             coords = get_match_loc('btn_pause.png', window_rect, sct, 0.75) 
             if coords:
@@ -191,7 +238,7 @@ def execute_rollback(window_rect, sct):
     print("[ОТКАТ] Выдерживаю 1.5 сек для полной отрисовки меню паузы...")
     time.sleep(1.5) 
     
-    if not find_and_click_bulletproof('btn_retreat.png', window_rect, sct, CONFIDENCE_THRESHOLD):
+    if not find_and_click_bulletproof('btn_retreat.png', window_rect, sct, ACTION_THRESHOLD):
         print("[ОТКАТ] ОШИБКА: Не найдена кнопка 'btn_retreat.png' в меню паузы!")
         return False
         

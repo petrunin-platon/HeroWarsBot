@@ -1,15 +1,26 @@
 # gui.py
 import sys
+import ctypes
+
+# =====================================================================
+# ЖИЗНЕННО ВАЖНО: АППАРАТНЫЙ ФИКС DPI WINDOWS
+# ДОЛЖЕН БЫТЬ ДО ИМПОРТА ЛЮБЫХ БИБЛИОТЕК
+# =====================================================================
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2) # PROCESS_PER_MONITOR_DPI_AWARE
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+# =====================================================================
+
 try:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 except Exception:
     pass
-# =====================================================================
-# ИНТЕЛЛЕКТУАЛЬНЫЙ РОУТИНГ ДЛЯ .EXE (FORK PATTERN)
-# Если exe-файл запущен с флагом --bot-mode, он становится не интерфейсом,
-# а процессом логики бота (main.py), и работает в фоне.
-# =====================================================================
+
 if "--bot-mode" in sys.argv:
     import main
     sys.exit(0)
@@ -129,6 +140,10 @@ class HeroWarsLauncher(ctk.CTk):
                 frame.update_language(lang)
 
     def on_closing(self):
+        # ИСПРАВЛЕНИЕ: Гарантированно убиваем процесс бота перед выходом из GUI
+        if "dash" in self.frames:
+            self.frames["dash"].stop_bot()
+            
         os.system("taskkill /f /im scrcpy.exe >nul 2>&1")
         os.system("adb kill-server >nul 2>&1")
         self.destroy()

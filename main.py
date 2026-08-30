@@ -1,7 +1,6 @@
 # main.py
 import json
 import time
-import keyboard
 import mss
 import sys
 import os
@@ -11,9 +10,9 @@ import numpy as np
 import threading
 import queue
 import builtins 
+import ctypes 
 
 # --- ПЕРЕОПРЕДЕЛЕНИЕ PRINT ДЛЯ GUI ---
-# Заставляем Python всегда сбрасывать буфер в терминал без задержек
 original_print = builtins.print
 def unbuffered_print(*args, **kwargs):
     kwargs.setdefault('flush', True)
@@ -36,18 +35,25 @@ GRACEFUL_STOP = False
 GLOBAL_TITAN_STATE = {}
 PENDING_RULE = None  
 
-# --- NON-BLOCKING STDIN LISTENER ---
 STDIN_QUEUE = queue.Queue()
 
+# =====================================================================
+# ИСПРАВЛЕНИЕ (ZOMBIE KILLER): Убиваем бота, если закрыли GUI крестиком
+# =====================================================================
 def stdin_listener():
-    """Фоновый поток для чтения команд из GUI без блокировки ОС"""
-    for line in sys.stdin:
-        STDIN_QUEUE.put(line.strip())
+    try:
+        for line in sys.stdin:
+            STDIN_QUEUE.put(line.strip())
+    except Exception:
+        pass
+    
+    # Если мы выпали из цикла, значит труба связи с GUI разорвана!
+    print("[СИСТЕМА] Связь с GUI потеряна. Уничтожаю зомби-процесс...")
+    os._exit(0)
 
 threading.Thread(target=stdin_listener, daemon=True).start()
 
 def wait_for_input():
-    """Ожидание ввода с обработкой прерываний"""
     while True:
         try:
             return STDIN_QUEUE.get(timeout=0.2)
@@ -66,6 +72,26 @@ def trigger_emergency_stop():
     print("\n[ЭКСТРЕННАЯ ОСТАНОВКА] Принудительное завершение (Ctrl+Shift+Q)!")
     os._exit(0) 
 
+def background_hotkey_listener():
+    VK_Q = 0x51
+    VK_CONTROL = 0x11
+    VK_SHIFT = 0x10
+    
+    while True:
+        if ctypes.windll.user32.GetAsyncKeyState(VK_Q) & 0x8000:
+            ctrl_pressed = ctypes.windll.user32.GetAsyncKeyState(VK_CONTROL) & 0x8000
+            shift_pressed = ctypes.windll.user32.GetAsyncKeyState(VK_SHIFT) & 0x8000
+            
+            if ctrl_pressed and shift_pressed:
+                trigger_emergency_stop()
+                time.sleep(0.5) 
+            elif ctrl_pressed:
+                trigger_graceful_stop()
+                time.sleep(0.5) 
+        time.sleep(0.05) 
+
+threading.Thread(target=background_hotkey_listener, daemon=True).start()
+
 def wait_for_focus():
     try:
         active_window = gw.getActiveWindow()
@@ -80,6 +106,9 @@ def wait_for_focus():
     except Exception:
         pass
 
+# =====================================================================
+# ИСПРАВЛЕНИЕ: БРОНЕБОЙНАЯ РАБОТА С ALT И ФОКУСОМ (ЛЕЧИТ ERROR 2)
+# =====================================================================
 def force_window_focus():
     try:
         windows = gw.getWindowsWithTitle(WINDOW_TITLE)
@@ -87,16 +116,24 @@ def force_window_focus():
             win = windows[0]
             if win.isMinimized:
                 win.restore()
-            win.activate()
+                time.sleep(0.1)
+            
+            hwnd = win._hWnd
+            try:
+                ctypes.windll.user32.keybd_event(0x12, 0, 0, 0) # Alt press
+                time.sleep(0.05)
+                # Вызываем нативный API Windows вместо глючного win.activate()
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+            finally:
+                # ГАРАНТИЯ: Alt всегда будет отпущен, даже если код выше упадет!
+                ctypes.windll.user32.keybd_event(0x12, 0, 2, 0) # Alt release
+            
             time.sleep(0.5)
             print("[ИНФО] Фокус принудительно возвращен окну игры.")
     except Exception as e:
-        print(f"[ОШИБКА ФОКУСА] {e}")
+        print(f"[ОШИБКА ФОКУСА] Не критично, ожидаем ручного фокуса. ({e})")
 
-keyboard.add_hotkey('ctrl+q', trigger_graceful_stop)
-keyboard.add_hotkey('ctrl+shift+q', trigger_emergency_stop)
-
-print("=== Бот готов (Машина Состояний v14.0: Non-Blocking IPC) ===")
+print("=== Бот готов (Машина Состояний v16.0: Zombie Killer & Native Focus) ===")
 
 game_window = get_window_rect(WINDOW_TITLE)
 if not game_window:
@@ -344,12 +381,24 @@ with mss.MSS() as sct:
                             wait_for_input()
                             force_window_focus()
 
-            find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD)
-            STATE = "HALLWAY"
+            # Переключаемся в стейт безопасного прожатия ОК
+            STATE = "CLICK_OK"
+            continue
+            
+        # =================================================================
+        # СТЕЙТ: Безопасное прожатие кнопки "ОК"
+        # =================================================================
+        elif STATE == "CLICK_OK":
+            if find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
+                STATE = "HALLWAY"
+            else:
+                # Защита от ручного клика: если юзер сам нажал ОК или кнопка пропала
+                if get_match_loc('flag_enter.png', game_window, sct, 0.7) or get_match_loc('btn_attack.png', game_window, sct, 0.7):
+                    STATE = "HALLWAY"
             time.sleep(0.5) 
             continue
             
-        if STATE == "HALLWAY":
+        elif STATE == "HALLWAY":
             if os.path.exists("pause.flag"):
                 print("\n[МЯГКАЯ ПАУЗА] Бот ждет в коридоре...")
                 while os.path.exists("pause.flag"):
