@@ -151,7 +151,8 @@ class DashboardFrame(ctk.CTkFrame):
 
     def restart_scrcpy(self):
         self.append_log("[ADB] Перезапуск scrcpy...\n")
-        os.system("taskkill /f /im scrcpy.exe >nul 2>&1")
+        # ТИХОЕ УБИЙСТВО ПРОЦЕССА БЕЗ КОНСОЛИ
+        subprocess.run(["taskkill", "/f", "/im", "scrcpy.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
         time.sleep(1)
         self.launch_phone()
 
@@ -214,7 +215,8 @@ class DashboardFrame(ctk.CTkFrame):
 
     def launch_phone(self):
         self.btn_launch_scrcpy.configure(state="disabled")
-        os.system("taskkill /f /im scrcpy.exe >nul 2>&1")
+        # ТИХОЕ УБИЙСТВО ПРОЦЕССА БЕЗ КОНСОЛИ
+        subprocess.run(["taskkill", "/f", "/im", "scrcpy.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
         self.append_log("[СИСТЕМА] Вызов scrcpy... Открой игру на телефоне и зайди в коридор.\n")
         def task():
             if launch_scrcpy("HeroWarsBot_Arena"):
@@ -277,23 +279,36 @@ class DashboardFrame(ctk.CTkFrame):
                 if "[SOS_TRIGGER]" in line:
                     if "TEST_SUCCESS:" in line:
                         json_str = line.split("TEST_SUCCESS:")[1].strip()
-                        try: titan_data = json.loads(json_str)
-                        except: titan_data = {}
-                        self.after(0, lambda td=titan_data: self.trigger_test_validation(td))
+                        try: 
+                            test_data = json.loads(json_str)
+                            if isinstance(test_data, dict) and "source" in test_data:
+                                titan_data = test_data["titans"]
+                                source = test_data["source"]
+                            else:
+                                titan_data = test_data
+                                source = "gui"
+                        except: 
+                            titan_data = {}
+                            source = "gui"
+                        self.after(0, lambda td=titan_data, src=source: self.trigger_test_validation(td, src))
                     else:
                         json_str = line.split("[SOS_TRIGGER]")[1].strip()
                         try: 
                             sos_data = json.loads(json_str)
-                            if "titans" in sos_data:
+                            if sos_data.get("type") == "NO_VALID_TEAM":
+                                self.after(0, lambda sd=sos_data: self.trigger_sos_dialog(sd))
+                            elif "titans" in sos_data:
                                 titan_data = sos_data["titans"]
                                 is_manual = sos_data.get("is_manual", False)
+                                self.after(0, lambda td=titan_data, im=is_manual: self.trigger_intervention(td, im))
                             else:
                                 titan_data = sos_data
                                 is_manual = False
+                                self.after(0, lambda td=titan_data, im=is_manual: self.trigger_intervention(td, im))
                         except: 
                             titan_data = {"Неизвестно": 0}
                             is_manual = False
-                        self.after(0, lambda td=titan_data, im=is_manual: self.trigger_intervention(td, im))
+                            self.after(0, lambda td=titan_data, im=is_manual: self.trigger_intervention(td, im))
                     continue
                 if "[ПАУЗА ОТЛАДКИ]" in line:
                     self.action_state = "continue"
@@ -305,15 +320,75 @@ class DashboardFrame(ctk.CTkFrame):
         self.after(0, lambda: self.append_log("\n[СИСТЕМА] Процесс бота завершен.\n"))
         self.after(0, self.reset_buttons)
 
-    def trigger_test_validation(self, titan_data):
-        from ui.team_selector import TeamSelectorDialog
+    def trigger_sos_dialog(self, sos_data):
+        # ИМПОРТИРУЕМ НОВЫЙ ДИАЛОГ ВМЕСТО СТАРОГО
+        from ui.intervention_dialog import InterventionDialog
+        
+        def on_decision(command):
+            # Жесткий стоп, чтобы бот точно не нажал "ОК"
+            if command in ["manual", "stop"]:
+                self.append_log(f"\n[СИСТЕМА] Выбрано: {command.upper()}. Мгновенная остановка!\n")
+                self.stop_bot()
+            else:
+                if self.bot_process and self.bot_process.poll() is None:
+                    self.bot_process.stdin.write(command + "\n")
+                    self.bot_process.stdin.flush()
+                    
+        # Так как это SOS по отсутствию правил (ХП не считывалось), передаем пустой словарь.
+        # И ГЛАВНОЕ: передаем can_rollback=False, чтобы скрыть кнопку отката!
+        InterventionDialog(self.controller, titan_data={}, callback=on_decision, is_manual=False, can_rollback=False)
+
+    def trigger_test_validation(self, titan_data, source="gui"):
         lang = getattr(self.controller, 'current_lang', 'RU')
         
+        # ЕСЛИ ИСТОЧНИК - ТЕЛЕГРАМ, ОКНО НА ПК НЕ РИСУЕМ, ОТПРАВЛЯЕМ СРАЗУ В ТГ
+        if source == "telegram":
+            import yaml
+            from telegram_agent import TelegramAgent
+            token = ""
+            chat_id = ""
+            if os.path.exists("profile.yml"):
+                try:
+                    with open("profile.yml", 'r', encoding='utf-8') as f:
+                        profile = yaml.safe_load(f) or {}
+                        tg = profile.get("settings", {}).get("telegram", {})
+                        if tg.get("active", False):
+                            token = tg.get("token", "")
+                            chat_id = str(tg.get("chat_id", ""))
+                except Exception: pass
+                
+            if token and chat_id:
+                agent = TelegramAgent(token, chat_id, lang)
+                
+                def on_tg_decision(decision_text):
+                    if decision_text == "CONFIRM":
+                        if self.bot_process and self.bot_process.poll() is None:
+                            self.bot_process.stdin.write("CONFIRM\n")
+                            self.bot_process.stdin.flush()
+                    elif decision_text.startswith("rb_custom:"):
+                        team_str = decision_text.split(":")[1]
+                        if self.bot_process and self.bot_process.poll() is None:
+                            self.bot_process.stdin.write(f"ROLLBACK_TG:{team_str}\n")
+                            self.bot_process.stdin.flush()
+                            
+                msg = get_text(lang, "test_success") + "\n\n"
+                for titan, stats in titan_data.items():
+                    hp_val = stats.get('hp', 0) if isinstance(stats, dict) else stats
+                    titan_name = get_text(lang, f"titan_{titan}")
+                    msg += f"➤ {titan_name.capitalize()}: {hp_val}% HP\n"
+                    
+                msg_id = agent.send_test_result("temp_test.png", msg)
+                if msg_id:
+                    agent.start_polling(msg_id, on_tg_decision)
+                return # Выходим, чтобы графическое окно на ПК не появилось
+
+        # СТАНДАРТНАЯ ОТРИСОВКА ОКНА ДЛЯ ПК (если источник GUI)
+        from ui.team_selector import TeamSelectorDialog
         dialog = ctk.CTkToplevel(self)
         dialog.title(get_text(lang, "test_title"))
         dialog.geometry("450x300")
         dialog.attributes("-topmost", True)
-        dialog.grab_set()
+        dialog.after(100, dialog.grab_set)
         
         ctk.CTkLabel(dialog, text=get_text(lang, "test_success"), font=ctk.CTkFont(size=18, weight="bold"), text_color="#28a745").pack(pady=(15, 5))
         
@@ -323,22 +398,30 @@ class DashboardFrame(ctk.CTkFrame):
             titan_name = get_text(lang, f"titan_{titan}")
             stats_text += f"{titan_name.capitalize()}: {hp_val}% HP\n"
             
-        ctk.CTkLabel(dialog, text=f"{get_text(lang, 'test_remains')}{stats_text}", font=ctk.CTkFont(size=14)).pack(pady=10)
+        ctk.CTkLabel(dialog, text=f"{get_text(lang, 'test_remains')}\n{stats_text}", font=ctk.CTkFont(size=14)).pack(pady=10)
         
         def on_confirm():
             if self.bot_process and self.bot_process.poll() is None:
                 self.bot_process.stdin.write("CONFIRM\n")
                 self.bot_process.stdin.flush()
+            dialog.grab_release()
             dialog.destroy()
             
         def on_replay():
+            dialog.grab_release()
+            dialog.destroy()
+            
             def on_team_selected(new_team):
+                if new_team == ["STOP_BOT"]:
+                    self.stop_bot()
+                    return
+                if not new_team: return
                 team_str = ",".join(new_team)
                 if self.bot_process and self.bot_process.poll() is None:
                     self.bot_process.stdin.write(f"ROLLBACK:{team_str}\n")
                     self.bot_process.stdin.flush()
+                    
             TeamSelectorDialog(self.controller, on_team_selected, room_type="all", context="rollback")
-            dialog.destroy()
             
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(pady=15)
@@ -353,6 +436,10 @@ class DashboardFrame(ctk.CTkFrame):
         def on_decision(decision_text):
             if decision_text == "rollback":
                 def on_team_selected(new_team):
+                    if new_team == ["STOP_BOT"]:
+                        self.stop_bot()
+                        return
+                    if not new_team: return
                     team_str = ",".join(new_team)
                     if self.bot_process and self.bot_process.poll() is None:
                         self.bot_process.stdin.write(f"ROLLBACK:{team_str}\n")
@@ -362,9 +449,15 @@ class DashboardFrame(ctk.CTkFrame):
             elif decision_text.startswith("rb_custom:"):
                 team_str = decision_text.split(":")[1]
                 if self.bot_process and self.bot_process.poll() is None:
-                    self.bot_process.stdin.write(f"ROLLBACK:{team_str}\n")
+                    # Помечаем команду как ROLLBACK_TG, чтобы ядро знало, что это из ТГ
+                    self.bot_process.stdin.write(f"ROLLBACK_TG:{team_str}\n")
                     self.bot_process.stdin.flush()
                     
+            # Мгновенный жесткий стоп для ручного вмешательства
+            elif decision_text in ["manual", "stop"]:
+                self.append_log(f"\n[СИСТЕМА] Выбран {decision_text.upper()}. Мгновенная остановка бота для ручного вмешательства!\n")
+                self.stop_bot()
+                
             else:
                 if self.bot_process and self.bot_process.poll() is None:
                     self.bot_process.stdin.write(f"{decision_text.upper()}\n")

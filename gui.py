@@ -1,13 +1,14 @@
 # gui.py
 import sys
 import ctypes
+import subprocess 
 
 # =====================================================================
 # ЖИЗНЕННО ВАЖНО: АППАРАТНЫЙ ФИКС DPI WINDOWS
 # ДОЛЖЕН БЫТЬ ДО ИМПОРТА ЛЮБЫХ БИБЛИОТЕК
 # =====================================================================
 try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2) # PROCESS_PER_MONITOR_DPI_AWARE
+    ctypes.windll.shcore.SetProcessDpiAwareness(2) 
 except Exception:
     try:
         ctypes.windll.user32.SetProcessDPIAware()
@@ -21,6 +22,7 @@ try:
 except Exception:
     pass
 
+# ИНТЕЛЛЕКТУАЛЬНЫЙ РОУТИНГ ДЛЯ .EXE (FORK PATTERN)
 if "--bot-mode" in sys.argv:
     import main
     sys.exit(0)
@@ -37,6 +39,37 @@ from ui.guide_tab import GuideFrame
 
 ctk.set_appearance_mode("Dark")  
 ctk.set_default_color_theme("blue") 
+
+# =====================================================================
+# СЛОВАРЬ ЯЗЫКОВ (МАППИНГ)
+# Здесь мы связываем красивое название языка с системным префиксом.
+# Можешь добавлять любые языки в будущем!
+# =====================================================================
+LANGUAGE_MAP = {
+    # СНГ и Глобальный
+    "Русский": "RU",
+    "English": "EN",
+    "Беларуская": "BY",
+    "Українська": "UK",
+    
+    # Европа
+    "Deutsch": "DE",
+    "Español": "ES",     # Испанский
+    "Français": "FR",    # Французский
+    "Polski": "PL",      # Польский
+    
+    # Ближний Восток / Латинская Америка
+    "Português": "PT",   # Португальский (Бразилия)
+    "Türkçe": "TR",      # Турецкий
+    
+    # Азия
+    "中文": "ZH",          # Китайский
+    "한국어": "KO",          # Корейский
+    "日本語": "JA"           # Японский
+}
+# Обратный словарь (чтобы быстро найти название по префиксу при запуске)
+REVERSE_LANG_MAP = {v: k for k, v in LANGUAGE_MAP.items()}
+# =====================================================================
 
 class HeroWarsLauncher(ctk.CTk):
     def __init__(self):
@@ -82,14 +115,24 @@ class HeroWarsLauncher(ctk.CTk):
         self.btn_about = ctk.CTkButton(self.sidebar, text=get_text(self.current_lang, "btn_about"), command=lambda: self.select_frame("about"))
         self.btn_about.grid(row=6, column=0, padx=20, pady=10)
 
+        # =====================================================================
+        # НОВЫЙ ВЫПАДАЮЩИЙ СПИСОК ВМЕСТО КНОПОК RU И EN
+        # =====================================================================
         self.lang_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         self.lang_frame.grid(row=8, column=0, pady=(0, 20), sticky="s")
         
-        self.btn_ru = ctk.CTkButton(self.lang_frame, text="RU", width=60, fg_color="#007bff", hover_color="#0056b3", command=lambda: self.set_language("RU"))
-        self.btn_ru.grid(row=0, column=0, padx=5)
-
-        self.btn_en = ctk.CTkButton(self.lang_frame, text="EN", width=60, fg_color="#444444", hover_color="#555555", command=lambda: self.set_language("EN"))
-        self.btn_en.grid(row=0, column=1, padx=5)
+        initial_lang_name = REVERSE_LANG_MAP.get(self.current_lang, "Русский")
+        self.lang_var = ctk.StringVar(value=initial_lang_name)
+        
+        self.lang_dropdown = ctk.CTkOptionMenu(
+            self.lang_frame, 
+            values=list(LANGUAGE_MAP.keys()), 
+            variable=self.lang_var,
+            command=self.on_language_change,
+            width=140
+        )
+        self.lang_dropdown.pack(pady=5, padx=20)
+        # =====================================================================
 
         self.frames = {
             "dash": DashboardFrame(self, self),
@@ -111,20 +154,23 @@ class HeroWarsLauncher(ctk.CTk):
             f.grid_forget()
         self.frames[frame_name].grid(row=0, column=1, sticky="nsew", padx=20, pady=0)
 
+    # Перехватчик: получает красивое имя из меню и переводит его в префикс
+    def on_language_change(self, choice):
+        prefix = LANGUAGE_MAP.get(choice, "RU")
+        self.set_language(prefix)
+
     def set_language(self, lang, force=False):
         if lang == self.current_lang and not force:
             return
             
         self.current_lang = lang
         
-        if lang == "RU":
-            self.btn_ru.configure(fg_color="#007bff")
-            self.btn_en.configure(fg_color="#444444")
-            self.frames["dash"].append_log("[GUI] Выбран язык: Русский\n")
-        else:
-            self.btn_ru.configure(fg_color="#444444")
-            self.btn_en.configure(fg_color="#007bff")
-            self.frames["dash"].append_log("[GUI] Language selected: English\n")
+        # Обновляем текст в выпадающем списке (если язык установлен программно)
+        display_name = REVERSE_LANG_MAP.get(lang, "Русский")
+        self.lang_var.set(display_name)
+        
+        # Записываем красивый лог
+        self.frames["dash"].append_log(f"[GUI] Язык интерфейса изменен: {display_name} ({lang})\n")
             
         self.title(get_text(lang, "app_title"))
         self.lbl_sidebar_title.configure(text=get_text(lang, "sidebar_title"))
@@ -140,12 +186,11 @@ class HeroWarsLauncher(ctk.CTk):
                 frame.update_language(lang)
 
     def on_closing(self):
-        # ИСПРАВЛЕНИЕ: Гарантированно убиваем процесс бота перед выходом из GUI
-        if "dash" in self.frames:
-            self.frames["dash"].stop_bot()
-            
-        os.system("taskkill /f /im scrcpy.exe >nul 2>&1")
-        os.system("adb kill-server >nul 2>&1")
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "scrcpy.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
+            subprocess.run(["taskkill", "/F", "/IM", "adb.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
+        except Exception:
+            pass
         self.destroy()
 
 if __name__ == "__main__":

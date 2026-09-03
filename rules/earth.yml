@@ -1,0 +1,13 @@
+rules:
+- name: Auto Rule
+  condition:
+    titan_energy_below:
+      angus: 97
+  team:
+  - STOP
+default_team:
+- angus
+- avalon
+- eden
+- silva
+- verdok

@@ -32,39 +32,105 @@ class RulesEngine:
             else:
                 self.rules_cache[r] = {}
 
+    def is_room_forbidden(self, room_type, current_state=None):
+        """
+        Проверяет, запрещен ли вход в эту комнату по состоянию здоровья титанов.
+        Вызывается из combat.py на этапе выбора из двух дверей.
+        """
+        if current_state is None:
+            current_state = {}
+            
+        room_data = self.rules_cache.get(room_type, {})
+        rules = room_data.get("rules", [])
+        
+        for rule in rules:
+            if rule.get("action") == "skip":
+                condition = rule.get("condition", {})
+                if self._evaluate_condition(condition, [], current_state):
+                    return True
+                    
+        return False
+
+    def _get_forbidden_titans(self, rules, enemies, current_state):
+        """
+        Собирает "Черный список" титанов для текущей комнаты на основе сработавших правил Skip.
+        """
+        forbidden = set()
+        for rule in rules:
+            if rule.get("action") == "skip":
+                condition = rule.get("condition", {})
+                if self._evaluate_condition(condition, enemies, current_state):
+                    # Если сработал скип по ХП, добавляем этих титанов в Черный список
+                    if "titan_hp_below" in condition:
+                        forbidden.update(condition["titan_hp_below"].keys())
+                    # Если сработал скип по Энергии
+                    if "titan_energy_below" in condition:
+                        forbidden.update(condition["titan_energy_below"].keys())
+        return forbidden
+
     def get_battle_decision(self, room_type, enemies, current_state=None):
+        """
+        Вызывается, когда мы УЖЕ выбрали комнату и обязаны вернуть пак для боя.
+        """
         if current_state is None:
             current_state = {}
 
         room_data = self.rules_cache.get(room_type, {})
         rules = room_data.get("rules", [])
         
+        # 0. АБСОЛЮТНЫЙ ПРИОРИТЕТ: Формируем Черный список умирающих титанов
+        forbidden_titans = self._get_forbidden_titans(rules, enemies, current_state)
+
         # 1. ПЕРВЫЙ ПРОХОД: Правила спасения (отхил / нехватка энергии)
         for rule in rules:
+            if rule.get("action") == "skip":
+                continue
+                
             condition = rule.get("condition", {})
             if "titan_hp_below" in condition or "titan_energy_below" in condition:
                 if self._evaluate_condition(condition, enemies, current_state):
                     team = rule.get("team", [])
-                    reason = rule.get("name", "ПРИОРИТЕТ: Спасение")
+                    
+                    # ГЛОБАЛЬНОЕ ВЕТО: Если в целевом паке есть титан из Черного списка - отбраковываем пак!
+                    if any(t in forbidden_titans for t in team):
+                        continue
+                        
+                    reason = rule.get("name", "ПРИОРИТЕТ 1: Спасение")
                     delta = rule.get("allowed_delta")
                     special_ult = self._resolve_special_ult(team, rule)
                     return team, reason, delta, special_ult
 
-        # 2. ВТОРОЙ ПРОХОД: Тактические правила под состав врагов
+        # 2. ВТОРОЙ ПРОХОД: Тактические правила под состав врагов (Золотые Правила)
         for rule in rules:
+            if rule.get("action") == "skip":
+                continue
+                
             condition = rule.get("condition", {})
             if "enemies_contain" in condition and not ("titan_hp_below" in condition or "titan_energy_below" in condition):
                 if self._evaluate_condition(condition, enemies, current_state):
                     team = rule.get("team", [])
-                    reason = rule.get("name", "Тактическое правило")
+                    
+                    # ГЛОБАЛЬНОЕ ВЕТО: Запрет на умирающих титанов работает и здесь
+                    if any(t in forbidden_titans for t in team):
+                        continue
+                        
+                    reason = rule.get("name", "ПРИОРИТЕТ 2: Тактика")
                     delta = rule.get("allowed_delta")
                     special_ult = self._resolve_special_ult(team, rule)
                     return team, reason, delta, special_ult
                     
-        # 3. Базовый пак по умолчанию
+        # 3. ПРИОРИТЕТ 3: Базовый пак по умолчанию
         default_team = room_data.get("default_team", [])
+        
+        # Защита от самоубийства: если даже Дефолтный пак требует титанов из Черного списка
+        if default_team and any(t in forbidden_titans for t in default_team):
+            bad_titans = ", ".join([t.upper() for t in forbidden_titans if t in default_team])
+            reason = f"ФАТАЛЬНО: Все паки отбракованы. Дефолтный пак содержит запрещенных титанов ({bad_titans})"
+            # Возвращаем STOP, main.py поставит бота на паузу.
+            return ["STOP"], reason, None, "auto"
+            
         special_ult = self._resolve_special_ult(default_team, {})
-        return default_team, "Базовый пак", None, special_ult
+        return default_team, "ПРИОРИТЕТ 3: Базовый пак", None, special_ult
 
     def _resolve_special_ult(self, team, rule):
         if rule.get("special_ult"):
@@ -81,7 +147,7 @@ class RulesEngine:
             return False
             
         if "enemies_contain" in condition:
-            if not all(e in enemies for e in condition["enemies_contain"]):
+            if not enemies or not all(e in enemies for e in condition["enemies_contain"]):
                 return False
                 
         if "titan_hp_below" in condition:
@@ -92,6 +158,12 @@ class RulesEngine:
         if "titan_energy_below" in condition:
             for titan, threshold in condition["titan_energy_below"].items():
                 if current_state.get(titan, {}).get("energy", 100) >= threshold:
+                    return False
+                    
+        # ПРОВЕРКА НА ОБКАТКУ (Не пускаем в бой не заряженных титанов)
+        if "require_fought" in condition:
+            for titan in condition["require_fought"]:
+                if titan not in current_state:
                     return False
                     
         return True
@@ -117,12 +189,9 @@ class RulesEngine:
 
         is_rescue = False
         
-        # АНАЛИЗАТОР ОБУЧЕНИЯ: Решаем, какое условие прописать
         if before_state:
-            # Ищем титанов, которые зашли в бой УЖЕ ранеными
             wounded = {t: hp for t, hp in before_state.items() if hp < 65}
             if wounded:
-                # Находим самого раненого и привязываем правило спасения к нему
                 worst_titan = min(wounded.items(), key=lambda x: x[1])[0]
                 threshold = 65 
                 new_rule["condition"] = {"titan_hp_below": {worst_titan: threshold}}
@@ -130,7 +199,6 @@ class RulesEngine:
                 is_rescue = True
 
         if not is_rescue:
-            # Если все были здоровы, значит проблема в тактике против конкретных врагов
             new_rule["condition"] = {"enemies_contain": enemies}
             new_rule["name"] = f"Анти-пак (Тактика) - {len(data['rules']) + 1}"
         

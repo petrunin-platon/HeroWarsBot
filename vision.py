@@ -57,16 +57,6 @@ def get_device_resolution():
         pass
     return 1920, 1080 
 
-def get_asset_path(image_name):
-    """
-    Оставлено для обратной совместимости с combat.py и analyzer.py.
-    """
-    lang = CONFIG.get("game_language", "RU")
-    lang_path = os.path.join(ASSETS_DIR, lang, image_name)
-    if os.path.exists(lang_path):
-        return lang_path
-    return os.path.join(ASSETS_DIR, image_name)
-
 def _calibrate_geometry(window_rect, sct):
     global GEOMETRY_CACHE
     if GEOMETRY_CACHE["is_calibrated"]:
@@ -98,7 +88,6 @@ def _calibrate_geometry(window_rect, sct):
     if gw_rect < 200 or gh_rect < 200:
         return
 
-    # Новая базовая высота для сжатия под увеличенное окно
     BASE_GAME_HEIGHT = 720.0
     scale_factor = gh_rect / BASE_GAME_HEIGHT
 
@@ -140,18 +129,15 @@ def get_clean_game_screen(window_rect, sct):
 def get_image_data(image_name):
     lang = CONFIG.get("game_language", "RU")
     
-    # Защита от старых вызовов: вытаскиваем имя файла из полного пути
-    base_name = os.path.basename(image_name)
-    
     if USE_DB:
-        lang_key = f"{lang}/{base_name}"
+        lang_key = f"{lang}/{image_name}"
         if lang_key in ASSETS:
             return base64.b64decode(ASSETS[lang_key])
-        if base_name in ASSETS:
-            return base64.b64decode(ASSETS[base_name])
+        if image_name in ASSETS:
+            return base64.b64decode(ASSETS[image_name])
             
-    lang_path = os.path.join(ASSETS_DIR, lang, base_name)
-    target_path = lang_path if os.path.exists(lang_path) else os.path.join(ASSETS_DIR, base_name)
+    lang_path = os.path.join(ASSETS_DIR, lang, image_name)
+    target_path = lang_path if os.path.exists(lang_path) else os.path.join(ASSETS_DIR, image_name)
     
     if os.path.exists(target_path):
         with open(target_path, "rb") as f:
@@ -160,9 +146,7 @@ def get_image_data(image_name):
     return None
 
 def get_scaled_template(image_name, scale):
-    base_name = os.path.basename(image_name)
-    cache_key = f"{base_name}_{scale:.3f}"
-    
+    cache_key = f"{image_name}_{scale:.3f}"
     if cache_key in TEMPLATE_CACHE:
         return TEMPLATE_CACHE[cache_key]
 
@@ -185,22 +169,6 @@ def get_scaled_template(image_name, scale):
 def imread_cyrillic(image_name):
     scale = GEOMETRY_CACHE.get("scale", 1.0)
     return get_scaled_template(image_name, scale)
-
-def is_icon_present(image_name, screenshot_cv, threshold):
-    """
-    Восстановленная функция для определения комнат и врагов.
-    Обеспечивает отказоустойчивость при проверке элементов UI.
-    """
-    template = imread_cyrillic(image_name)
-    if template is None: 
-        return False
-        
-    if template.shape[0] > screenshot_cv.shape[0] or template.shape[1] > screenshot_cv.shape[1]:
-        return False
-        
-    res = cv2.matchTemplate(screenshot_cv, template, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, _ = cv2.minMaxLoc(res)
-    return max_val >= threshold
 
 def click_human(x, y, exact=False, jitter=4):
     global LAST_WINDOW_RECT
@@ -238,7 +206,7 @@ def swipe_scrcpy(window_rect, direction="down"):
         start_y, end_y = int(0.3 * real_h), int(0.7 * real_h)
         
     subprocess.Popen(["adb", "shell", "input", "swipe", str(start_x), str(start_y), str(start_x), str(end_y), "400"], creationflags=0x08000000)
-    time.sleep(0.6)
+    time.sleep(0.6) 
 
 def get_window_rect(title):
     global LAST_WINDOW_RECT
@@ -271,11 +239,51 @@ def get_match_loc(image_name, window_rect, sct, threshold):
     
     if max_val >= threshold:
         h, w = template.shape[:-1]
-        if window_rect["width"] > 800:
-            return (window_rect["left"] + GEOMETRY_CACHE["offset_x"] + max_loc[0] + w // 2,
-                    window_rect["top"] + GEOMETRY_CACHE["offset_y"] + max_loc[1] + h // 2)
+        scale = GEOMETRY_CACHE.get("scale", 1.0)
+        
+        # =====================================================================
+        # ИНТЕЛЛЕКТУАЛЬНАЯ РАНДОМИЗАЦИЯ КЛИКОВ (ЗАЩИТА ОТ ДЕТЕКТА)
+        # =====================================================================
+        if "flag_enter" in image_name:
+            # ИСКЛЮЧЕНИЕ: Логика для дверей 
+            door_w = int(165 * scale)
+            door_h = int(245 * scale)
+            
+            # Центр флага по оси X
+            center_x = max_loc[0] + w // 2
+            
+            # Границы красной зоны
+            start_x = center_x - door_w // 2
+            end_x = center_x + door_w // 2
+            start_y = max_loc[1] + h 
+            end_y = start_y + door_h
+            
+            # 10% отступа внутрь от границ красной зоны для безопасности
+            margin_x = int(door_w * 0.1)
+            margin_y = int(door_h * 0.1)
+            
+            rand_x = random.randint(start_x + margin_x, end_x - margin_x)
+            rand_y = random.randint(start_y + margin_y, end_y - margin_y)
+            
         else:
-            return (window_rect["left"] + max_loc[0] + w // 2, window_rect["top"] + max_loc[1] + h // 2)
+            # СТАНДАРТНАЯ КНОПКА: Отсекаем по 20% с каждого края
+            margin_x = max(1, int(w * 0.2))
+            margin_y = max(1, int(h * 0.2))
+            
+            # Защита на случай крошечных кнопок (отключаем отступ, если кнопка слишком мала)
+            if margin_x * 2 >= w: margin_x = 0
+            if margin_y * 2 >= h: margin_y = 0
+            
+            rand_x = random.randint(max_loc[0] + margin_x, max_loc[0] + w - margin_x)
+            rand_y = random.randint(max_loc[1] + margin_y, max_loc[1] + h - margin_y)
+        # =====================================================================
+        
+        if window_rect["width"] > 800:
+            return (window_rect["left"] + GEOMETRY_CACHE["offset_x"] + rand_x,
+                    window_rect["top"] + GEOMETRY_CACHE["offset_y"] + rand_y)
+        else:
+            return (window_rect["left"] + rand_x, window_rect["top"] + rand_y)
+            
     return None
 
 def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=6.0):

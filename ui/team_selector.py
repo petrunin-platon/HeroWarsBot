@@ -19,19 +19,25 @@ ALLOWED_ELEMENTS = {
 }
 
 class TeamSelectorDialog(ctk.CTkToplevel):
-    def __init__(self, master, callback, room_type="mix", context="rule"):
+    def __init__(self, master, callback, room_type="mix", context="rule", preselect_titan=None):
         super().__init__(master)
         
         self.callback = callback
         self.selected_titans = []
         self.buttons = {}
+        # Запоминаем титана для предварительного выбора, но НЕ блокируем его
+        self.preselect_titan = preselect_titan 
         lang = getattr(master, 'current_lang', 'RU')
         
         self.title(get_text(lang, "ts_title"))
         self.geometry("900x500")
         self.resizable(False, False)
         self.attributes("-topmost", True)
-        self.grab_set()
+        
+        self.context = context 
+        self.protocol("WM_DELETE_WINDOW", self.on_closing) 
+        
+        self.after(100, self.grab_set)
         
         self.lbl_title = ctk.CTkLabel(self, text=get_text(lang, "ts_title"), font=ctk.CTkFont(size=20, weight="bold"))
         self.lbl_title.pack(pady=(20, 5))
@@ -59,12 +65,20 @@ class TeamSelectorDialog(ctk.CTkToplevel):
                     self.grid_frame, 
                     text=titan_text, 
                     width=140,
-                    fg_color="#2b2b2b" if is_disabled else "#444444", 
-                    text_color="#555555" if is_disabled else "white",
+                    fg_color="#444444", 
+                    text_color="white",
                     hover_color="#555555",
-                    state="disabled" if is_disabled else "normal",
                     command=lambda e=en_name: self.toggle_titan(e)
                 )
+                
+                if is_disabled:
+                    btn.configure(fg_color="#2b2b2b", text_color="#555555", state="disabled")
+                
+                # Мягкий предвыбор без замочка
+                if self.preselect_titan and en_name == self.preselect_titan:
+                    self.selected_titans.append(en_name)
+                    btn.configure(fg_color="#007bff")
+                    
                 btn.grid(row=row, column=col, padx=8, pady=6)
                 self.buttons[en_name] = btn
                 row += 1
@@ -73,8 +87,11 @@ class TeamSelectorDialog(ctk.CTkToplevel):
         btn_text = get_text(lang, "ts_btn_apply") if context == "rule" else get_text(lang, "ts_btn_rollback")
         self.btn_submit = ctk.CTkButton(self, text=btn_text, font=ctk.CTkFont(weight="bold"), fg_color="#28a745", hover_color="#218838", state="disabled", command=self.submit)
         self.btn_submit.pack(pady=20, fill="x", padx=100)
+        
+        self._update_counter_and_btn()
 
     def toggle_titan(self, en_name):
+        # Ограничение на клик снято, теперь любой титан может быть отжат
         btn = self.buttons[en_name]
         if en_name in self.selected_titans:
             self.selected_titans.remove(en_name)
@@ -84,6 +101,9 @@ class TeamSelectorDialog(ctk.CTkToplevel):
                 self.selected_titans.append(en_name)
                 btn.configure(fg_color="#007bff")
                 
+        self._update_counter_and_btn()
+        
+    def _update_counter_and_btn(self):
         count = len(self.selected_titans)
         lang = getattr(self.master, 'current_lang', 'RU')
         
@@ -97,4 +117,12 @@ class TeamSelectorDialog(ctk.CTkToplevel):
     def submit(self):
         self.grab_release()
         self.master.after(50, lambda: self.callback(self.selected_titans))
+        self.destroy()
+
+    def on_closing(self):
+        self.grab_release()
+        if getattr(self, "context", "") == "rollback":
+            self.master.after(50, lambda: self.callback(["STOP_BOT"]))
+        else:
+            self.master.after(50, lambda: self.callback([]))
         self.destroy()

@@ -2,27 +2,25 @@
 import cv2
 import numpy as np
 import time
-import pyautogui
-import pygetwindow as gw
 from config import CONFIG, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS, ENEMY_TITANS
-from vision import click_human, get_match_loc, is_icon_present, get_asset_path, find_and_click_bulletproof, imread_cyrillic
+from vision import click_human, get_match_loc, find_and_click_bulletproof, imread_cyrillic
 from analyzer import scan_enemy_team
+
+# Подключаем движок правил для проверки запретов
+from rules_engine import engine 
 
 ACTION_THRESHOLD = 0.75 
 
-def combat_fast_click(target_x, target_y, safe_x, safe_y):
-    pyautogui.moveTo(target_x, target_y, duration=0.0)
-    pyautogui.mouseDown()
-    time.sleep(0.03) 
-    pyautogui.mouseUp()
-    pyautogui.moveTo(safe_x, safe_y, duration=0.0)
+# ДОБАВЛЕН ПАРАМЕТР current_state
+def find_smart_door(window_rect, sct, current_state=None):
+    if current_state is None:
+        current_state = {}
 
-def find_smart_door(window_rect, sct):
     screenshot = sct.grab(window_rect)
     img = np.array(screenshot)
     screenshot_cv = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
     
-    attack_template = imread_cyrillic(get_asset_path('btn_attack.png'))
+    attack_template = imread_cyrillic('btn_attack.png')
     if attack_template is None: 
         return None, []
         
@@ -34,17 +32,12 @@ def find_smart_door(window_rect, sct):
     
     for pt in zip(*loc[::-1]):
         center_x, center_y = pt[0] + w // 2, pt[1] + h // 2
-        # Увеличена дистанция для фильтрации дублей кнопок на больших экранах
         if not any(abs(center_x - ax) < 40 for ax, ay in attack_buttons):
             attack_buttons.append((center_x, center_y))
             
     if not attack_buttons:
         return None, []
         
-    # =====================================================================
-    # НОВЫЙ АЛГОРИТМ: КОНКУРЕНТНОЕ ЗРЕНИЕ С ОГРАНИЧЕНИЕМ ЗОНЫ (ROI)
-    # =====================================================================
-    # Динамические рамки сканирования (зависят от размера окна)
     roi_w = int(screenshot_cv.shape[1] * 0.12)
     roi_h_up = int(screenshot_cv.shape[0] * 0.45)
     roi_h_down = int(screenshot_cv.shape[0] * 0.05)
@@ -52,7 +45,6 @@ def find_smart_door(window_rect, sct):
     button_elements = []
     
     for bx, by in attack_buttons:
-        # Вырезаем только зону строго вокруг/над кнопкой атаки
         x1 = max(0, bx - roi_w)
         x2 = min(screenshot_cv.shape[1], bx + roi_w)
         y1 = max(0, by - roi_h_up)
@@ -70,9 +62,8 @@ def find_smart_door(window_rect, sct):
             ("fire", "icon_fire.png")
         ]
         
-        # Примеряем все иконки и выбираем ту, у которой процент совпадения максимальный
         for elem, icon in elements_to_check:
-            tpl = imread_cyrillic(get_asset_path(icon))
+            tpl = imread_cyrillic(icon)
             if tpl is None: continue
             if tpl.shape[0] > roi.shape[0] or tpl.shape[1] > roi.shape[1]: continue
             
@@ -89,24 +80,37 @@ def find_smart_door(window_rect, sct):
             "score": highest_val
         })
         
-    # Выбираем приоритетную дверь (если их две)
     best_btn = None
     room_type = "unknown"
     
     if len(button_elements) == 1:
+        # Выбора нет. Идем в единственную дверь, даже если она "запрещена".
         best_btn = button_elements[0]["coords"]
         room_type = button_elements[0]["element"]
+        if engine.is_room_forbidden(room_type, current_state):
+             print(f"[НАВИГАЦИЯ] Комната {room_type.upper()} запрещена, но она единственная! Идем в бой.")
     else:
-        # Приоритет: Вода -> Смешанная -> Земля -> Огонь
         priority_map = {"water": 1, "mix": 2, "earth": 3, "fire": 4, "unknown": 99}
         button_elements.sort(key=lambda b: priority_map[b["element"]])
         
-        best_btn = button_elements[0]["coords"]
-        room_type = button_elements[0]["element"]
+        # =====================================================================
+        # ИНТЕЛЛЕКТУАЛЬНЫЙ ВЫБОР ДВЕРИ (С УЧЕТОМ ЗАПРЕТОВ)
+        # =====================================================================
+        for btn_data in button_elements:
+            r_type = btn_data["element"]
+            if not engine.is_room_forbidden(r_type, current_state):
+                best_btn = btn_data["coords"]
+                room_type = r_type
+                print(f"[НАВИГАЦИЯ] Выбрана комната {room_type.upper()} (проверка пройдена)")
+                break
+                
+        # Защита от дурака: если ОБЕ двери оказались под запретом
+        if best_btn is None:
+            best_btn = button_elements[0]["coords"]
+            room_type = button_elements[0]["element"]
+            print(f"[НАВИГАЦИЯ] ВНИМАНИЕ: Все доступные двери под запретом! Вынужденный вход в {room_type.upper()}")
+        # =====================================================================
 
-    # =====================================================================
-    # ЛОГИКА ВХОДА В КОМНАТУ
-    # =====================================================================
     if best_btn:
         local_x = best_btn[0]
         enemies = scan_enemy_team(window_rect, sct, ENEMY_TITANS, local_x)
@@ -129,15 +133,13 @@ def find_smart_door(window_rect, sct):
                 click_human(window_rect["left"] + target_btn[0], window_rect["top"] + target_btn[1])
                 local_x = target_btn[0] 
                 
-            pyautogui.moveTo(window_rect["left"] + 5, window_rect["top"] + 5, duration=0.0)
             time.sleep(0.15)
             
             if not get_match_loc('btn_attack.png', window_rect, sct, ACTION_THRESHOLD):
-                print(f"[КОМБАТ] Комната идентифицирована: {room_type.upper()} | Враги: {enemies}")
+                print(f"[КОМБАТ] Успешный вход. Комната: {room_type.upper()} | Враги: {enemies}")
                 return room_type, enemies
                 
     return None, []
-
 
 def execute_angus_ult(window_rect, sct):
     print("[АНГУС] Ожидаю загрузки боя (ищу блеклую кнопку Auto)...")
@@ -190,7 +192,6 @@ def execute_angus_ult(window_rect, sct):
     print("[АНГУС] УСПЕХ: Автобой ВЫКЛЮЧЕН.")
     return True
 
-
 def execute_rollback(window_rect, sct):
     print("[ОТКАТ] Запускаю протокол отката боя...")
     
@@ -199,30 +200,18 @@ def execute_rollback(window_rect, sct):
         return False
         
     print("[ОТКАТ] 'Ещё раз' нажата. Начинаю перехват паузы (до 3 попыток)...")
-    
-    safe_x = window_rect["left"] + 5
-    safe_y = window_rect["top"] + 5
     pause_found = False
     
     for attempt in range(1, 4):
-        print(f"[ОТКАТ] Итерация {attempt}/3: Возвращаю фокус окну...")
-        try:
-            windows = gw.getWindowsWithTitle("HeroWarsBot_Arena")
-            if windows:
-                win = windows[0]
-                if win.isMinimized: win.restore()
-                win.activate()
-                time.sleep(0.5)
-        except Exception as e:
-            print(f"[ОТКАТ] Ошибка фокуса: {e}")
+        print(f"[ОТКАТ] Итерация {attempt}/3: Ожидание меню паузы...")
 
         start_time = time.time()
         while time.time() - start_time < 15.0:
             coords = get_match_loc('btn_pause.png', window_rect, sct, 0.75) 
             if coords:
-                print("[ОТКАТ] Перехват: спамлю сверхбыстрые клики по паузе...")
+                print("[ОТКАТ] Перехват: спамлю сверхбыстрые клики по паузе через ADB...")
                 for _ in range(3):
-                    combat_fast_click(coords[0], coords[1], safe_x, safe_y)
+                    click_human(coords[0], coords[1])
                     time.sleep(0.05)
                 pause_found = True
                 break

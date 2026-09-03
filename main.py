@@ -10,9 +10,10 @@ import numpy as np
 import threading
 import queue
 import builtins 
-import ctypes 
+import ctypes # <-- ИСПОЛЬЗУЕМ CTYPES ВМЕСТО KEYBOARD
 
 # --- ПЕРЕОПРЕДЕЛЕНИЕ PRINT ДЛЯ GUI ---
+# Заставляем Python всегда сбрасывать буфер в терминал без задержек
 original_print = builtins.print
 def unbuffered_print(*args, **kwargs):
     kwargs.setdefault('flush', True)
@@ -35,25 +36,18 @@ GRACEFUL_STOP = False
 GLOBAL_TITAN_STATE = {}
 PENDING_RULE = None  
 
+# --- NON-BLOCKING STDIN LISTENER ---
 STDIN_QUEUE = queue.Queue()
 
-# =====================================================================
-# ИСПРАВЛЕНИЕ (ZOMBIE KILLER): Убиваем бота, если закрыли GUI крестиком
-# =====================================================================
 def stdin_listener():
-    try:
-        for line in sys.stdin:
-            STDIN_QUEUE.put(line.strip())
-    except Exception:
-        pass
-    
-    # Если мы выпали из цикла, значит труба связи с GUI разорвана!
-    print("[СИСТЕМА] Связь с GUI потеряна. Уничтожаю зомби-процесс...")
-    os._exit(0)
+    """Фоновый поток для чтения команд из GUI без блокировки ОС"""
+    for line in sys.stdin:
+        STDIN_QUEUE.put(line.strip())
 
 threading.Thread(target=stdin_listener, daemon=True).start()
 
 def wait_for_input():
+    """Ожидание ввода с обработкой прерываний"""
     while True:
         try:
             return STDIN_QUEUE.get(timeout=0.2)
@@ -72,25 +66,29 @@ def trigger_emergency_stop():
     print("\n[ЭКСТРЕННАЯ ОСТАНОВКА] Принудительное завершение (Ctrl+Shift+Q)!")
     os._exit(0) 
 
+# --- БЕЗОПАСНЫЙ (AV-FRIENDLY) ПЕРЕХВАТЧИК ГОРЯЧИХ КЛАВИШ ---
 def background_hotkey_listener():
+    """Пассивный поллинг клавиш через ctypes. Не триггерит антивирусы как keylogger."""
     VK_Q = 0x51
     VK_CONTROL = 0x11
     VK_SHIFT = 0x10
     
     while True:
+        # Проверяем нажата ли клавиша Q (младший бит игнорируем, проверяем старший)
         if ctypes.windll.user32.GetAsyncKeyState(VK_Q) & 0x8000:
             ctrl_pressed = ctypes.windll.user32.GetAsyncKeyState(VK_CONTROL) & 0x8000
             shift_pressed = ctypes.windll.user32.GetAsyncKeyState(VK_SHIFT) & 0x8000
             
             if ctrl_pressed and shift_pressed:
                 trigger_emergency_stop()
-                time.sleep(0.5) 
+                time.sleep(0.5) # Защита от двойного срабатывания
             elif ctrl_pressed:
                 trigger_graceful_stop()
                 time.sleep(0.5) 
-        time.sleep(0.05) 
+        time.sleep(0.05) # Спим, чтобы не грузить процессор (20 тиков в секунду)
 
 threading.Thread(target=background_hotkey_listener, daemon=True).start()
+# -----------------------------------------------------------
 
 def wait_for_focus():
     try:
@@ -102,45 +100,40 @@ def wait_for_focus():
                 current = gw.getActiveWindow()
                 if current is not None and WINDOW_TITLE in current.title:
                     print("[ИНФО] Окно снова активно. Продолжаем работу.")
+                    time.sleep(0.5) # Даем интерфейсу прогрузиться после разворачивания
                     break
     except Exception:
         pass
 
-# =====================================================================
-# ИСПРАВЛЕНИЕ: БРОНЕБОЙНАЯ РАБОТА С ALT И ФОКУСОМ (ЛЕЧИТ ERROR 2)
-# =====================================================================
 def force_window_focus():
+    import pyautogui # Импортируем прямо здесь для надежности
     try:
         windows = gw.getWindowsWithTitle(WINDOW_TITLE)
         if windows:
             win = windows[0]
             if win.isMinimized:
                 win.restore()
-                time.sleep(0.1)
             
-            hwnd = win._hWnd
+            # Хак: симуляция нажатия Alt обходит защиту Windows от кражи фокуса
+            pyautogui.press('alt') 
+            
             try:
-                ctypes.windll.user32.keybd_event(0x12, 0, 0, 0) # Alt press
-                time.sleep(0.05)
-                # Вызываем нативный API Windows вместо глючного win.activate()
-                ctypes.windll.user32.SetForegroundWindow(hwnd)
-            finally:
-                # ГАРАНТИЯ: Alt всегда будет отпущен, даже если код выше упадет!
-                ctypes.windll.user32.keybd_event(0x12, 0, 2, 0) # Alt release
-            
+                win.activate()
+            except Exception as e:
+                # Игнорируем знаменитый баг библиотеки pygetwindow (ошибка 0)
+                if "Error code from Windows: 0" in str(e):
+                    pass
+                else:
+                    print(f"[ОШИБКА ФОКУСА] {e}")
+                    
             time.sleep(0.5)
-            print("[ИНФО] Фокус принудительно возвращен окну игры.")
+            print("[ИНФО] Фокус принудительно отправлен окну игры.")
+            
+            # ЖЕСТКАЯ БЛОКИРОВКА: если фокус так и не переключился (например, мигает в панели задач), 
+            # заставляем бота ждать, пока юзер сам не кликнет на окно.
+            wait_for_focus()
     except Exception as e:
-        print(f"[ОШИБКА ФОКУСА] Не критично, ожидаем ручного фокуса. ({e})")
-
-print("=== Бот готов (Машина Состояний v16.0: Zombie Killer & Native Focus) ===")
-
-game_window = get_window_rect(WINDOW_TITLE)
-if not game_window:
-    print(f"[ФАТАЛЬНАЯ ОШИБКА] Окно '{WINDOW_TITLE}' не найдено!")
-    sys.exit(0)
-
-print("\n[СИСТЕМА] Бот запущен в работу.\n")
+        print(f"[ОШИБКА ФОКУСА] Общая ошибка: {e}")
 
 STATE = "HALLWAY"
 current_room = "unknown"
@@ -278,11 +271,11 @@ with mss.MSS() as sct:
                     force_window_focus() 
                     
                     if decision == "MANUAL":
-                        print("[ТАКТИКА] Включен ручной режим. Пауза.")
-                        LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
-                        with open("pause.flag", "w") as f: 
-                            f.write("1")
-                            
+                        print("\n[ТАКТИКА] Включен ручной режим. Бот ОТКЛЮЧАЕТСЯ!")
+                        print("[ИНФО] Окно игры свободно. Нажми 'Ещё раз' и переиграй бой руками.")
+                        # Жесткий стоп. Гарантирует, что бот НЕ нажмет кнопку "ОК"
+                        sys.exit(0)
+                        
                     elif decision == "STOP":
                         print("[ТАКТИКА] Экстренная остановка по команде пользователя.")
                         sys.exit(0)
@@ -292,6 +285,12 @@ with mss.MSS() as sct:
                         if ":" in decision:
                             team_str = decision.split(":")[1]
                             new_team = [t.strip() for t in team_str.split(",") if t.strip()]
+                            
+                            # ЗАЩИТА ОТ ФАНТОМНЫХ ПУСТЫХ ПАКОВ
+                            if not new_team:
+                                print("\n[ЗАЩИТА] Получен пустой пак. Игнорирую фантомную команду!")
+                                continue
+                                
                             print(f"\n[ТАКТИКА] Получен тестовый пак: {new_team}")
                             
                             before_battle_hp = {t: GLOBAL_TITAN_STATE.get(t, {}).get("hp", 100) for t in active_pack}
@@ -301,7 +300,8 @@ with mss.MSS() as sct:
                                 "enemies": CURRENT_ENEMIES,
                                 "team": new_team,
                                 "max_observed_loss": max_observed_loss,
-                                "before_state": before_battle_hp
+                                "before_state": before_battle_hp,
+                                "source": "telegram" if decision.startswith("ROLLBACK_TG") else "gui"
                             }
                             
                         log_battle(current_room, CURRENT_ENEMIES, active_pack, "ROLLBACK", tactic_result["reason"], team_status)
@@ -322,7 +322,19 @@ with mss.MSS() as sct:
                         
                 if tactic_result["action"] != "rollback": 
                     if PENDING_RULE:
-                        print(f"\n[SOS_TRIGGER] TEST_SUCCESS:{json.dumps(team_status)}")
+                        # ДЕЛАЕМ СКРИНШОТ УСПЕШНОГО БОЯ ДЛЯ ТЕЛЕГРАМА
+                        try:
+                            scr = np.array(sct.grab(game_window))
+                            cv2.imwrite("temp_test.png", cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
+                        except Exception as e:
+                            print(f"[СИСТЕМА] Ошибка сохранения скриншота теста: {e}")
+                            
+                        # ДОБАВЛЯЕМ ИСТОЧНИК В ОТВЕТ
+                        success_data = {
+                            "titans": team_status,
+                            "source": PENDING_RULE.get("source", "gui")
+                        }
+                        print(f"\n[SOS_TRIGGER] TEST_SUCCESS:{json.dumps(success_data)}")
                         sys.stdout.flush()
                         decision = wait_for_input()
                         force_window_focus()
@@ -343,7 +355,15 @@ with mss.MSS() as sct:
                             if ":" in decision:
                                 team_str = decision.split(":")[1]
                                 new_team = [t.strip() for t in team_str.split(",") if t.strip()]
+                                
+                                # ЗАЩИТА ОТ ФАНТОМНЫХ ПУСТЫХ ПАКОВ
+                                if not new_team:
+                                    print("\n[ЗАЩИТА] Получен пустой пак. Игнорирую фантомную команду!")
+                                    continue
+                                    
                                 PENDING_RULE["team"] = new_team 
+                                if decision.startswith("ROLLBACK_TG"):
+                                    PENDING_RULE["source"] = "telegram"
                             
                             if execute_rollback(game_window, sct):
                                 STATE = "HALLWAY"
@@ -381,24 +401,12 @@ with mss.MSS() as sct:
                             wait_for_input()
                             force_window_focus()
 
-            # Переключаемся в стейт безопасного прожатия ОК
-            STATE = "CLICK_OK"
-            continue
-            
-        # =================================================================
-        # СТЕЙТ: Безопасное прожатие кнопки "ОК"
-        # =================================================================
-        elif STATE == "CLICK_OK":
-            if find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
-                STATE = "HALLWAY"
-            else:
-                # Защита от ручного клика: если юзер сам нажал ОК или кнопка пропала
-                if get_match_loc('flag_enter.png', game_window, sct, 0.7) or get_match_loc('btn_attack.png', game_window, sct, 0.7):
-                    STATE = "HALLWAY"
+            find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD)
+            STATE = "HALLWAY"
             time.sleep(0.5) 
             continue
             
-        elif STATE == "HALLWAY":
+        if STATE == "HALLWAY":
             if os.path.exists("pause.flag"):
                 print("\n[МЯГКАЯ ПАУЗА] Бот ждет в коридоре...")
                 while os.path.exists("pause.flag"):
@@ -423,7 +431,8 @@ with mss.MSS() as sct:
                 continue 
                 
         elif STATE == "ROOM_SELECTION":
-            found_room, enemies = find_smart_door(game_window, sct)
+            # ИСПРАВЛЕНИЕ: Передаем актуальный GLOBAL_TITAN_STATE в боевой модуль!
+            found_room, enemies = find_smart_door(game_window, sct, GLOBAL_TITAN_STATE)
             if found_room:
                 current_room = found_room
                 CURRENT_ENEMIES = enemies
@@ -443,12 +452,60 @@ with mss.MSS() as sct:
                         current_room, CURRENT_ENEMIES, GLOBAL_TITAN_STATE
                     )
                 
+                # =================================================================
+                # УМНАЯ ОСТАНОВКА: СВЯЗЬ С GUI (ИНТЕРАКТИВНОЕ СПАСЕНИЕ)
+                # =================================================================
                 if target_pack == ["STOP"]:
-                    print(f"\n[ЛОГИКА] Сработало условие остановки: {reason}. Переход на паузу.")
-                    with open("pause.flag", "w") as f: 
-                        f.write("1")
-                    STATE = "HALLWAY"
-                    continue
+                    print(f"\n[АЛЕРТ] ФАТАЛЬНО: {reason}")
+                    
+                    # Отправляем SOS-сигнал в GUI со спец-типом NO_VALID_TEAM
+                    stop_data = {
+                        "type": "NO_VALID_TEAM",
+                        "room": current_room,
+                        "enemies": CURRENT_ENEMIES,
+                        "reason": reason
+                    }
+                    print(f"\n[SOS_TRIGGER] {json.dumps(stop_data)}")
+                    sys.stdout.flush()
+                    
+                    print("[ЛОГИКА] Ожидание команды от GUI (MANUAL или NEW_PACK)...")
+                    decision = wait_for_input()
+                    force_window_focus()
+                    
+                    if decision == "MANUAL":
+                        print("[ТАКТИКА] Включен ручной режим. Жду старта боя (кликните 'В бой' в игре)...")
+                        with open("pause.flag", "w") as f: 
+                            f.write("1")
+                        
+                        while os.path.exists("pause.flag"):
+                            wait_for_focus()
+                            # Если бой начался (появилась пауза или отключенный автобой)
+                            if get_match_loc('btn_round_auto_off.png', game_window, sct, 0.75) or get_match_loc('btn_round_auto_on.png', game_window, sct, 0.75):
+                                print("[ИНФО] Зафиксировано ручное начало боя. Снимаю паузу.")
+                                if os.path.exists("pause.flag"):
+                                    os.remove("pause.flag")
+                                STATE = "WAIT_FOR_OK" # Переходим к ожиданию победы
+                                break
+                            time.sleep(1)
+                        continue 
+                        
+                    elif decision.startswith("NEW_PACK"):
+                        # Парсим новый пак из GUI, например: "NEW_PACK: iyari, sigurd, moloch, hyperion, araji"
+                        team_str = decision.split(":")[1]
+                        new_team = [t.strip() for t in team_str.split(",") if t.strip()]
+                        print(f"\n[ТАКТИКА] Применен экстренный пак от пользователя: {new_team}")
+                        
+                        # Автоматически сохраняем этот пак в правила
+                        engine.learn_new_rule(current_room, CURRENT_ENEMIES, new_team)
+                        
+                        # Подменяем целевой пак и идем расставлять его!
+                        target_pack = new_team
+                        CURRENT_SPECIAL_ULT = "angus" if "angus" in target_pack else "auto"
+                        
+                    elif decision == "STOP":
+                        print("[ТАКТИКА] Экстренная остановка по команде пользователя.")
+                        sys.exit(0)
+                # =================================================================
                 
                 CURRENT_PACK = target_pack
                 print(f"\n[ТАКТИКА] Комната {current_room} | Пак: {target_pack} | Стратегия: {CURRENT_SPECIAL_ULT}")

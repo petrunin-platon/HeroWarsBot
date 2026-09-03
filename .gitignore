@@ -9,8 +9,6 @@ ENV/
 # === Секреты и локальные профили ===
 .env
 profile.yml
-make_backup.py
-pack_assets.py
 
 # === Логи, Метрики и Машинное обучение ===
 logs/
@@ -57,3 +55,5 @@ stats.json
 pause.flag
 temp_sos.png
 profile.yml
+pack_assets.py
+make_backup.py
