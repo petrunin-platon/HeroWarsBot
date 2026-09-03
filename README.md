@@ -86,6 +86,23 @@ The bot's interface will launch successfully, but **it will NOT be able to play*
 To protect this project from unfair commercial copying and resale, the `assets/` directory (which contains the OpenCV image templates for game UI, buttons, and Titan avatars) has been **deliberately excluded** from the public release. 
 Because the bot relies heavily on Computer Vision, it will be "blind" without these files. You will need to manually capture screenshots of the game elements and place them in your local `assets/` folder, or contact the developer for the resource pack.
 
+## ⚠️ Important Notes & Troubleshooting
+
+### 🛡️ Antivirus False Positives (Windows Defender)
+Because this bot utilizes low-level Windows API calls (`ctypes`), screen capturing, and ADB (Android Debug Bridge) to automate processes, **Windows Defender or other antivirus software may occasionally flag the compiled `.exe` file as a threat**. 
+* This is a very common **false positive** for compiled Python RPA (Robotic Process Automation) tools.
+* If the bot gets blocked from launching or is automatically removed by the system, please **add the bot's executable or folder to your antivirus exceptions/exclusions list**.
+
+### 📱 Clicks Not Registering on the Phone?
+If the bot successfully connects, opens the game, but **fails to click** or swipe anything, the issue is almost always related to your Android permissions, not the bot itself.
+
+To fix this, go to your phone's **Developer Options** and ensure the following are enabled:
+* **USB Debugging:** Must be enabled.
+* **USB Debugging (Security settings):** Must be enabled. *This is the most critical step—it explicitly allows ADB to simulate taps and swipes on your screen.*
+* **Install via USB:** (On some devices like Xiaomi/MIUI) Must be enabled.
+
+> **Note:** Depending on your phone manufacturer (Realme, Xiaomi, Oppo, Poco, etc.), the "Security settings" toggle might be named slightly differently, but it is always located right under standard USB Debugging. You must grant the system permission to simulate input events.
+
 ## 📄 License
 
 This project is licensed under the **PolyForm Noncommercial 1.0.0** License. 
