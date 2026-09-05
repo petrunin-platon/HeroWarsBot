@@ -190,14 +190,22 @@ class RulesEngine:
         is_rescue = False
         
         if before_state:
+            # Находим всех раненых титанов
             wounded = {t: hp for t, hp in before_state.items() if hp < 65}
             if wounded:
+                # Находим самого пострадавшего
                 worst_titan = min(wounded.items(), key=lambda x: x[1])[0]
-                threshold = 65 
-                new_rule["condition"] = {"titan_hp_below": {worst_titan: threshold}}
-                new_rule["name"] = f"Авто-отхил ({worst_titan} < {threshold}%)"
-                is_rescue = True
+                
+                # КРИТИЧЕСКИЙ ФИКС: Является ли это правилом отхила?
+                # Только если этот самый раненый титан ПРИСУТСТВУЕТ в новом паке!
+                if worst_titan in team:
+                    threshold = 65 
+                    new_rule["condition"] = {"titan_hp_below": {worst_titan: threshold}}
+                    new_rule["name"] = f"Авто-отхил ({worst_titan} < {threshold}%)"
+                    is_rescue = True
 
+        # Если это не спасательная операция (или раненого титана убрали из пака)
+        # значит, это тактический Анти-пак против конкретных врагов.
         if not is_rescue:
             new_rule["condition"] = {"enemies_contain": enemies}
             new_rule["name"] = f"Анти-пак (Тактика) - {len(data['rules']) + 1}"

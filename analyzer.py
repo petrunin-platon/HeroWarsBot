@@ -157,12 +157,16 @@ def scan_team_health(window_rect, sct, current_pack):
             hp_perc = min(int((hp_w / max_bar_width) * 100), 100)
             ep_perc = min(int((ep_w / max_bar_width) * 100), 100)
             
+            # =====================================================================
+            # ФИКС ЛОГИКИ СМЕРТИ: Нет зеленой полоски = Титан мертв!
+            # =====================================================================
             if hp_perc == 0:
-                team_status[titan] = {"hp": hp_perc, "energy": ep_perc, "status": "ЖИВ"}
-                print(f" ---> {titan.upper()}: ЖИВ (ХП не прочиталось)")
+                team_status[titan] = {"hp": 0, "energy": 0, "status": "МЕРТВ"}
+                print(f" ---> {titan.upper()}: [МЕРТВ] (ХП = 0%)")
             else:
                 team_status[titan] = {"hp": hp_perc, "energy": ep_perc, "status": "ЖИВ"}
                 print(f" ---> {titan.upper()}: ХП {hp_perc}%, Энергия {ep_perc}%")
+            # =====================================================================
                 
         else:
             team_status[titan] = {"hp": 0, "energy": 0, "status": "МЕРТВ"}
