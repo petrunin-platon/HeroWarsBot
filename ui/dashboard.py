@@ -14,6 +14,7 @@ import pygetwindow as gw
 import pyautogui
 from environment import launch_scrcpy, calibrate_window
 from i18n import get_text
+from config import PAUSE_FLAG_FILE, GAME_WINDOW_TITLE # <-- ИМПОРТ КОНСТАНТ ИЗ КОНФИГА
 
 class DashboardFrame(ctk.CTkFrame):
     def __init__(self, master, controller, **kwargs):
@@ -21,6 +22,7 @@ class DashboardFrame(ctk.CTkFrame):
         self.controller = controller 
         self.bot_process = None
         self.action_state = "start"
+        self.scrcpy_process = None 
 
         self.grid_columnconfigure((0, 1), weight=1)
         self.grid_rowconfigure(3, weight=1)
@@ -42,6 +44,9 @@ class DashboardFrame(ctk.CTkFrame):
         
         self.btn_restart = ctk.CTkButton(phone_frame, text="", width=110, height=24, fg_color="#444444", hover_color="#555555", command=self.restart_scrcpy)
         self.btn_restart.pack(side="left", padx=5, pady=5)
+        
+        self.btn_reset_size = ctk.CTkButton(phone_frame, text="", width=110, height=24, fg_color="#17a2b8", hover_color="#138496", command=self.reset_window_size)
+        self.btn_reset_size.pack(side="left", padx=5, pady=5)
 
         self.btn_launch_scrcpy = ctk.CTkButton(self, text="", height=40, command=self.launch_phone)
         self.btn_launch_scrcpy.grid(row=1, column=0, padx=(5, 5), pady=(5, 5), sticky="ew")
@@ -59,7 +64,7 @@ class DashboardFrame(ctk.CTkFrame):
         self.log_box.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 10), padx=5)
         
         self.setup_readonly_and_menu(self.log_box)
-        self.log_box.insert("end", "[СИСТЕМА] Интерфейс загружен. Ожидание подключения...\n")
+        self.log_box.insert("end", "[СИСТЕМА] Интерфейс загружен. Ожидание подключения... (Версия 1.5.1)\n")
 
         log_footer = ctk.CTkFrame(self, fg_color="transparent")
         log_footer.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 15), padx=5)
@@ -112,6 +117,9 @@ class DashboardFrame(ctk.CTkFrame):
         self.btn_sleep.configure(text=get_text(lang, "dash_btn_sleep"))
         self.btn_restart.configure(text=get_text(lang, "dash_btn_restart"))
         
+        reset_text = get_text(lang, "dash_btn_reset_size")
+        self.btn_reset_size.configure(text=reset_text if reset_text != "dash_btn_reset_size" else ("Сброс размера" if lang == "RU" else "Reset Size"))
+        
         self.btn_launch_scrcpy.configure(text=get_text(lang, "dash_btn_connect"))
 
         if self.action_state == "start":
@@ -121,7 +129,7 @@ class DashboardFrame(ctk.CTkFrame):
         elif self.action_state == "continue":
             self.btn_action.configure(text=get_text(lang, "dash_btn_continue"))
 
-        if os.path.exists("pause.flag"):
+        if os.path.exists(PAUSE_FLAG_FILE):
             self.btn_pause.configure(text=get_text(lang, "dash_btn_unpause"))
         else:
             self.btn_pause.configure(text=get_text(lang, "dash_btn_pause"))
@@ -136,7 +144,7 @@ class DashboardFrame(ctk.CTkFrame):
     def sleep_phone(self):
         self.append_log("[СИСТЕМА] Выключаю физический дисплей (игра продолжит работать)...\n")
         try:
-            windows = gw.getWindowsWithTitle("HeroWarsBot_Arena")
+            windows = gw.getWindowsWithTitle(GAME_WINDOW_TITLE)
             if windows:
                 win = windows[0]
                 if win.isMinimized: win.restore()
@@ -151,10 +159,14 @@ class DashboardFrame(ctk.CTkFrame):
 
     def restart_scrcpy(self):
         self.append_log("[ADB] Перезапуск scrcpy...\n")
-        # ТИХОЕ УБИЙСТВО ПРОЦЕССА БЕЗ КОНСОЛИ
-        subprocess.run(["taskkill", "/f", "/im", "scrcpy.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
+        if self.scrcpy_process and self.scrcpy_process.poll() is None:
+            self.scrcpy_process.terminate()
         time.sleep(1)
         self.launch_phone()
+
+    def reset_window_size(self):
+        self.append_log("[GUI] Сброс размеров окна к эталонным (1606x748)...\n")
+        calibrate_window(GAME_WINDOW_TITLE, 1606, 748)
 
     def append_log(self, text):
         self.log_box.insert("end", text)
@@ -200,14 +212,15 @@ class DashboardFrame(ctk.CTkFrame):
             while True:
                 time.sleep(2)
                 try:
-                    output = subprocess.check_output('tasklist /FI "IMAGENAME eq scrcpy.exe"', text=True, creationflags=0x08000000)
-                    if "scrcpy.exe" not in output:
+                    windows = gw.getWindowsWithTitle(GAME_WINDOW_TITLE)
+                    if not windows:
                         self.action_state = "start"
                         lang = getattr(self.controller, 'current_lang', 'RU')
                         self.after(0, lambda: self.btn_action.configure(text=get_text(lang, "dash_btn_start"), state="disabled", fg_color="transparent", border_width=1, text_color="gray"))
                         self.after(0, lambda: self.btn_launch_scrcpy.configure(state="normal"))
                         if self.bot_process:
-                            self.stop_bot()
+                            # БЕЗОПАСНАЯ ДЕЛЕГАЦИЯ ГЛАВНОМУ ПОТОКУ (ЗАЩИТА ОТ ТИХОГО КРАША)
+                            self.after(0, self.stop_bot)
                         break
                 except Exception:
                     break
@@ -215,17 +228,57 @@ class DashboardFrame(ctk.CTkFrame):
 
     def launch_phone(self):
         self.btn_launch_scrcpy.configure(state="disabled")
-        # ТИХОЕ УБИЙСТВО ПРОЦЕССА БЕЗ КОНСОЛИ
-        subprocess.run(["taskkill", "/f", "/im", "scrcpy.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
+        
+        if self.scrcpy_process and self.scrcpy_process.poll() is None:
+            self.scrcpy_process.terminate()
+            
         self.append_log("[СИСТЕМА] Вызов scrcpy... Открой игру на телефоне и зайди в коридор.\n")
+        
         def task():
-            if launch_scrcpy("HeroWarsBot_Arena"):
-                self.after(0, lambda: self.btn_action.configure(state="normal", fg_color="#28a745", border_width=0, text_color="white"))
-                self.start_scrcpy_monitor()
-            else:
-                self.after(0, lambda: self.append_log("[ОШИБКА] Не удалось запустить scrcpy!\n"))
+            try:
+                # Делегируем системный запуск обратно в модуль environment
+                result = launch_scrcpy(GAME_WINDOW_TITLE)
+                
+                if result:
+                    # Если запустился новый процесс - берем его под контроль
+                    if result != "ALREADY_RUNNING":
+                        self.scrcpy_process = result
+                        
+                    self.after(0, lambda: self.btn_action.configure(state="normal", fg_color="#28a745", border_width=0, text_color="white"))
+                    self.start_scrcpy_monitor()
+                else:
+                    self.after(0, lambda: self.append_log("[ОШИБКА] Окно scrcpy не появилось или утилита не найдена!\n"))
+                    self.after(0, lambda: self.btn_launch_scrcpy.configure(state="normal"))
+                    
+            except Exception as e:
+                self.after(0, lambda: self.append_log(f"[ОШИБКА] Не удалось запустить scrcpy: {e}\n"))
                 self.after(0, lambda: self.btn_launch_scrcpy.configure(state="normal"))
+
         threading.Thread(target=task, daemon=True).start()
+
+    def _cleanup_process(self, proc):
+        """Безопасно завершает процесс, закрывает дескрипторы и предотвращает появление зомби."""
+        if proc and proc.poll() is None:
+            proc.terminate()
+            
+            # Явно закрываем файловые дескрипторы для предотвращения утечек
+            if hasattr(proc, 'stdin') and proc.stdin:
+                try: proc.stdin.close()
+                except: pass
+                
+            if hasattr(proc, 'stdout') and proc.stdout:
+                try: proc.stdout.close()
+                except: pass
+                
+            # Ждем завершения, чтобы процесс не стал "зомби". Если завис - убиваем жестко.
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+    def shutdown_processes(self):
+        self._cleanup_process(self.bot_process)
+        self._cleanup_process(self.scrcpy_process)
 
     def handle_action_btn(self):
         if self.action_state == "start": 
@@ -241,7 +294,7 @@ class DashboardFrame(ctk.CTkFrame):
         self.btn_stop.configure(state="normal", fg_color="#dc3545", border_width=0, text_color="white")
         
         self.append_log("[СИСТЕМА] Калибровка окна игры...\n")
-        calibrate_window("HeroWarsBot_Arena", 1606, 748)
+        calibrate_window(GAME_WINDOW_TITLE, 1606, 748)
         
         bot_env = os.environ.copy()
         bot_env["HEROWARS_LANG"] = lang
@@ -274,58 +327,66 @@ class DashboardFrame(ctk.CTkFrame):
 
     def monitor_bot_output(self):
         while self.bot_process and self.bot_process.poll() is None:
-            line = self.bot_process.stdout.readline()
-            if line:
-                if "[SOS_TRIGGER]" in line:
-                    if "TEST_SUCCESS:" in line:
-                        json_str = line.split("TEST_SUCCESS:")[1].strip()
-                        try: 
-                            test_data = json.loads(json_str)
-                            if isinstance(test_data, dict) and "source" in test_data:
-                                titan_data = test_data["titans"]
-                                source = test_data["source"]
-                            else:
-                                titan_data = test_data
-                                source = "gui"
-                        except: 
-                            titan_data = {}
+            try:
+                line = self.bot_process.stdout.readline()
+            except Exception as e:
+                # Перехватываем системные ошибки кодировки или битые байты
+                error_msg = f"\n[ОШИБКА КРИТИЧЕСКАЯ] Сбой чтения консоли бота: {e}\nПринудительная остановка процесса...\n"
+                self.after(0, lambda msg=error_msg: self.append_log(msg))
+                self.after(0, self.stop_bot)
+                break
+                
+            if not line:
+                break
+                
+            if "[SOS_TRIGGER]" in line:
+                if "TEST_SUCCESS:" in line:
+                    json_str = line.split("TEST_SUCCESS:")[1].strip()
+                    try: 
+                        test_data = json.loads(json_str)
+                        if isinstance(test_data, dict) and "source" in test_data:
+                            titan_data = test_data["titans"]
+                            source = test_data["source"]
+                        else:
+                            titan_data = test_data
                             source = "gui"
-                        self.after(0, lambda td=titan_data, src=source: self.trigger_test_validation(td, src))
-                    else:
-                        json_str = line.split("[SOS_TRIGGER]")[1].strip()
-                        try: 
-                            sos_data = json.loads(json_str)
-                            if sos_data.get("type") == "NO_VALID_TEAM":
-                                self.after(0, lambda sd=sos_data: self.trigger_sos_dialog(sd))
-                            elif "titans" in sos_data:
-                                titan_data = sos_data["titans"]
-                                is_manual = sos_data.get("is_manual", False)
-                                self.after(0, lambda td=titan_data, im=is_manual: self.trigger_intervention(td, im))
-                            else:
-                                titan_data = sos_data
-                                is_manual = False
-                                self.after(0, lambda td=titan_data, im=is_manual: self.trigger_intervention(td, im))
-                        except: 
-                            titan_data = {"Неизвестно": 0}
+                    except: 
+                        titan_data = {}
+                        source = "gui"
+                    self.after(0, lambda td=titan_data, src=source: self.trigger_test_validation(td, src))
+                else:
+                    json_str = line.split("[SOS_TRIGGER]")[1].strip()
+                    try: 
+                        sos_data = json.loads(json_str)
+                        if sos_data.get("type") == "NO_VALID_TEAM":
+                            self.after(0, lambda sd=sos_data: self.trigger_sos_dialog(sd))
+                        elif "titans" in sos_data:
+                            titan_data = sos_data["titans"]
+                            is_manual = sos_data.get("is_manual", False)
+                            self.after(0, lambda td=titan_data, im=is_manual: self.trigger_intervention(td, im))
+                        else:
+                            titan_data = sos_data
                             is_manual = False
                             self.after(0, lambda td=titan_data, im=is_manual: self.trigger_intervention(td, im))
-                    continue
-                if "[ПАУЗА ОТЛАДКИ]" in line:
-                    self.action_state = "continue"
-                    lang = getattr(self.controller, 'current_lang', 'RU')
-                    self.after(0, lambda: self.btn_action.configure(text=get_text(lang, "dash_btn_continue"), state="normal", fg_color="#28a745", border_width=0, text_color="white"))
+                    except: 
+                        titan_data = {"Неизвестно": 0}
+                        is_manual = False
+                        self.after(0, lambda td=titan_data, im=is_manual: self.trigger_intervention(td, im))
+                continue
                 
-                self.after(0, self.append_log, line)
-                    
+            if "[ПАУЗА ОТЛАДКИ]" in line:
+                self.action_state = "continue"
+                lang = getattr(self.controller, 'current_lang', 'RU')
+                self.after(0, lambda: self.btn_action.configure(text=get_text(lang, "dash_btn_continue"), state="normal", fg_color="#28a745", border_width=0, text_color="white"))
+            
+            self.after(0, self.append_log, line)
+                
         self.after(0, lambda: self.append_log("\n[СИСТЕМА] Процесс бота завершен.\n"))
         self.after(0, self.reset_buttons)
 
     def trigger_sos_dialog(self, sos_data):
-        # ИМПОРТИРУЕМ НОВЫЙ ДИАЛОГ ВМЕСТО СТАРОГО
         from ui.intervention_dialog import InterventionDialog
-        
         def on_decision(command):
-            # Жесткий стоп, чтобы бот точно не нажал "ОК"
             if command in ["manual", "stop"]:
                 self.append_log(f"\n[СИСТЕМА] Выбрано: {command.upper()}. Мгновенная остановка!\n")
                 self.stop_bot()
@@ -333,15 +394,10 @@ class DashboardFrame(ctk.CTkFrame):
                 if self.bot_process and self.bot_process.poll() is None:
                     self.bot_process.stdin.write(command + "\n")
                     self.bot_process.stdin.flush()
-                    
-        # Так как это SOS по отсутствию правил (ХП не считывалось), передаем пустой словарь.
-        # И ГЛАВНОЕ: передаем can_rollback=False, чтобы скрыть кнопку отката!
         InterventionDialog(self.controller, titan_data={}, callback=on_decision, is_manual=False, can_rollback=False)
 
     def trigger_test_validation(self, titan_data, source="gui"):
         lang = getattr(self.controller, 'current_lang', 'RU')
-        
-        # ЕСЛИ ИСТОЧНИК - ТЕЛЕГРАМ, ОКНО НА ПК НЕ РИСУЕМ, ОТПРАВЛЯЕМ СРАЗУ В ТГ
         if source == "telegram":
             import yaml
             from telegram_agent import TelegramAgent
@@ -380,9 +436,8 @@ class DashboardFrame(ctk.CTkFrame):
                 msg_id = agent.send_test_result("temp_test.png", msg)
                 if msg_id:
                     agent.start_polling(msg_id, on_tg_decision)
-                return # Выходим, чтобы графическое окно на ПК не появилось
+                return 
 
-        # СТАНДАРТНАЯ ОТРИСОВКА ОКНА ДЛЯ ПК (если источник GUI)
         from ui.team_selector import TeamSelectorDialog
         dialog = ctk.CTkToplevel(self)
         dialog.title(get_text(lang, "test_title"))
@@ -449,11 +504,9 @@ class DashboardFrame(ctk.CTkFrame):
             elif decision_text.startswith("rb_custom:"):
                 team_str = decision_text.split(":")[1]
                 if self.bot_process and self.bot_process.poll() is None:
-                    # Помечаем команду как ROLLBACK_TG, чтобы ядро знало, что это из ТГ
                     self.bot_process.stdin.write(f"ROLLBACK_TG:{team_str}\n")
                     self.bot_process.stdin.flush()
                     
-            # Мгновенный жесткий стоп для ручного вмешательства
             elif decision_text in ["manual", "stop"]:
                 self.append_log(f"\n[СИСТЕМА] Выбран {decision_text.upper()}. Мгновенная остановка бота для ручного вмешательства!\n")
                 self.stop_bot()
@@ -467,20 +520,21 @@ class DashboardFrame(ctk.CTkFrame):
 
     def toggle_pause(self):
         lang = getattr(self.controller, 'current_lang', 'RU')
-        if os.path.exists("pause.flag"):
-            os.remove("pause.flag")
+        if os.path.exists(PAUSE_FLAG_FILE):
+            os.remove(PAUSE_FLAG_FILE)
             self.btn_pause.configure(text=get_text(lang, "dash_btn_pause"))
             self.append_log("[GUI] Сигнал 'Снять паузу' отправлен боту.\n")
         else:
-            with open("pause.flag", "w") as f: f.write("1")
+            with open(PAUSE_FLAG_FILE, "w") as f: f.write("1")
             self.btn_pause.configure(text=get_text(lang, "dash_btn_unpause"))
             self.append_log("[GUI] Сигнал 'Мягкая пауза' отправлен. Бот остановится перед следующей дверью.\n")
 
     def stop_bot(self):
         if self.bot_process:
-            self.bot_process.terminate()
+            self._cleanup_process(self.bot_process)
+            self.bot_process = None
             self.append_log("[GUI] ЭКСТРЕННЫЙ СТОП. Процесс убит.\n")
-            if os.path.exists("pause.flag"): os.remove("pause.flag")
+            if os.path.exists(PAUSE_FLAG_FILE): os.remove(PAUSE_FLAG_FILE)
             self.reset_buttons()
 
     def reset_buttons(self):

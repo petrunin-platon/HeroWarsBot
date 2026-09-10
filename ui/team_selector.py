@@ -32,7 +32,7 @@ class TeamSelectorDialog(ctk.CTkToplevel):
         self.title(get_text(lang, "ts_title"))
         self.geometry("900x500")
         self.resizable(False, False)
-        self.attributes("-topmost", True)
+        self.transient(master)
         
         self.context = context 
         self.protocol("WM_DELETE_WINDOW", self.on_closing) 

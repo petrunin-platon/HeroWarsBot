@@ -17,7 +17,6 @@ class RulesEngine:
                 self.global_thresholds = data.get("global_thresholds", {}) 
 
     def get_global_setting(self, key, default=None):
-        self.load_profile()
         if key in self.global_thresholds:
             return self.global_thresholds[key]
         return self.global_settings.get(key, default)

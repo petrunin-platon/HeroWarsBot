@@ -55,8 +55,8 @@ class TelegramAgent:
                 self.last_update_id = resp["result"][-1]["update_id"]
                 # Отправляем подтверждение, что мы всё прочитали
                 requests.get(f"{self.base_url}/getUpdates?offset={self.last_update_id + 1}&timeout=1")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[TELEGRAM] Ошибка очистки истории (проверьте интернет или токен): {e}")
 
     def delete_message(self, msg_id):
         requests.post(f"{self.base_url}/deleteMessage", json={"chat_id": self.chat_id, "message_id": msg_id})
@@ -97,14 +97,15 @@ class TelegramAgent:
         url = f"{self.base_url}/sendPhoto"
         
         if is_manual or not can_rollback:
-            btn_middle = {"text": get_text(self.lang, "tg_bot_stop"), "callback_data": "stop"}
+            btn_middle = [{"text": "🛑 " + get_text(self.lang, "tg_bot_stop"), "callback_data": "stop"}]
         else:
-            btn_middle = {"text": get_text(self.lang, "tg_bot_rollback"), "callback_data": "rollback"}
+            btn_middle = [{"text": "🔄 " + get_text(self.lang, "tg_bot_rollback"), "callback_data": "rollback"}]
 
         reply_markup = {
             "inline_keyboard": [
-                [{"text": get_text(self.lang, "tg_bot_manual"), "callback_data": "manual"}, btn_middle],
-                [{"text": get_text(self.lang, "tg_bot_ignore"), "callback_data": "ignore"}]
+                [{"text": "🎮 " + get_text(self.lang, "tg_bot_manual"), "callback_data": "manual"}],
+                btn_middle,
+                [{"text": "➡️ " + get_text(self.lang, "tg_bot_ignore"), "callback_data": "ignore"}]
             ]
         }
 
@@ -124,8 +125,8 @@ class TelegramAgent:
         
         reply_markup = {
             "inline_keyboard": [
-                [{"text": get_text(self.lang, "test_btn_confirm"), "callback_data": "test_confirm"}],
-                [{"text": get_text(self.lang, "test_btn_rollback"), "callback_data": "test_retry"}]
+                [{"text": "✅ " + get_text(self.lang, "test_btn_confirm"), "callback_data": "test_confirm"}],
+                [{"text": "🔄 " + get_text(self.lang, "test_btn_rollback"), "callback_data": "test_retry"}]
             ]
         }
         
@@ -140,6 +141,11 @@ class TelegramAgent:
         return None
 
     def start_polling(self, message_id, callback):
+        # Защита от утечки потоков и дублирования запросов (Race Condition / API Ban)
+        if self.is_active:
+            print("[TELEGRAM] Поллинг уже запущен, игнорирую повторный вызов.")
+            return
+            
         self.is_active = True
         self.main_msg_id = message_id
 
@@ -175,7 +181,7 @@ class TelegramAgent:
 
                                 elif action == "test_confirm":
                                     self.is_active = False
-                                    btn_text = get_text(self.lang, "tg_bot_selected").format(action="CONFIRM")
+                                    btn_text = "✅ " + get_text(self.lang, "tg_bot_selected").format(action="CONFIRM")
                                     self.update_keyboard(self.main_msg_id, {"inline_keyboard": [[{"text": btn_text, "callback_data": "noop"}]]})
                                     callback("CONFIRM")
                                     return
@@ -183,7 +189,7 @@ class TelegramAgent:
                                 elif action == "confirm_pack":
                                     self.tg_state = "IDLE"
                                     self.delete_message(self.prompt_msg_id)
-                                    kb = {"inline_keyboard": [[{"text": get_text(self.lang, "tg_bot_rollback_ok"), "callback_data": "noop"}]]}
+                                    kb = {"inline_keyboard": [[{"text": "✅ " + get_text(self.lang, "tg_bot_rollback_ok"), "callback_data": "noop"}]]}
                                     self.update_keyboard(self.main_msg_id, kb)
                                     self.is_active = False
                                     callback(f"rb_custom:{','.join(self.temp_pack)}")
@@ -198,7 +204,7 @@ class TelegramAgent:
 
                                 elif action in ["manual", "ignore", "stop"]:
                                     self.is_active = False
-                                    btn_text = get_text(self.lang, "tg_bot_selected").format(action=action.upper())
+                                    btn_text = "✅ " + get_text(self.lang, "tg_bot_selected").format(action=action.upper())
                                     kb = {"inline_keyboard": [[{"text": btn_text, "callback_data": "noop"}]]}
                                     self.update_keyboard(self.main_msg_id, kb)
                                     callback(action)
@@ -221,8 +227,8 @@ class TelegramAgent:
                                         txt = get_text(self.lang, "tg_bot_pack_confirm").format(names=names)
                                         kb = {
                                             "inline_keyboard": [
-                                                [{"text": get_text(self.lang, "tg_bot_btn_confirm"), "callback_data": "confirm_pack"}],
-                                                [{"text": get_text(self.lang, "tg_bot_btn_retry"), "callback_data": "retry_pack"}]
+                                                [{"text": "✅ " + get_text(self.lang, "tg_bot_btn_confirm"), "callback_data": "confirm_pack"}],
+                                                [{"text": "🔄 " + get_text(self.lang, "tg_bot_btn_retry"), "callback_data": "retry_pack"}]
                                             ]
                                         }
                                         self.prompt_msg_id = self.send_message(txt, kb)
@@ -231,7 +237,13 @@ class TelegramAgent:
                                         txt = get_text(self.lang, "tg_bot_err_count").format(count=len(parsed), names=names_str)
                                         self.prompt_msg_id = self.send_message(txt)
 
-                except Exception: pass
+                except Exception as e:
+                    # ЭТАЛОННАЯ ЗАЩИТА ОТ API BAN (МЕХАНИЗМ BACKOFF)
+                    print(f"[TELEGRAM] Сетевая ошибка поллинга (сбой связи/API): {e}")
+                    print("[TELEGRAM] Включаю механизм защиты от бана. Принудительная пауза 5 сек...")
+                    time.sleep(5)
+                
+                # Штатная пауза между успешными запросами
                 time.sleep(1)
 
         threading.Thread(target=poll, daemon=True).start()

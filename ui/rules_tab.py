@@ -2,10 +2,11 @@
 import customtkinter as ctk
 import os
 import yaml
+import shutil  # Импортируем модуль для создания теневых бэкапов
 from ui.team_selector import TeamSelectorDialog
 from ui.rule_builder_dialog import RuleBuilderDialog
 from ui.active_rules_dialog import ActiveRulesDialog
-from ui.telegram_dialog import TelegramDialog # ИМПОРТ НОВОГО ОКНА
+from ui.telegram_dialog import TelegramDialog
 from i18n import get_text
 
 class RulesFrame(ctk.CTkFrame):
@@ -69,7 +70,6 @@ class RulesFrame(ctk.CTkFrame):
         self.opt_reset_hour = ctk.CTkOptionMenu(self.time_frame, values=hours_list, width=90)
         self.opt_reset_hour.grid(row=0, column=1, padx=10)
 
-        # НОВЫЙ БЛОК: Ангус + Кнопка Telegram в одной строке
         self.misc_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.misc_frame.grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 10))
 
@@ -91,8 +91,16 @@ class RulesFrame(ctk.CTkFrame):
         self.btn_show_rules = ctk.CTkButton(self, text="", fg_color="#444444", hover_color="#555555", command=self.open_active_rules)
         self.btn_show_rules.grid(row=10, column=0, columnspan=3, pady=(20, 5), sticky="ew")
 
-        self.btn_save_rules = ctk.CTkButton(self, text="", fg_color="#6f42c1", hover_color="#59359a", command=self.save_profile)
-        self.btn_save_rules.grid(row=11, column=0, columnspan=3, pady=(5, 10), sticky="ew")
+        # НОВЫЙ БЛОК: Разделение нижнего ряда на две кнопки (Сохранить и Сбросить)
+        self.footer_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.footer_frame.grid(row=11, column=0, columnspan=3, pady=(5, 10), sticky="ew")
+        self.footer_frame.grid_columnconfigure((0, 1), weight=1)
+
+        self.btn_save_rules = ctk.CTkButton(self.footer_frame, text="", fg_color="#6f42c1", hover_color="#59359a", command=self.save_profile)
+        self.btn_save_rules.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+
+        self.btn_restore = ctk.CTkButton(self.footer_frame, text="", fg_color="#dc3545", hover_color="#c82333", command=self.restore_profile)
+        self.btn_restore.grid(row=0, column=1, padx=(5, 0), sticky="ew")
 
         self.load_profile_to_gui()
 
@@ -109,6 +117,12 @@ class RulesFrame(ctk.CTkFrame):
         self.lbl_title_rooms.configure(text=get_text(lang, "rules_title_rooms"))
         self.btn_show_rules.configure(text=get_text(lang, "rules_btn_active"))
         self.btn_save_rules.configure(text=get_text(lang, "rules_btn_save"))
+        
+        # Подстраховка для новой кнопки, если ключа еще нет в i18n
+        restore_txt = get_text(lang, "rules_btn_restore")
+        if restore_txt == "rules_btn_restore":
+            restore_txt = "Восстановить / Сброс" if lang == "RU" else "Restore / Reset"
+        self.btn_restore.configure(text=restore_txt)
 
         values = [get_text(lang, "goal_titanite"), get_text(lang, "goal_rooms"), get_text(lang, "goal_floors"), get_text(lang, "goal_time")]
         self.opt_goal.configure(values=values)
@@ -168,12 +182,17 @@ class RulesFrame(ctk.CTkFrame):
     def get_yaml_team(self, room_type):
         path = f"rules/{room_type}.yml"
         if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f) or {}
-                team = data.get("default_team", [])
-                if team:
-                    lang = getattr(self.controller, 'current_lang', 'RU')
-                    return ", ".join([get_text(lang, f"titan_{t}") for t in team])
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f) or {}
+            except (yaml.YAMLError, Exception):
+                self.controller.frames["dash"].append_log(f"[ОШИБКА] Не удалось загрузить дефолтный пак: {path} поврежден.\n")
+                data = {}
+                
+            team = data.get("default_team", [])
+            if team:
+                lang = getattr(self.controller, 'current_lang', 'RU')
+                return ", ".join([get_text(lang, f"titan_{t}") for t in team])
         return get_text(getattr(self.controller, 'current_lang', 'RU'), "rules_no_pack")
 
     def set_default_pack(self, room_type):
@@ -194,14 +213,40 @@ class RulesFrame(ctk.CTkFrame):
         file_path = f"rules/{room_type}.yml"
         data = {"rules": []}
         if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f: data = yaml.safe_load(f) or {}
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f: 
+                    data = yaml.safe_load(f) or {}
+            except yaml.YAMLError as e:
+                mark = getattr(e, 'problem_mark', None)
+                err_loc = f" (Строка: {mark.line + 1})" if mark else ""
+                self.controller.frames["dash"].append_log(f"[ОШИБКА] Сохранение прервано: {file_path} сломан{err_loc}!\n")
+                return
+            except Exception:
+                self.controller.frames["dash"].append_log(f"[ОШИБКА] Сохранение прервано: файл {file_path} поврежден!\n")
+                return
+                
         data["default_team"] = team
         with open(file_path, 'w', encoding='utf-8') as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
     def load_profile_to_gui(self):
         if not os.path.exists("profile.yml"): return
-        with open("profile.yml", 'r', encoding='utf-8') as f: profile = yaml.safe_load(f) or {}
+        
+        try:
+            with open("profile.yml", 'r', encoding='utf-8') as f: 
+                profile = yaml.safe_load(f) or {}
+            # УСПЕХ: Создаем теневой бэкап
+            shutil.copy2("profile.yml", "profile.yml.bak")
+            
+        except yaml.YAMLError as e:
+            mark = getattr(e, 'problem_mark', None)
+            err_loc = f" (Строка: {mark.line + 1}, Символ: {mark.column + 1})" if mark else ""
+            self.controller.frames["dash"].append_log(f"[ОШИБКА] Файл profile.yml поврежден{err_loc}! Настройки сброшены на стандартные.\n")
+            profile = {}
+        except Exception as e:
+            self.controller.frames["dash"].append_log(f"[ОШИБКА] Ошибка чтения profile.yml. Настройки сброшены.\n")
+            profile = {}
+            
         settings = profile.get("settings", {})
         
         self.goals_data["titanite"] = settings.get("target_titanite", 0)
@@ -232,7 +277,17 @@ class RulesFrame(ctk.CTkFrame):
     def save_profile(self):
         if not os.path.exists("profile.yml"): profile = {}
         else:
-            with open("profile.yml", 'r', encoding='utf-8') as f: profile = yaml.safe_load(f) or {}
+            try:
+                with open("profile.yml", 'r', encoding='utf-8') as f: 
+                    profile = yaml.safe_load(f) or {}
+            except yaml.YAMLError as e:
+                mark = getattr(e, 'problem_mark', None)
+                err_loc = f" (Строка: {mark.line + 1}, Символ: {mark.column + 1})" if mark else ""
+                self.controller.frames["dash"].append_log(f"[ОШИБКА] Сохранение прервано: profile.yml сломан{err_loc}. Нажмите Сброс!\n")
+                return
+            except Exception:
+                self.controller.frames["dash"].append_log(f"[ОШИБКА] Сохранение прервано: profile.yml поврежден. Нажмите Сброс!\n")
+                return
             
         if "settings" not in profile: profile["settings"] = {}
         if "global_thresholds" not in profile: profile["global_thresholds"] = {}
@@ -254,7 +309,38 @@ class RulesFrame(ctk.CTkFrame):
         profile["settings"]["angus_manual_control"] = (self.switch_angus_var.get() == "on")
         profile["settings"]["telegram"] = self.tg_settings
         
-        with open("profile.yml", 'w', encoding='utf-8') as f:
+        # АТОМАРНОЕ СОХРАНЕНИЕ: Сначала пишем во временный файл
+        temp_path = "profile.yml.tmp"
+        with open(temp_path, 'w', encoding='utf-8') as f:
             yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
+        
+        # Мгновенная подмена файла (защита от краша)
+        os.replace(temp_path, "profile.yml")
             
+        # Обновляем бэкап при успешном ручном сохранении
+        import shutil
+        shutil.copy2("profile.yml", "profile.yml.bak")
         self.controller.frames["dash"].append_log("[GUI] Профиль настроек сохранен!\n")
+
+    def restore_profile(self):
+        """Интеллектуальная функция восстановления или жесткого сброса профиля"""
+        dash = self.controller.frames.get("dash")
+        
+        if os.path.exists("profile.yml.bak"):
+            # Если есть бэкап, восстанавливаемся из него
+            try:
+                shutil.copy2("profile.yml.bak", "profile.yml")
+                if dash: dash.append_log("[GUI] ♻️ Профиль успешно восстановлен из резервной копии!\n")
+            except Exception as e:
+                if dash: dash.append_log(f"[ОШИБКА] Не удалось восстановить профиль: {e}\n")
+        else:
+            # Если бэкапа нет (например, файл сломался еще до запуска программы), делаем полный сброс
+            if os.path.exists("profile.yml"):
+                try:
+                    os.remove("profile.yml")
+                    if dash: dash.append_log("[GUI] 🗑️ Битый профиль удален. Выполнен сброс до заводских настроек!\n")
+                except Exception as e:
+                    if dash: dash.append_log(f"[ОШИБКА] Не удалось удалить профиль: {e}\n")
+        
+        # Перезагружаем интерфейс
+        self.load_profile_to_gui()

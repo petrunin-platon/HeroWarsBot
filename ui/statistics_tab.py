@@ -18,6 +18,7 @@ class StatisticsFrame(ctk.CTkFrame):
     def __init__(self, master, controller, **kwargs):
         super().__init__(master, corner_radius=10, fg_color="transparent", **kwargs)
         self.controller = controller
+        self.cached_stats = None  # Кэш для защиты от спама диска при ресайзе окна
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
@@ -165,7 +166,10 @@ class StatisticsFrame(ctk.CTkFrame):
         return count
 
     def refresh_data(self):
-        stats = load_stats()
+        # Читаем с диска ТОЛЬКО при обновлении и сохраняем в кэш
+        self.cached_stats = load_stats()
+        stats = self.cached_stats
+        
         today = get_game_date()
         daily_stats = stats.get("daily", {}).get(today, {})
         
@@ -181,7 +185,12 @@ class StatisticsFrame(ctk.CTkFrame):
 
     def draw_chart(self):
         self.canvas.delete("all")
-        stats = load_stats()
+        
+        # Если кэш пуст, не пытаемся рисовать (защита от краша при инициализации)
+        if getattr(self, 'cached_stats', None) is None:
+            return
+            
+        stats = self.cached_stats
         daily = stats.get("daily", {})
         
         width = self.canvas.winfo_width()

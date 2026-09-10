@@ -1,0 +1,14 @@
+global_thresholds:
+  critical_hp: 25
+  max_hp_delta: 40
+settings:
+  angus_manual_control: true
+  reset_hour: 5
+  target_floors: 0
+  target_rooms: 0
+  target_time: 0
+  target_titanite: 100
+  telegram:
+    active: true
+    chat_id: None
+    token: null

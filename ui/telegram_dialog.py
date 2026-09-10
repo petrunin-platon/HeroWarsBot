@@ -13,7 +13,7 @@ class TelegramDialog(ctk.CTkToplevel):
         self.title(get_text(lang, "tg_title"))
         self.geometry("450x250")
         self.resizable(False, False)
-        self.attributes("-topmost", True)
+        self.transient(master)
         self.grab_set()
         
         self.grid_columnconfigure(0, weight=1)

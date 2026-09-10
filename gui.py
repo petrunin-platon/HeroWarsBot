@@ -1,19 +1,20 @@
 # gui.py
 import sys
-import ctypes
 import subprocess 
 
 # =====================================================================
 # ЖИЗНЕННО ВАЖНО: АППАРАТНЫЙ ФИКС DPI WINDOWS
 # ДОЛЖЕН БЫТЬ ДО ИМПОРТА ЛЮБЫХ БИБЛИОТЕК
 # =====================================================================
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2) 
-except Exception:
+if sys.platform == "win32":
+    import ctypes
     try:
-        ctypes.windll.user32.SetProcessDPIAware()
+        ctypes.windll.shcore.SetProcessDpiAwareness(2) 
     except Exception:
-        pass
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
 # =====================================================================
 
 try:
@@ -29,6 +30,7 @@ if "--bot-mode" in sys.argv:
 
 import customtkinter as ctk
 import os
+from config import PAUSE_FLAG_FILE  # <-- ИМПОРТ КОНСТАНТЫ ИЗ КОНФИГА
 from i18n import get_text
 from ui.dashboard import DashboardFrame
 from ui.rules_tab import RulesFrame
@@ -42,32 +44,22 @@ ctk.set_default_color_theme("blue")
 
 # =====================================================================
 # СЛОВАРЬ ЯЗЫКОВ (МАППИНГ)
-# Здесь мы связываем красивое название языка с системным префиксом.
-# Можешь добавлять любые языки в будущем!
 # =====================================================================
 LANGUAGE_MAP = {
-    # СНГ и Глобальный
     "Русский": "RU",
     "English": "EN",
     "Беларуская": "BY",
     "Українська": "UK",
-    
-    # Европа
     "Deutsch": "DE",
-    "Español": "ES",     # Испанский
-    "Français": "FR",    # Французский
-    "Polski": "PL",      # Польский
-    
-    # Ближний Восток / Латинская Америка
-    "Português": "PT",   # Португальский (Бразилия)
-    "Türkçe": "TR",      # Турецкий
-    
-    # Азия
-    "中文": "ZH",          # Китайский
-    "한국어": "KO",          # Корейский
-    "日本語": "JA"           # Японский
+    "Español": "ES",
+    "Français": "FR",
+    "Polski": "PL",
+    "Português": "PT",
+    "Türkçe": "TR",
+    "中文": "ZH",
+    "한국어": "KO",
+    "日本語": "JA"
 }
-# Обратный словарь (чтобы быстро найти название по префиксу при запуске)
 REVERSE_LANG_MAP = {v: k for k, v in LANGUAGE_MAP.items()}
 # =====================================================================
 
@@ -83,8 +75,9 @@ class HeroWarsLauncher(ctk.CTk):
         
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        if os.path.exists("pause.flag"):
-            os.remove("pause.flag")
+        # Используем константу вместо хардкода "pause.flag"
+        if os.path.exists(PAUSE_FLAG_FILE):
+            os.remove(PAUSE_FLAG_FILE)
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
@@ -115,9 +108,6 @@ class HeroWarsLauncher(ctk.CTk):
         self.btn_about = ctk.CTkButton(self.sidebar, text=get_text(self.current_lang, "btn_about"), command=lambda: self.select_frame("about"))
         self.btn_about.grid(row=6, column=0, padx=20, pady=10)
 
-        # =====================================================================
-        # НОВЫЙ ВЫПАДАЮЩИЙ СПИСОК ВМЕСТО КНОПОК RU И EN
-        # =====================================================================
         self.lang_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         self.lang_frame.grid(row=8, column=0, pady=(0, 20), sticky="s")
         
@@ -132,7 +122,6 @@ class HeroWarsLauncher(ctk.CTk):
             width=140
         )
         self.lang_dropdown.pack(pady=5, padx=20)
-        # =====================================================================
 
         self.frames = {
             "dash": DashboardFrame(self, self),
@@ -154,7 +143,6 @@ class HeroWarsLauncher(ctk.CTk):
             f.grid_forget()
         self.frames[frame_name].grid(row=0, column=1, sticky="nsew", padx=20, pady=0)
 
-    # Перехватчик: получает красивое имя из меню и переводит его в префикс
     def on_language_change(self, choice):
         prefix = LANGUAGE_MAP.get(choice, "RU")
         self.set_language(prefix)
@@ -164,12 +152,9 @@ class HeroWarsLauncher(ctk.CTk):
             return
             
         self.current_lang = lang
-        
-        # Обновляем текст в выпадающем списке (если язык установлен программно)
         display_name = REVERSE_LANG_MAP.get(lang, "Русский")
         self.lang_var.set(display_name)
         
-        # Записываем красивый лог
         self.frames["dash"].append_log(f"[GUI] Язык интерфейса изменен: {display_name} ({lang})\n")
             
         self.title(get_text(lang, "app_title"))
@@ -187,8 +172,8 @@ class HeroWarsLauncher(ctk.CTk):
 
     def on_closing(self):
         try:
-            subprocess.run(["taskkill", "/F", "/IM", "scrcpy.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
-            subprocess.run(["taskkill", "/F", "/IM", "adb.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
+            if "dash" in self.frames:
+                self.frames["dash"].shutdown_processes()
         except Exception:
             pass
         self.destroy()

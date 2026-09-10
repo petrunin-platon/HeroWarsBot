@@ -22,14 +22,14 @@ builtins.print = unbuffered_print
 # -------------------------------------
 
 from config import CONFIG, LIMITS, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS
-from vision import get_window_rect, find_and_click_bulletproof, get_match_loc
+from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, wait_for_ui_element
 from combat import find_smart_door, execute_angus_ult, execute_rollback
-from navigation import check_and_activate_checkpoint, enter_dungeon_room
+from navigation import smart_navigate_hallway
 from team_manager import verify_and_set_team
 from analyzer import scan_team_health
 from analytics import log_battle
 from rules_engine import engine
-from stats_manager import add_metric
+from stats_manager import add_metric, add_metrics_bulk
 
 WINDOW_TITLE = "HeroWarsBot_Arena"
 GRACEFUL_STOP = False
@@ -172,7 +172,54 @@ def get_stop_reason():
         return f"Пройдено {max_rooms} комнат."
     return None
 
+def recover_context(game_window, sct):
+    print("\n[УМНЫЙ СТАРТ] Сканирую экран для восстановления контекста...")
+    
+    # 1. Экран результатов (победа или поражение)
+    if get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD) or \
+       get_match_loc('btn_retry.png', game_window, sct, CONFIDENCE_THRESHOLD):
+        print("[УМНЫЙ СТАРТ] Найден экран результатов. Запускаю откат боя...")
+        execute_rollback(game_window, sct)
+        return "HALLWAY"
+        
+    # 2. Активный бой (ищем кнопку паузы или круглые кнопки автобоя)
+    if get_match_loc('btn_pause.png', game_window, sct, 0.75) or \
+       get_match_loc('btn_round_auto_off.png', game_window, sct, 0.75) or \
+       get_match_loc('btn_round_auto_on.png', game_window, sct, 0.75):
+        print("[УМНЫЙ СТАРТ] Бот находится в бою! Принудительно отступаю...")
+        find_and_click_bulletproof('btn_pause.png', game_window, sct, 0.75, timeout=3.0)
+        wait_for_ui_element('btn_retreat.png', game_window, sct, 0.75, timeout=5.0)
+        find_and_click_bulletproof('btn_retreat.png', game_window, sct, 0.75, timeout=3.0)
+        print("[УМНЫЙ СТАРТ] Отступление выполнено. Возврат в HALLWAY.")
+        time.sleep(2.0)
+        return "HALLWAY"
+        
+    # 3. Экран сборки пака (видим большую кнопку В бой / Авто)
+    if get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD) or \
+       get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD):
+        print("[УМНЫЙ СТАРТ] Бот на экране сборки пака. Запускаю бой для отката...")
+        # Жмем автобой, чтобы принудительно начать битву
+        find_and_click_bulletproof('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD, timeout=3.0)
+        print("[УМНЫЙ СТАРТ] Жду окно результатов для проведения отката (может занять время)...")
+        
+        wait_start = time.time()
+        while time.time() - wait_start < 120:
+            if get_match_loc('btn_retry.png', game_window, sct, 0.75):
+                print("[УМНЫЙ СТАРТ] Бой окончен. Запускаю протокол отката...")
+                execute_rollback(game_window, sct)
+                return "HALLWAY"
+            time.sleep(1.0)
+            
+        print("[УМНЫЙ СТАРТ] Таймаут ожидания конца боя. Сброс в HALLWAY.")
+        return "HALLWAY"
+        
+    # 4. Коридор или выбор комнат (по умолчанию)
+    print("[УМНЫЙ СТАРТ] Контекст не требует экстренных действий. Начинаю с HALLWAY.")
+    return "HALLWAY"
+
 with mss.MSS() as sct:
+    NEEDS_CONTEXT_RECOVERY = True
+    
     while True:
         wait_for_focus() 
         
@@ -180,6 +227,20 @@ with mss.MSS() as sct:
         if not game_window: 
             time.sleep(0.5)
             continue
+            
+        if NEEDS_CONTEXT_RECOVERY:
+            STATE = recover_context(game_window, sct)
+            NEEDS_CONTEXT_RECOVERY = False
+            continue
+            
+        # === ГЛОБАЛЬНАЯ ЗАЩИТА ОТ ДИСКОННЕКТОВ И ЛАГОВ ===
+        if STATE in ["WAIT_FOR_OK", "SET_TEAM", "PREP_AUTO", "PREP_SPECIAL_ANGUS"]:
+            if get_match_loc('flag_enter.png', game_window, sct, CONFIDENCE_THRESHOLD):
+                print(f"\n[СЕТЬ] Сбой! Бот в состоянии {STATE}, но на экране коридор. Сброс состояния...")
+                STATE = "HALLWAY"
+                time.sleep(1.0)
+                continue
+        # =================================================
         
         if STATE == "WAIT_FOR_OK" and get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
             active_pack = CURRENT_PACK 
@@ -201,6 +262,11 @@ with mss.MSS() as sct:
 
                 for titan in active_pack:
                     stats = team_status.get(titan)
+                    
+                    # ФИКС: Если титана не было в бою, просто пропускаем его!
+                    if stats and stats.get("status") == "ОТСУТСТВУЕТ":
+                        print(f"[ЛОГИКА] {titan.upper()} отсутствовал на арене. Пропускаю.")
+                        continue 
                     
                     if not stats:
                         current_hp = 0
@@ -379,20 +445,24 @@ with mss.MSS() as sct:
                         log_battle(current_room, CURRENT_ENEMIES, active_pack, "SUCCESS", tactic_result.get('reason', 'Одобрено'), team_status)
                         
                         SESSION_STATS["rooms_cleared"] += 1
-                        add_metric("rooms", 1, is_bot=True) 
+                        
+                        bulk_updates = {"rooms": 1}
                         
                         if SESSION_STATS["rooms_cleared"] % 5 == 0:
-                            add_metric("floors", 1, is_bot=True)
-                    
+                            bulk_updates["floors"] = 1
+                        
                         if get_match_loc('badge_x2.png', game_window, sct, 0.75):
                             SESSION_STATS["titanite_gathered"] += 12
-                            add_metric("titanite", 12, is_bot=True)
-                            add_metric("potions", 50, is_bot=True)
+                            bulk_updates["titanite"] = 12
+                            bulk_updates["potions"] = 50
                         else:
                             SESSION_STATS["titanite_gathered"] += 6
-                            add_metric("titanite", 6, is_bot=True)
-                            add_metric("potions", 25, is_bot=True)
+                            bulk_updates["titanite"] = 6
+                            bulk_updates["potions"] = 25
                             
+                        # Пакетная отправка: одно чтение и одна запись на весь бой
+                        add_metrics_bulk(bulk_updates, is_bot=True)
+                        
                         print(f"[СТАТИСТИКА] Комнат: {SESSION_STATS['rooms_cleared']} | Титанит: {SESSION_STATS['titanite_gathered']}")
                             
                         if CONFIG.get("debug_mode"):
@@ -412,7 +482,10 @@ with mss.MSS() as sct:
                 while os.path.exists("pause.flag"):
                     time.sleep(1)
                 LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
-                print("[ИНФО] Пауза снята. Кэш составов очищен. Возобновление движения.\n")
+                GLOBAL_TITAN_STATE.clear()
+                print("[ИНФО] Пауза снята. Кэш составов и здоровья очищен. Включаю механизм Умного Старта.\n")
+                NEEDS_CONTEXT_RECOVERY = True
+                continue
                 
             stop_reason = get_stop_reason()
             if stop_reason:
@@ -421,14 +494,8 @@ with mss.MSS() as sct:
                 
             CURRENT_ENEMIES = []
             
-            if get_match_loc('btn_attack.png', game_window, sct, CONFIDENCE_THRESHOLD):
-                STATE = "ROOM_SELECTION"
-                continue
-            if enter_dungeon_room(game_window, sct):
-                STATE = "ROOM_SELECTION"
-                continue
-            if check_and_activate_checkpoint(game_window, sct):
-                continue 
+            STATE = smart_navigate_hallway(game_window, sct)
+            continue
                 
         elif STATE == "ROOM_SELECTION":
             # ИСПРАВЛЕНИЕ: Передаем актуальный GLOBAL_TITAN_STATE в боевой модуль!
@@ -437,6 +504,9 @@ with mss.MSS() as sct:
                 current_room = found_room
                 CURRENT_ENEMIES = enemies
                 STATE = "SET_TEAM"
+            else:
+                print("[СЕТЬ] Двери не найдены (ошибка загрузки окна). Сброс в HALLWAY...")
+                STATE = "HALLWAY"
             continue
             
         elif STATE == "SET_TEAM":
@@ -539,8 +609,31 @@ with mss.MSS() as sct:
             continue
             
         elif STATE == "PREP_AUTO":
-            if find_and_click_bulletproof('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD):
+            print("[ТАКТИКА] Выполняю быстрый старт боя (Fire-and-Forget)...")
+            auto_coords = get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD)
+            if auto_coords:
+                from vision import click_human # Локальный безопасный импорт
+                click_human(auto_coords[0], auto_coords[1])
+            else:
+                print("[ПРЕДУПРЕЖДЕНИЕ] Кнопка 'В бой' не найдена мгновенно. Жду...")
+            
+            # Умное ожидание ЛЮБОГО признака боя (Пауза, Авто-кнопки или сразу победа)
+            wait_start = time.time()
+            battle_confirmed = False
+            while time.time() - wait_start < 10.0:
+                if get_match_loc('btn_pause.png', game_window, sct, 0.75) or \
+                   get_match_loc('btn_round_auto_off.png', game_window, sct, 0.75) or \
+                   get_match_loc('btn_round_auto_on.png', game_window, sct, 0.75) or \
+                   get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
+                    battle_confirmed = True
+                    break
+                time.sleep(0.1)
+                
+            if battle_confirmed:
                 STATE = "WAIT_FOR_OK"
+            else:
+                print("[СЕТЬ] Бой не начался за 10 сек. Сброс в HALLWAY...")
+                STATE = "HALLWAY"
             continue
             
         time.sleep(0.1)

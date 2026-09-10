@@ -13,8 +13,10 @@ def rotate_logs():
     for ext in ["*.jsonl", "*.txt"]:
         files = sorted(glob.glob(f"logs/{ext}"), key=os.path.getmtime, reverse=True)
         for old_file in files[20:]:
-            try: os.remove(old_file)
-            except: pass
+            try: 
+                os.remove(old_file)
+            except Exception as e: 
+                print(f"[АНАЛИТИКА] Ошибка при удалении старого лога '{old_file}': {e}")
 
 rotate_logs()
 

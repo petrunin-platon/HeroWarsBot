@@ -5,6 +5,7 @@ import os
 import json
 import glob
 import yaml
+import threading
 from collections import defaultdict
 from i18n import get_text
 
@@ -101,146 +102,167 @@ class AnalyticsFrame(ctk.CTkFrame):
         self.report_box.see("end")
 
     def run_analysis(self):
+        # 1. Блокируем кнопки на время расчетов (защита от мульти-запусков)
+        self.btn_run.configure(state="disabled")
+        self.btn_apply.configure(state="disabled")
+        
         lang = getattr(self.controller, 'current_lang', 'RU')
         self.report_box.delete("1.0", "end")
         self.golden_rules = []
         
-        if not os.path.exists("logs"):
-            err_msg = "[ОШИБКА] Папка logs/ не найдена. Проведите несколько боев!" if lang == "RU" else "[ERROR] logs/ folder not found. Run some battles!"
-            self.append_text(err_msg)
-            return
+        # 2. Выносим тяжелую логику I/O и математики во внутреннюю функцию
+        def process_analysis():
+            if not os.path.exists("logs"):
+                err_msg = "[ОШИБКА] Папка logs/ не найдена. Проведите несколько боев!" if lang == "RU" else "[ERROR] logs/ folder not found. Run some battles!"
+                self.after(0, self.append_text, err_msg)
+                self.after(0, lambda: self.btn_run.configure(state="normal"))
+                return
 
-        files = glob.glob("logs/*.jsonl")
-        if not files:
-            err_msg = "[ОШИБКА] Файлы логов (*.jsonl) не найдены. Проведите несколько боев!" if lang == "RU" else "[ERROR] Log files (*.jsonl) not found. Run some battles!"
-            self.append_text(err_msg)
-            return
+            files = glob.glob("logs/*.jsonl")
+            if not files:
+                err_msg = "[ОШИБКА] Файлы логов (*.jsonl) не найдены. Проведите несколько боев!" if lang == "RU" else "[ERROR] Log files (*.jsonl) not found. Run some battles!"
+                self.after(0, self.append_text, err_msg)
+                self.after(0, lambda: self.btn_run.configure(state="normal"))
+                return
+                
+            logs = []
+            for file in files:
+                with open(file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.strip():
+                            try:
+                                logs.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                continue
+                                
+            load_msg = f"📁 Загружена история: {len(logs)} записей боев из {len(files)} лог-файлов.\n" if lang == "RU" else f"📁 History loaded: {len(logs)} battle records from {len(files)} log files.\n"
+            self.after(0, self.append_text, load_msg)
             
-        logs = []
-        for file in files:
-            with open(file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.strip():
-                        try:
-                            logs.append(json.loads(line))
-                        except json.JSONDecodeError:
-                            continue
-                            
-        load_msg = f"📁 Загружена история: {len(logs)} записей боев из {len(files)} лог-файлов.\n" if lang == "RU" else f"📁 History loaded: {len(logs)} battle records from {len(files)} log files.\n"
-        self.append_text(load_msg)
-        
-        stats = defaultdict(lambda: defaultdict(lambda: {"attempts": 0, "wins": 0, "avg_hp": []}))
-        total_battles = 0
-        total_wins = 0
-        
-        for entry in logs:
-            room = entry.get("room")
-            if not room or room == "unknown": continue
+            stats = defaultdict(lambda: defaultdict(lambda: {"attempts": 0, "wins": 0, "avg_hp": []}))
+            total_battles = 0
+            total_wins = 0
             
-            enemies = tuple(sorted(entry.get("enemies", [])))
-            team = tuple(sorted(entry.get("team", [])))
-            action = entry.get("action")
+            for entry in logs:
+                room = entry.get("room")
+                if not room or room == "unknown": continue
+                
+                enemies = tuple(sorted(entry.get("enemies", [])))
+                team = tuple(sorted(entry.get("team", [])))
+                action = entry.get("action")
+                
+                if not enemies or not team or action not in ["SUCCESS", "ROLLBACK"]: continue
+                
+                total_battles += 1
+                scenario_key = (room, enemies)
+                stats[scenario_key][team]["attempts"] += 1
+                
+                if action == "SUCCESS":
+                    total_wins += 1
+                    stats[scenario_key][team]["wins"] += 1
+                    hp_status = entry.get("hp_status", {})
+                    hp_list = [v.get("hp", 0) for k, v in hp_status.items() if k in team and isinstance(v, dict)]
+                    if hp_list:
+                        stats[scenario_key][team]["avg_hp"].append(sum(hp_list) / len(hp_list))
+                        
+            overall_wr = (total_wins / total_battles * 100) if total_battles > 0 else 0
+            self.total_battles_count = total_battles
+            self.winrate_val = overall_wr
             
-            if not enemies or not team or action not in ["SUCCESS", "ROLLBACK"]: continue
+            # Безопасное обновление интерфейса
+            self.after(0, self.update_language, lang)
             
-            total_battles += 1
-            scenario_key = (room, enemies)
-            stats[scenario_key][team]["attempts"] += 1
+            # Формируем текст отчета в памяти, чтобы не перегружать главный поток (защита от Event Queue Flooding)
+            report_lines = []
+            report_lines.append("="*70)
+            title_msg = "📊 АНАЛИТИЧЕСКИЙ ОТЧЕТ ПО ВИНРЕЙТАМ" if lang == "RU" else "📊 WINRATE ANALYTICS REPORT"
+            report_lines.append(title_msg)
+            report_lines.append("="*70)
             
-            if action == "SUCCESS":
-                total_wins += 1
-                stats[scenario_key][team]["wins"] += 1
-                hp_status = entry.get("hp_status", {})
-                hp_list = [v.get("hp", 0) for k, v in hp_status.items() if k in team and isinstance(v, dict)]
-                if hp_list:
-                    stats[scenario_key][team]["avg_hp"].append(sum(hp_list) / len(hp_list))
+            for (room, enemies), teams_data in stats.items():
+                enemies_str = ", ".join([get_text(lang, f"titan_{e}") for e in enemies])
+                room_name = get_text(lang, f"elem_{room}")
+                
+                report_lines.append(f"\n🚪 {room_name.upper()}")
+                enemies_lbl = get_text(lang, "ar_enemies").split(":")[0] 
+                report_lines.append(f"⚔️ {enemies_lbl}: {enemies_str}")
+                report_lines.append("-" * 60)
+                
+                sorted_teams = sorted(
+                    teams_data.items(), 
+                    key=lambda x: (x[1]["wins"] / x[1]["attempts"] if x[1]["attempts"] > 0 else 0, x[1]["attempts"]), 
+                    reverse=True
+                )
+                
+                for team, data in sorted_teams:
+                    attempts = data["attempts"]
+                    wins = data["wins"]
+                    winrate = (wins / attempts) * 100
+                    avg_hp_arr = data["avg_hp"]
+                    avg_hp_val = sum(avg_hp_arr) / len(avg_hp_arr) if avg_hp_arr else 0
                     
-        overall_wr = (total_wins / total_battles * 100) if total_battles > 0 else 0
-        self.total_battles_count = total_battles
-        self.winrate_val = overall_wr
-        
-        self.update_language(lang)
-        
-        self.append_text("="*70)
-        title_msg = "📊 АНАЛИТИЧЕСКИЙ ОТЧЕТ ПО ВИНРЕЙТАМ" if lang == "RU" else "📊 WINRATE ANALYTICS REPORT"
-        self.append_text(title_msg)
-        self.append_text("="*70)
-        
-        for (room, enemies), teams_data in stats.items():
-            enemies_str = ", ".join([get_text(lang, f"titan_{e}") for e in enemies])
-            room_name = get_text(lang, f"elem_{room}")
-            
-            self.append_text(f"\n🚪 {room_name.upper()}")
-            enemies_lbl = get_text(lang, "ar_enemies").split(":")[0] 
-            self.append_text(f"⚔️ {enemies_lbl}: {enemies_str}")
-            self.append_text("-" * 60)
-            
-            sorted_teams = sorted(
-                teams_data.items(), 
-                key=lambda x: (x[1]["wins"] / x[1]["attempts"] if x[1]["attempts"] > 0 else 0, x[1]["attempts"]), 
-                reverse=True
-            )
-            
-            for team, data in sorted_teams:
-                attempts = data["attempts"]
-                wins = data["wins"]
-                winrate = (wins / attempts) * 100
-                avg_hp_arr = data["avg_hp"]
-                avg_hp_val = sum(avg_hp_arr) / len(avg_hp_arr) if avg_hp_arr else 0
-                
-                team_str = ", ".join([get_text(lang, f"titan_{t}") for t in team])
-                
-                # ИНТЕЛЛЕКТУАЛЬНАЯ ПРОВЕРКА: Есть ли уже это правило в Базе Знаний?
-                is_implemented = False
-                if winrate >= 80:
-                    path = f"rules/{room}.yml"
-                    if os.path.exists(path):
-                        with open(path, 'r', encoding='utf-8') as f:
-                            yml_data = yaml.safe_load(f) or {}
-                            for rule in yml_data.get("rules", []):
-                                cond = rule.get("condition", {})
-                                if "enemies_contain" in cond and sorted(cond["enemies_contain"]) == sorted(enemies):
-                                    if sorted(rule.get("team", [])) == sorted(team):
-                                        is_implemented = True
-                                        break
-                
-                if winrate >= 80:
-                    if is_implemented:
-                        wr_color = "🔵 В БАЗЕ" if lang == "RU" else "🔵 IN KB"
+                    team_str = ", ".join([get_text(lang, f"titan_{t}") for t in team])
+                    
+                    is_implemented = False
+                    if winrate >= 80:
+                        path = f"rules/{room}.yml"
+                        if os.path.exists(path):
+                            with open(path, 'r', encoding='utf-8') as f:
+                                yml_data = yaml.safe_load(f) or {}
+                                for rule in yml_data.get("rules", []):
+                                    cond = rule.get("condition", {})
+                                    if "enemies_contain" in cond and sorted(cond["enemies_contain"]) == sorted(enemies):
+                                        if sorted(rule.get("team", [])) == sorted(team):
+                                            is_implemented = True
+                                            break
+                    
+                    if winrate >= 80:
+                        if is_implemented:
+                            wr_color = "🔵 В БАЗЕ" if lang == "RU" else "🔵 IN KB"
+                        else:
+                            wr_color = "🟢 ИДЕАЛЬНО" if lang == "RU" else "🟢 PERFECT"
+                    elif winrate >= 50:
+                        wr_color = "🟡 СРЕДНЕ" if lang == "RU" else "🟡 AVERAGE"
                     else:
-                        wr_color = "🟢 ИДЕАЛЬНО" if lang == "RU" else "🟢 PERFECT"
-                elif winrate >= 50:
-                    wr_color = "🟡 СРЕДНЕ" if lang == "RU" else "🟡 AVERAGE"
+                        wr_color = "🔴 ОПАСНО" if lang == "RU" else "🔴 DANGER"
+                        
+                    pack_lbl = "Пак" if lang == "RU" else "Team"
+                    winrate_lbl = "Винрейт" if lang == "RU" else "Winrate"
+                    hp_lbl = "Ср. ХП после боя" if lang == "RU" else "Avg HP left"
+                    
+                    report_lines.append(f"  {wr_color} | {pack_lbl}: {team_str}")
+                    report_lines.append(f"     {winrate_lbl}: {winrate:.1f}% ({wins}/{attempts}) | {hp_lbl}: {avg_hp_val:.1f}%")
+                    
+                    if winrate >= 80 and attempts >= 5 and not is_implemented:
+                        self.golden_rules.append({
+                            "room": room,
+                            "enemies": list(enemies),
+                            "team": list(team),
+                            "winrate": winrate,
+                            "avg_hp": avg_hp_val
+                        })
+            
+            # Рендерим весь гигантский лог ровно за 1 кадр и 1 передачу в очередь
+            full_report = "\n".join(report_lines)
+            self.after(0, self.append_text, full_report)
+                    
+            # Финализация интерфейса (вызовется один раз в конце)
+            def finalize_ui():
+                if self.golden_rules:
+                    self.btn_apply.configure(state="normal")
+                    msg = f"\n[АЛГОРИТМ] 🤖 Найдено {len(self.golden_rules)} новых идеальных связок! Готов к внедрению в базу знаний." if lang == "RU" else f"\n[ALGORITHM] 🤖 Found {len(self.golden_rules)} new perfect counter-packs! Ready to deploy to Knowledge Base."
+                    self.append_text(msg)
                 else:
-                    wr_color = "🔴 ОПАСНО" if lang == "RU" else "🔴 DANGER"
-                    
-                pack_lbl = "Пак" if lang == "RU" else "Team"
-                winrate_lbl = "Винрейт" if lang == "RU" else "Winrate"
-                hp_lbl = "Ср. ХП после боя" if lang == "RU" else "Avg HP left"
+                    self.btn_apply.configure(state="disabled")
+                    msg = "\n[АЛГОРИТМ] 🤖 Новых идеальных связок пока не найдено. Фармите дальше!" if lang == "RU" else "\n[ALGORITHM] 🤖 New perfect matches not found yet. Keep farming!"
+                    self.append_text(msg)
                 
-                self.append_text(f"  {wr_color} | {pack_lbl}: {team_str}")
-                self.append_text(f"     {winrate_lbl}: {winrate:.1f}% ({wins}/{attempts}) | {hp_lbl}: {avg_hp_val:.1f}%")
-                
-                # Добавляем в кандидаты ТОЛЬКО если правила еще нет в YAML
-                if winrate >= 80 and attempts >= 5 and not is_implemented:
-                    self.golden_rules.append({
-                        "room": room,
-                        "enemies": list(enemies),
-                        "team": list(team),
-                        "winrate": winrate,
-                        "avg_hp": avg_hp_val
-                    })
-                    
-        self.update_language(lang)
-        
-        if self.golden_rules:
-            self.btn_apply.configure(state="normal")
-            msg = f"\n[АЛГОРИТМ] 🤖 Найдено {len(self.golden_rules)} новых идеальных связок! Готов к внедрению в базу знаний." if lang == "RU" else f"\n[ALGORITHM] 🤖 Found {len(self.golden_rules)} new perfect counter-packs! Ready to deploy to Knowledge Base."
-            self.append_text(msg)
-        else:
-            self.btn_apply.configure(state="disabled")
-            msg = "\n[АЛГОРИТМ] 🤖 Новых идеальных связок пока не найдено. Фармите дальше!" if lang == "RU" else "\n[ALGORITHM] 🤖 New perfect matches not found yet. Keep farming!"
-            self.append_text(msg)
+                # Снимаем блокировку с кнопки
+                self.btn_run.configure(state="normal")
+
+            self.after(0, finalize_ui)
+
+        # 3. Стартуем фоновый поток (не замораживая UI)
+        threading.Thread(target=process_analysis, daemon=True).start()
 
     def apply_golden_rules(self):
         if not self.golden_rules: return
@@ -248,11 +270,17 @@ class AnalyticsFrame(ctk.CTkFrame):
         lang = getattr(self.controller, 'current_lang', 'RU')
         applied_count = 0
         
+        # 1. Группируем правила по комнатам (стихиям) для минимизации I/O операций
+        grouped_rules = defaultdict(list)
         for rule in self.golden_rules:
-            room = rule["room"]
+            grouped_rules[rule["room"]].append(rule)
+            
+        # 2. Обрабатываем каждую комнату ПАКЕТНО (1 чтение и 1 запись на файл)
+        for room, rules_for_room in grouped_rules.items():
             path = f"rules/{room}.yml"
             data = {"rules": [], "default_team": []}
             
+            # Защита старых правил: аккуратно считываем существующие данные!
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
                     data = yaml.safe_load(f) or {"rules": [], "default_team": []}
@@ -260,38 +288,47 @@ class AnalyticsFrame(ctk.CTkFrame):
             if "rules" not in data or data["rules"] is None:
                 data["rules"] = []
                 
-            rule_exists = False
-            for existing_rule in data["rules"]:
-                cond = existing_rule.get("condition", {})
-                if "enemies_contain" in cond:
-                    if sorted(cond["enemies_contain"]) == sorted(rule["enemies"]):
-                        rule_exists = True
-                        if sorted(existing_rule.get("team", [])) != sorted(rule["team"]):
-                            enemies_str = ", ".join([get_text(lang, f"titan_{e}") for e in rule['enemies']])
-                            msg = f"  [ОБНОВЛЕНИЕ] В {room}.yml улучшен пак против [{enemies_str}]" if lang == "RU" else f"  [UPDATE] In {room}.yml improved pack against [{enemies_str}]"
-                            self.append_text(msg)
+            # Применяем все правила для конкретной комнаты в оперативной памяти
+            for rule in rules_for_room:
+                rule_exists = False
+                for existing_rule in data["rules"]:
+                    cond = existing_rule.get("condition", {})
+                    if "enemies_contain" in cond:
+                        if sorted(cond["enemies_contain"]) == sorted(rule["enemies"]):
+                            rule_exists = True
+                            if sorted(existing_rule.get("team", [])) != sorted(rule["team"]):
+                                enemies_str = ", ".join([get_text(lang, f"titan_{e}") for e in rule['enemies']])
+                                msg = f"  [ОБНОВЛЕНИЕ] В {room}.yml улучшен пак против [{enemies_str}]" if lang == "RU" else f"  [UPDATE] In {room}.yml improved pack against [{enemies_str}]"
+                                self.append_text(msg)
+                                
+                                existing_rule["team"] = rule["team"]
+                                existing_rule["name"] = f"AI: Анти-пак (Винрейт: {rule['winrate']:.0f}%, ХП: {rule['avg_hp']:.0f}%)"
+                                applied_count += 1
+                            break
                             
-                            existing_rule["team"] = rule["team"]
-                            existing_rule["name"] = f"AI: Анти-пак (Винрейт: {rule['winrate']:.0f}%, ХП: {rule['avg_hp']:.0f}%)"
-                            applied_count += 1
-                        break
-                        
-            if not rule_exists:
-                enemies_str = ", ".join([get_text(lang, f"titan_{e}") for e in rule['enemies']])
-                msg = f"  [СОЗДАНИЕ] В {room}.yml добавлена новая тактика против [{enemies_str}]" if lang == "RU" else f"  [CREATE] In {room}.yml added new tactics against [{enemies_str}]"
-                self.append_text(msg)
-                
-                new_rule = {
-                    "name": f"AI: Анти-пак (Винрейт: {rule['winrate']:.0f}%, ХП: {rule['avg_hp']:.0f}%)",
-                    "condition": {"enemies_contain": rule["enemies"]},
-                    "team": rule["team"]
-                }
-                if "angus" in rule["team"]: new_rule["special_ult"] = "angus"
-                data["rules"].insert(0, new_rule) 
-                applied_count += 1
-                
-            with open(path, 'w', encoding='utf-8') as f:
+                if not rule_exists:
+                    enemies_str = ", ".join([get_text(lang, f"titan_{e}") for e in rule['enemies']])
+                    msg = f"  [СОЗДАНИЕ] В {room}.yml добавлена новая тактика против [{enemies_str}]" if lang == "RU" else f"  [CREATE] In {room}.yml added new tactics against [{enemies_str}]"
+                    self.append_text(msg)
+                    
+                    new_rule = {
+                        "name": f"AI: Анти-пак (Винрейт: {rule['winrate']:.0f}%, ХП: {rule['avg_hp']:.0f}%)",
+                        "condition": {"enemies_contain": rule["enemies"]},
+                        "team": rule["team"]
+                    }
+                    if "angus" in rule["team"]: new_rule["special_ult"] = "angus"
+                    # Добавляем новые правила, не стирая старые
+                    data["rules"].insert(0, new_rule) 
+                    applied_count += 1
+                    
+            # 3. АТОМАРНОЕ СОХРАНЕНИЕ: Единоразово сохраняем обновленную базу в .tmp
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            temp_path = f"{path}.tmp"
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            
+            # Мгновенная подмена оригинального файла
+            os.replace(temp_path, path)
                 
         success_msg = f"\n[УСПЕХ] ✅ База Знаний (Rules Engine) успешно обновлена. Внедрено правил: {applied_count}." if lang == "RU" else f"\n[SUCCESS] ✅ Knowledge Base (Rules Engine) updated. Rules applied: {applied_count}."
         self.append_text(success_msg)

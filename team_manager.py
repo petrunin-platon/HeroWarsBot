@@ -1,7 +1,8 @@
 # team_manager.py
 import time
+import os
 from config import CONFIDENCE_THRESHOLD
-from vision import click_human, get_match_loc, find_and_click_bulletproof, swipe_scrcpy
+from vision import click_human, get_match_loc, find_and_click_bulletproof, swipe_scrcpy, wait_for_ui_element
 
 # Оригинальный, проверенный порог совпадения
 TITAN_THRESHOLD = 0.88 
@@ -34,12 +35,14 @@ def get_rois(window_rect):
     return top_roi, bottom_roi
 
 def open_grid_if_needed(window_rect, sct):
-    """Проверка и открытие сетки выбора титанов"""
-    print("[КОМАНДА] Ожидаю окончания анимации окна (1.5 сек)...")
-    time.sleep(1.5) 
+    """Проверка и открытие сетки выбора титанов с динамическим ожиданием"""
+    print("[КОМАНДА] Сканирую интерфейс окна (без слепых пауз)...")
     
+    # Ждем либо 4 точки (открыто), либо 9 точек (закрыто)
     start_time = time.time()
     while time.time() - start_time < 8.0:
+        if os.path.exists("pause.flag"): return False
+        
         if get_match_loc('btn_4_dots.png', window_rect, sct, 0.7):
             print("[КОМАНДА] Сетка титанов открыта и готова к работе.")
             time.sleep(0.3) 
@@ -47,11 +50,15 @@ def open_grid_if_needed(window_rect, sct):
             
         coords_9 = get_match_loc('btn_9_dots.png', window_rect, sct, 0.7)
         if coords_9:
-            print("[КОМАНДА] Сетка свернута. Нажимаю открыть (через ADB)...")
-            click_human(coords_9[0], coords_9[1], exact=True)
-            time.sleep(1.2) 
-        else:
-            time.sleep(0.2)
+            print("[КОМАНДА] Сетка свернута. Нажимаю открыть...")
+            click_human(coords_9[0], coords_9[1])
+            
+            # Динамически ждем пока анимация развертывания сетки закончится
+            if wait_for_ui_element('btn_4_dots.png', window_rect, sct, 0.7, timeout=3.0, settle_time=0.3):
+                print("[КОМАНДА] Сетка успешно развернута!")
+                return True
+                
+        time.sleep(0.1)
             
     print("[ОШИБКА КОМАНДЫ] Не смог убедиться, что сетка открыта (не вижу 4 точки)!")
     return False
@@ -63,7 +70,9 @@ def precise_select_titan(x, y):
 
 def verify_and_set_team(target_pack, available_titans, window_rect, sct):
     top_roi, bottom_roi = get_rois(window_rect)
-    open_grid_if_needed(window_rect, sct)
+    
+    if not open_grid_if_needed(window_rect, sct):
+        return False
 
     sorted_pack = [t for t in GAME_ORDER if t in target_pack]
     for t in target_pack: 
@@ -75,6 +84,8 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct):
     
     # ГЛОБАЛЬНЫЙ ЦИКЛ ПОПЫТОК НА СЛУЧАЙ ОШИБКИ АНИМАЦИИ ИЛИ КЛИКА
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        if os.path.exists("pause.flag"): return False
+        
         if attempt > 1:
             print(f"\n[КОМАНДА] --- ПОПЫТКА {attempt}/{MAX_ATTEMPTS}: Корректировка состава ---")
             
@@ -88,6 +99,8 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct):
         print("[КОМАНДА] Очищаю слоты от нежелательных титанов...")
         cleanup_attempts = 0
         while cleanup_attempts < 10:
+            if os.path.exists("pause.flag"): return False
+            
             found_unwanted = False
             for titan in GAME_ORDER:
                 if titan not in sorted_pack:
@@ -105,6 +118,8 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct):
 
         # 2. МЕХАНИКА ПОИСКА (Поиск нужных титанов)
         for titan in sorted_pack:
+            if os.path.exists("pause.flag"): return False
+            
             if get_match_loc(f"{titan}.png", bottom_roi, sct, TITAN_THRESHOLD):
                 print(f"[КОМАНДА] -> {titan} уже на месте.")
                 continue
@@ -113,6 +128,8 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct):
             
             found = False
             for swipe_idx in range(3): 
+                if os.path.exists("pause.flag"): return False
+                
                 coords = get_match_loc(f"{titan}.png", top_roi, sct, TITAN_THRESHOLD)
                 if coords:
                     precise_select_titan(coords[0], coords[1])

@@ -16,10 +16,14 @@ class InterventionDialog(ctk.CTkToplevel):
         lang = getattr(master, 'current_lang', 'RU')
         self.tg_agent = None
         
+        # --- ФЛАГ ДЛЯ ЗАЩИТЫ ОТ ЗОМБИ-ПОТОКА ---
+        self.is_destroyed = False
+        
         self.title(get_text(lang, "sos_title"))
         self.geometry("600x420")
         self.resizable(False, False)
-        self.attributes("-topmost", True)
+        self.transient(master)
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.grab_set()
         
         self.grid_columnconfigure(0, weight=1)
@@ -87,6 +91,11 @@ class InterventionDialog(ctk.CTkToplevel):
                 msg += f"➤ {titan_name.upper()}: {hp}% HP\n"
                 
             msg_id = self.tg_agent.send_sos("temp_sos.png", msg, is_manual=self.is_manual, can_rollback=self.can_rollback)
+            
+            # --- СТРОГАЯ ПРОВЕРКА ФЛАГА ПЕРЕД ПОЛЛИНГОМ ---
+            if self.is_destroyed:
+                return
+            
             if msg_id:
                 self.tg_agent.start_polling(msg_id, self.on_telegram_decision)
 
@@ -133,8 +142,18 @@ class InterventionDialog(ctk.CTkToplevel):
         self.grab_release()
         self.master.after(50, lambda: self.callback("ignore"))
         self.destroy()
-        
+
+    def on_closing(self):
+        if self.tg_agent:
+            self.tg_agent.stop()
+        self.grab_release()
+        self.master.after(50, lambda: self.callback("stop"))
+        super().destroy()
+
     def destroy(self):
+        # --- ПЕРЕКЛЮЧАЕМ ФЛАГ ПРИ УНИЧТОЖЕНИИ ОКНА ---
+        self.is_destroyed = True
+        
         if self.tg_agent:
             self.tg_agent.stop()
         super().destroy()

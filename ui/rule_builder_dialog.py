@@ -7,7 +7,7 @@ from ui.team_selector import TeamSelectorDialog, ELEMENTS, ALLOWED_ELEMENTS
 DUNGEON_ENEMIES_EN = ["angus", "avalon", "eden", "silva", "verdok", "sigurd", "hyperion", "nova", "mairi", "araji", "ignis", "vulcan", "moloch"]
 
 class RuleBuilderDialog(ctk.CTkToplevel):
-    def __init__(self, master, room_type, callback, edit_index=None, edit_data=None):
+    def __init__(self, master, room_type, callback, edit_index=None, edit_data=None, draft_mode=False):
         super().__init__(master)
         self.room_type = room_type
         self.callback = callback
@@ -17,6 +17,7 @@ class RuleBuilderDialog(ctk.CTkToplevel):
         self.action_is_skip = ctk.BooleanVar(value=False) 
         self.enemy_vars = {} 
         self.edit_index = edit_index 
+        self.draft_mode = draft_mode # Флаг режима черновика
         
         lang = 'RU'
         if hasattr(master, 'current_lang'): lang = master.current_lang
@@ -27,7 +28,7 @@ class RuleBuilderDialog(ctk.CTkToplevel):
         self.title(get_text(self.lang, title_key).format(room=get_text(self.lang, f"elem_{room_type}")))
         self.geometry("650x700") 
         self.resizable(False, False)
-        self.attributes("-topmost", True)
+        self.transient(master)
         
         self.after(100, self.grab_set)
 
@@ -266,10 +267,35 @@ class RuleBuilderDialog(ctk.CTkToplevel):
         if self.action_is_skip.get():
             rule_obj["action"] = "skip"
 
+        # ЕСЛИ ВКЛЮЧЕН РЕЖИМ ЧЕРНОВИКА (Из ActiveRulesDialog)
+        if self.draft_mode:
+            self.grab_release()
+            self.callback(rule_obj, self.room_type, self.edit_index)
+            self.destroy()
+            return
+
+        # ИНАЧЕ - СТАРАЯ ЛОГИКА (Прямое сохранение на жесткий диск из RulesTab)
         if not os.path.exists("rules"): os.makedirs("rules")
         file_path = f"rules/{self.room_type}.yml"
         
-        with open(file_path, "r", encoding="utf-8") as f: data = yaml.safe_load(f) or {"rules": []}
+        data = {"rules": []}
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {"rules": []}
+            except (yaml.YAMLError, Exception):
+                dash = None
+                if hasattr(self.master, 'controller') and hasattr(self.master.controller, 'frames'):
+                    dash = self.master.controller.frames.get("dash")
+                elif hasattr(self.master, 'frames'):
+                    dash = self.master.frames.get("dash")
+
+                if dash:
+                    dash.append_log(f"[ОШИБКА] Сохранение прервано: файл {file_path} поврежден!\n")
+                self.grab_release()
+                self.destroy()
+                return
+
         if "rules" not in data or data["rules"] is None: data["rules"] = []
         
         if self.edit_index is not None:

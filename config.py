@@ -31,4 +31,9 @@ ENEMY_TITANS = [
 ]
 
 CONFIDENCE_THRESHOLD = 0.8
-WINDOW_TITLE = "HeroWarsBot_Arena"
+
+# Файл-флаг для управления мягкой паузой бота
+PAUSE_FLAG_FILE = "pause.flag"
+
+# Системный заголовок окна трансляции (scrcpy / эмулятор)
+GAME_WINDOW_TITLE = "HeroWarsBot_Arena"

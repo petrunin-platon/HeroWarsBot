@@ -9,7 +9,8 @@ import sys
 import subprocess
 import re
 import base64
-from config import CONFIG 
+from functools import lru_cache
+from config import CONFIG
 
 # Пытаемся импортировать упакованные ассеты
 try:
@@ -27,8 +28,6 @@ def get_base_dir():
 
 BASE_DIR = get_base_dir()
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-
-TEMPLATE_CACHE = {}
 
 GEOMETRY_CACHE = {
     "is_calibrated": False,
@@ -57,12 +56,12 @@ def get_device_resolution():
         pass
     return 1920, 1080 
 
-def _calibrate_geometry(window_rect, sct):
+def _calibrate_geometry(screenshot):
     global GEOMETRY_CACHE
     if GEOMETRY_CACHE["is_calibrated"]:
         return
 
-    screenshot = np.array(sct.grab(window_rect))
+    # Захват экрана удален. Используем ГОТОВЫЙ переданный массив пикселей!
     gray = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2GRAY)
 
     title_bar_h = 36 
@@ -102,27 +101,45 @@ def _calibrate_geometry(window_rect, sct):
     print(f"\n[СИСТЕМА CV] Геометрия откалибрована (Масштаб: {scale_factor:.3f}x)")
     print(f" ---> Истинный размер игры: {gw_rect}x{gh_rect}\n")
 
-def get_clean_game_screen(window_rect, sct):
-    if not GEOMETRY_CACHE["is_calibrated"] and window_rect["width"] > 800:
-        _calibrate_geometry(window_rect, sct)
 
+def _crop_screenshot_to_game_area(window_rect, sct):
+    """Приватная функция для применения кэша геометрии и обрезки экрана."""
+    # 1. Сначала делаем ЕДИНСТВЕННЫЙ захват экрана для всего такта!
     screenshot = np.array(sct.grab(window_rect))
+    
+    # 2. Передаем ГОТОВЫЙ скриншот в калибратор (если он еще не откалиброван)
+    if not GEOMETRY_CACHE["is_calibrated"] and window_rect["width"] > 800:
+        _calibrate_geometry(screenshot)
+
+    # 3. Продолжаем обычную работу с уже имеющимся кадром
     screenshot_cv = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
 
-    if GEOMETRY_CACHE["is_calibrated"] and GEOMETRY_CACHE["game_h"] > 0:
-        ox, oy = GEOMETRY_CACHE["offset_x"], GEOMETRY_CACHE["offset_y"]
-        gw_rect, gh_rect = GEOMETRY_CACHE["game_w"], GEOMETRY_CACHE["game_h"]
+    ox, oy = 0, 0
+    gw_rect, gh_rect = window_rect["width"], window_rect["height"]
+
+    if GEOMETRY_CACHE["is_calibrated"] and GEOMETRY_CACHE["game_h"] > 0 and window_rect["width"] > 800:
+        cache_ox, cache_oy = GEOMETRY_CACHE["offset_x"], GEOMETRY_CACHE["offset_y"]
+        cache_gw, cache_gh = GEOMETRY_CACHE["game_w"], GEOMETRY_CACHE["game_h"]
         
-        if window_rect["width"] > 800 and window_rect["height"] > 400:
-            if oy+gh_rect <= screenshot_cv.shape[0] and ox+gw_rect <= screenshot_cv.shape[1]:
-                clean_cv = screenshot_cv[oy:oy+gh_rect, ox:ox+gw_rect]
-                clean_rect = {
-                    "top": window_rect["top"] + oy,
-                    "left": window_rect["left"] + ox,
-                    "width": gw_rect,
-                    "height": gh_rect
-                }
-                return clean_cv, clean_rect
+        # Проверяем, не выходят ли границы за пределы скриншота
+        if cache_oy + cache_gh <= screenshot_cv.shape[0] and cache_ox + cache_gw <= screenshot_cv.shape[1]:
+            screenshot_cv = screenshot_cv[cache_oy:cache_oy + cache_gh, cache_ox:cache_ox + cache_gw]
+            ox, oy = cache_ox, cache_oy
+            gw_rect, gh_rect = cache_gw, cache_gh
+
+    return screenshot_cv, ox, oy, gw_rect, gh_rect
+
+def get_clean_game_screen(window_rect, sct):
+    screenshot_cv, ox, oy, gw_rect, gh_rect = _crop_screenshot_to_game_area(window_rect, sct)
+
+    if ox > 0 or oy > 0:
+        clean_rect = {
+            "top": window_rect["top"] + oy,
+            "left": window_rect["left"] + ox,
+            "width": gw_rect,
+            "height": gh_rect
+        }
+        return screenshot_cv, clean_rect
 
     return screenshot_cv, window_rect
 
@@ -145,11 +162,8 @@ def get_image_data(image_name):
             
     return None
 
+@lru_cache(maxsize=256)
 def get_scaled_template(image_name, scale):
-    cache_key = f"{image_name}_{scale:.3f}"
-    if cache_key in TEMPLATE_CACHE:
-        return TEMPLATE_CACHE[cache_key]
-
     img_bytes = get_image_data(image_name)
     if not img_bytes:
         return None
@@ -162,8 +176,7 @@ def get_scaled_template(image_name, scale):
             new_w = max(1, int(img.shape[1] * scale))
             new_h = max(1, int(img.shape[0] * scale))
             img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        TEMPLATE_CACHE[cache_key] = img
-        
+            
     return img
 
 def imread_cyrillic(image_name):
@@ -218,17 +231,7 @@ def get_window_rect(title):
     return LAST_WINDOW_RECT
 
 def get_match_loc(image_name, window_rect, sct, threshold):
-    if not GEOMETRY_CACHE["is_calibrated"] and window_rect["width"] > 800:
-        _calibrate_geometry(window_rect, sct)
-
-    screenshot = sct.grab(window_rect)
-    screenshot_cv = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGRA2BGR)
-    
-    if window_rect["width"] > 800 and GEOMETRY_CACHE["is_calibrated"]:
-        ox, oy = GEOMETRY_CACHE["offset_x"], GEOMETRY_CACHE["offset_y"]
-        gw_rect, gh_rect = GEOMETRY_CACHE["game_w"], GEOMETRY_CACHE["game_h"]
-        if oy+gh_rect <= screenshot_cv.shape[0] and ox+gw_rect <= screenshot_cv.shape[1]:
-            screenshot_cv = screenshot_cv[oy:oy+gh_rect, ox:ox+gw_rect]
+    screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
 
     template = imread_cyrillic(image_name)
     if template is None: return None
@@ -278,21 +281,72 @@ def get_match_loc(image_name, window_rect, sct, threshold):
             rand_y = random.randint(max_loc[1] + margin_y, max_loc[1] + h - margin_y)
         # =====================================================================
         
-        if window_rect["width"] > 800:
-            return (window_rect["left"] + GEOMETRY_CACHE["offset_x"] + rand_x,
-                    window_rect["top"] + GEOMETRY_CACHE["offset_y"] + rand_y)
-        else:
-            return (window_rect["left"] + rand_x, window_rect["top"] + rand_y)
+        # Универсальный возврат (ox и oy будут нулевыми, если обрезка не применялась)
+        return (window_rect["left"] + ox + rand_x,
+                window_rect["top"] + oy + rand_y)
             
     return None
 
 def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=6.0):
-    coords = get_match_loc(image_name, window_rect, sct, threshold)
-    if not coords: return False
-        
+    """
+    Человечный и надежный клик с защитой от непрокликивания.
+    """
     start_time = time.time()
+    clicked = False
+    
     while time.time() - start_time < timeout:
+        coords = get_match_loc(image_name, window_rect, sct, threshold)
+        if not coords:
+            if clicked:
+                # Если мы уже кликали, а кнопка пропала - это 100% успех
+                return True
+            time.sleep(0.1)
+            continue
+            
+        # Доверяем твоей родной математике из get_match_loc (обрезание 20% краев)
         click_human(coords[0], coords[1])
-        time.sleep(0.15) 
-        if not get_match_loc(image_name, window_rect, sct, threshold): return True
+        clicked = True
+        
+        # Задержка рандомизирована, глобальный модуль random загружен в начале файла
+        time.sleep(random.uniform(0.5, 0.8))
+        
+        if not get_match_loc(image_name, window_rect, sct, threshold):
+            return True 
+            
+        print(f"[VISION] Клик по '{image_name}' не зарегистрирован сервером. Повторяю...")
+        
+    print(f"[VISION] Ошибка: Не удалось прожать '{image_name}' за {timeout} сек.")
     return False
+
+def wait_for_ui_element(template_name, window_rect, sct, threshold=0.75, timeout=10.0, poll_rate=0.05, settle_time=0.0):
+    """
+    Умное ожидание элемента интерфейса с защитой от анимаций.
+    
+    :param settle_time: Время (в секундах), которое нужно подождать ПОСЛЕ первого 
+                        обнаружения элемента, чтобы дать анимации (выезд кнопки/окна) завершиться.
+    """
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        # Первичное обнаружение
+        coords = get_match_loc(template_name, window_rect, sct, threshold)
+        
+        if coords:
+            if settle_time > 0:
+                # Даем интерфейсу "успокоиться" и доехать до конца
+                time.sleep(settle_time)
+                # Делаем контрольный выстрел - пересчитываем координаты после остановки!
+                coords_final = get_match_loc(template_name, window_rect, sct, threshold)
+                if coords_final:
+                    return coords_final
+                else:
+                    # Если после паузы кнопка исчезла (например, это был блик) - продолжаем искать
+                    continue 
+            
+            return coords # Если settle_time == 0, возвращаем мгновенно
+            
+        time.sleep(poll_rate)
+        
+    # Если вышли из цикла, значит время вышло
+    print(f"[VISION] Таймаут: элемент '{template_name}' не появился за {timeout} сек.")
+    return None

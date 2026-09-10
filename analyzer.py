@@ -74,14 +74,12 @@ def scan_team_health(window_rect, sct, current_pack):
     team_status = {}
     
     # =====================================================================
-    # ЧИСТАЯ МАТЕМАТИКА ОТ ШИРИНЫ (Твой оригинальный паттерн)
+    # ЧИСТАЯ МАТЕМАТИКА ОТ ШИРИНЫ 
     # =====================================================================
     w = clean_rect["width"]
     scale_x = w / 939.0
     
-    # Длина эталонной полоски растягивается вместе с игрой
     max_bar_width = 50.0 * scale_x
-    # =====================================================================
     
     print(f"\n[АНАЛИЗАТОР] Чистая зона игры: {clean_rect['width']}x{clean_rect['height']}")
     print(f"[АНАЛИЗАТОР] Масштаб: {scale_x:.3f}x | Эталон полоски: {max_bar_width:.2f}px")
@@ -91,7 +89,8 @@ def scan_team_health(window_rect, sct, current_pack):
         template = imread_cyrillic(icon_name)
         
         if template is None:
-            template = imread_cyrillic(f"res_{titan}")
+            # ИСПРАВЛЕН БАГ: Добавлено расширение .png в строку фолбэка
+            template = imread_cyrillic(f"res_{titan}.png")
             
         if template is None:
             print(f"[ОШИБКА] Не найдена иконка в RAM/диске: {icon_name}")
@@ -112,13 +111,8 @@ def scan_team_health(window_rect, sct, current_pack):
             x_start = max_loc[0]
             y_start = max_loc[1]
             
-            # =====================================================================
-            # ВОЗВРАТ ТВОЕЙ ШИРОКОЙ РАМКИ ПОИСКА (Масштабируемой)
-            # =====================================================================
             SHIFT_DOWN = int(icon_h * 1.6) 
             BOX_HEIGHT = int(icon_h * 0.70) 
-            
-            # Твой оригинальный отступ 15, но растянутый под DPI/разрешение
             EXPAND_WIDTH = int(15 * scale_x) 
             
             crop_y1 = min(y_start + SHIFT_DOWN, screenshot_cv.shape[0])
@@ -126,7 +120,6 @@ def scan_team_health(window_rect, sct, current_pack):
             
             crop_x1 = max(x_start - EXPAND_WIDTH, 0)
             crop_x2 = min(x_start + icon_w + EXPAND_WIDTH, screenshot_cv.shape[1]) 
-            # =====================================================================
             
             roi_green = mask_green[crop_y1:crop_y2, crop_x1:crop_x2]
             roi_energy = mask_energy[crop_y1:crop_y2, crop_x1:crop_x2]
@@ -153,24 +146,19 @@ def scan_team_health(window_rect, sct, current_pack):
                         if max_energy_pixels >= 5:
                             ep_w = max_energy_pixels
 
-            # ЧИСТЫЙ процент, никаких "магнитов" и накруток.
             hp_perc = min(int((hp_w / max_bar_width) * 100), 100)
             ep_perc = min(int((ep_w / max_bar_width) * 100), 100)
             
-            # =====================================================================
-            # ФИКС ЛОГИКИ СМЕРТИ: Нет зеленой полоски = Титан мертв!
-            # =====================================================================
             if hp_perc == 0:
                 team_status[titan] = {"hp": 0, "energy": 0, "status": "МЕРТВ"}
                 print(f" ---> {titan.upper()}: [МЕРТВ] (ХП = 0%)")
             else:
                 team_status[titan] = {"hp": hp_perc, "energy": ep_perc, "status": "ЖИВ"}
                 print(f" ---> {titan.upper()}: ХП {hp_perc}%, Энергия {ep_perc}%")
-            # =====================================================================
                 
         else:
-            team_status[titan] = {"hp": 0, "energy": 0, "status": "МЕРТВ"}
-            print(f" ---> {titan.upper()}: [МЕРТВ] (Иконка не найдена. Совпадение: {max_val:.2f})")
+            team_status[titan] = {"hp": 0, "energy": 0, "status": "ОТСУТСТВУЕТ"}
+            print(f" ---> {titan.upper()}: [ОТСУТСТВУЕТ] (Не было в бою)")
             
     print("[АНАЛИЗАТОР] Сканирование завершено.\n")
     return team_status

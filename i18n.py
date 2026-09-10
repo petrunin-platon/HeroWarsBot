@@ -3,7 +3,7 @@
 TRANSLATIONS = {
     "RU": {
         "app_title": "Hero Wars: Knowledge Engine Bot",
-        "sidebar_title": "RPA BOT v1.0",
+        "sidebar_title": "RPA BOT v1.5",
         "btn_main": "Главная (Фарм)",
         "btn_rules": "Мастер правил",
         "btn_analytics": "Аналитика",
@@ -17,6 +17,7 @@ TRANSLATIONS = {
         "dash_btn_wake": "☀️ ВКЛ Экран",
         "dash_btn_sleep": "🌙 ВЫКЛ Экран",
         "dash_btn_restart": "🔄 Перезапуск",
+        "dash_btn_reset_size": "Сброс размера",
         "dash_btn_connect": "1. Подключить телефон",
         "dash_btn_start": "2. Начать фарм",
         "dash_btn_continue": "Продолжить фарм",
@@ -43,6 +44,7 @@ TRANSLATIONS = {
         "rules_btn_cond": "+ Условие",
         "rules_btn_active": "📂 Посмотреть/Удалить активные правила",
         "rules_btn_save": "💾 Сохранить профиль",
+        "rules_btn_restore": "Восстановить / Сброс",
         
         # Telegram Dialog
         "tg_title": "Интеграция с Telegram",
@@ -121,7 +123,6 @@ TRANSLATIONS = {
         # Active Rules
         "ar_title": "Управление активными правилами",
         "ar_list": "Список созданных перехватов",
-        "ar_btn_clear": "🗑️ Удалить ВСЕ правила",
         "ar_if_hp": "Если ХП",
         "ar_if_energy": "Если Энергия",
         "ar_enemies": "Враги: {enemies}",
@@ -131,6 +132,14 @@ TRANSLATIONS = {
         "ar_stop": "Остановка",
         "ar_change": "Смена пака ({count} шт.)",
         "ar_no_rules": "Нет активных правил. Бот использует только дефолтные паки.",
+        "ar_tab_all": "Все",
+        "ar_btn_save_draft": "Сохранить изменения",
+        "ar_btn_clear_draft": "Очистить ВСЕ правила",
+        "badge_heal": "[⚕️ ОТХИЛ] ",
+        "badge_antipack": "[⚔️ АНТИ-ПАК] ",
+        "badge_skip": "[⏭️ СКИП] ",
+        "badge_gear": "[⚙️] ",
+        "ar_saved_msg": "[GUI] Правила успешно сохранены и обновлены!\n",
 
         # Analytics
         "analytics_title": "Аналитика и машинное обучение",
@@ -180,23 +189,23 @@ TRANSLATIONS = {
         "about_btn_web": "web",
 
         # Telegram messages
-        "tg_bot_stop": "🛑 Остановить бота",
-        "tg_bot_rollback": "🔄 Откатить (Собрать пак)",
-        "tg_bot_manual": "🎮 Пройти руками",
-        "tg_bot_ignore": "➡️ Игнорировать (Продолжить)",
-        "tg_bot_wait_text": "⌨️ Напишите имена 3-5 титанов в чат (через запятую или пробел):",
-        "tg_bot_rollback_ok": "✅ Откат запущен!",
-        "tg_bot_selected": "✅ Выбрано: {action}",
-        "tg_bot_pack_confirm": "🎯 Распознан состав:\n{names}\n\nВсе верно?",
-        "tg_bot_btn_confirm": "✅ Утвердить пак",
-        "tg_bot_btn_retry": "🔄 Написать другой",
+        "tg_bot_stop": "Остановить бота",
+        "tg_bot_rollback": "Откатить (Собрать пак)",
+        "tg_bot_manual": "Пройти руками",
+        "tg_bot_ignore": "Игнорировать (Продолжить)",
+        "tg_bot_wait_text": "Напишите имена 3-5 титанов в чат (через запятую или пробел):",
+        "tg_bot_rollback_ok": "Откат запущен!",
+        "tg_bot_selected": "Выбрано: {action}",
+        "tg_bot_pack_confirm": "Распознан состав:\n{names}\n\nВсе верно?",
+        "tg_bot_btn_confirm": "Утвердить пак",
+        "tg_bot_btn_retry": "Написать другой",
         "tg_bot_none": "никого",
         "tg_bot_err_count": "⚠️ Найдено титанов: {count} (нужно от 3 до 5).\nРаспознано: {names}\n\nНапишите еще раз (например: гип, сиг, нов, орм, май):"
 
     },
     "EN": {
         "app_title": "Hero Wars: Knowledge Engine Bot",
-        "sidebar_title": "RPA BOT v1.0",
+        "sidebar_title": "RPA BOT v1.5",
         "btn_main": "Main (Farm)",
         "btn_rules": "Rules master",
         "btn_analytics": "Analytics",
@@ -210,6 +219,7 @@ TRANSLATIONS = {
         "dash_btn_wake": "☀️ Wake",
         "dash_btn_sleep": "🌙 Sleep",
         "dash_btn_restart": "🔄 Restart",
+        "dash_btn_reset_size": "Reset Size",
         "dash_btn_connect": "1. Connect phone",
         "dash_btn_start": "2. Start farming",
         "dash_btn_continue": "Continue farming",
@@ -236,6 +246,7 @@ TRANSLATIONS = {
         "rules_btn_cond": "+ Condition",
         "rules_btn_active": "📂 View/Delete active rules",
         "rules_btn_save": "💾 Save profile",
+        "rules_btn_restore": "Restore / Reset",
         
         # Telegram Dialog
         "tg_title": "Telegram Integration",
@@ -389,7 +400,7 @@ TRANSLATIONS = {
     },
     "BY": {
         "app_title": "Hero Wars: Knowledge Engine Bot",
-        "sidebar_title": "RPA BOT v1.0",
+        "sidebar_title": "RPA BOT v1.5",
         "btn_main": "Галоўная (Фарм)",
         "btn_rules": "Майстар правілаў",
         "btn_analytics": "Аналітыка",
@@ -403,6 +414,7 @@ TRANSLATIONS = {
         "dash_btn_wake": "☀️ На экране",
         "dash_btn_sleep": "🌙 Па-за экранам",
         "dash_btn_restart": "🔄 Перазапусціць",
+        "dash_btn_reset_size": "Скінуць памер",
         "dash_btn_connect": "1. Падключыце свой тэлефон",
         "dash_btn_start": "2. Пачні фермерстваваць",
         "dash_btn_continue": "Працягваць прымаць лекі",
@@ -429,6 +441,7 @@ TRANSLATIONS = {
         "rules_btn_cond": "+ Стан",
         "rules_btn_active": "📂 Праглядзець/Выдаліць актыўныя правілы",
         "rules_btn_save": "💾 Захаваць профіль",
+        "rules_btn_restore": "Аднавіць / Скід",
         
         # Telegram Dialog
         "tg_title": "Інтэграцыя з Telegram",
