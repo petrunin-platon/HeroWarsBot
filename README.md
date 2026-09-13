@@ -4,13 +4,52 @@
 ![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-red)
 ![UI](https://img.shields.io/badge/UI-CustomTkinter-green)
 
+Game: ![Nexters](https://www.nexters.com/en/hero-wars)
+
 Imagine a player who never gets tired, never loses focus, instantly reacts when an ally's health drops, and remembers the exact stats of every single battle. That's the **Knowledge Engine Bot** — an autonomous RPA (Robotic Process Automation) agent built for *Hero Wars*.
+
+![Dashboard](docs/screenshots/undergraund_1.jpg)
+![Dashboard](docs/screenshots/undergraund_2.jpg)
 
 Unlike basic auto-clickers that blindly tap the same spots on the screen and break the second your game lags, this bot actually has artificial "vision" and a strict logic engine under the hood:
 
 *   **It sees (Computer Vision):** The bot literally watches your PC screen using OpenCV algorithms. It detects enemy icons and calculates Titan health (HP) and energy levels on the fly using HSV color masks. Since it relies on relative math (percentages) rather than hardcoded pixels, it doesn't care what your monitor's resolution is — it just adapts.
 *   **It thinks (State Machine):** The core of the bot runs on a "State Machine" architecture. The software always knows exactly what's happening right now (whether it's standing in the hallway, picking a team, or fighting). This means game animations or emulator lags won't cause it to freeze or glitch out.
 *   **It plays fair:** The bot **does not** mess with the game files, it doesn't inject code into RAM, and it doesn't hook into private APIs. It controls the game strictly by looking at your phone's screen mirror (`scrcpy`) and imitating real mouse movements and clicks. To any anti-cheat system out there, it just looks like a highly focused, very methodical human sitting at the keyboard.
+
+---
+
+## 💻 System Requirements / Системные требования
+
+To use the bot, you need a specific hardware and software combination. The bot runs on a PC and controls your mobile device.
+
+- **OS**: Windows (to run the bot software).
+- **Device**: Android smartphone.
+- **Connection**: USB or Wi-Fi (for screen mirroring and ADB control).
+> *Note: Currently, the bot strictly requires a Windows PC paired with an Android device. iOS devices or standalone emulators without Android system architecture are not fully supported yet.*
+
+---
+
+## 🌍 Supported Languages / Поддерживаемые языки
+
+The bot's interface is localized into 14 languages. You can switch the language easily in the settings.
+
+- 🇬🇧 English (EN)
+- 🇷🇺 Русский (RU)
+- 🇧🇾 Беларуская (BY)
+- 🇺🇦 Українська (UK)
+- 🇰🇿 Қазақша (KK)
+- 🇩🇪 Deutsch (DE)
+- 🇪🇸 Español (ES)
+- 🇫🇷 Français (FR)
+- 🇵🇱 Polski (PL)
+- 🇵🇹 Português (PT)
+- 🇹🇷 Türkçe (TR)
+- 🇨🇳 中文 - Simplified (ZH)
+- 🇰🇷 한국어 (KO)
+- 🇯🇵 日本語 (JA)
+
+---
 
 ## ⚙️ Under the Hood (Architecture)
 
