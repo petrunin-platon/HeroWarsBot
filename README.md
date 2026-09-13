@@ -32,7 +32,7 @@ To use the bot, you need a specific hardware and software combination. The bot r
 
 ## 🌍 Supported Languages / Поддерживаемые языки
 
-The bot's interface is localized into 14 languages. You can switch the language easily in the settings.
+The bot's interface is localized into 13 languages. You can switch the language easily in the settings.
 
 - 🇬🇧 English (EN)
 - 🇷🇺 Русский (RU)
@@ -67,7 +67,7 @@ The project relies on a modular architecture where every piece has its own stric
 ## 🌟 Key Features & Interface
 
 ### 🎛 Control Dashboard:
-A modern, dark-themed graphical interface built on `CustomTkinter` with seamless English and Russian (RU/EN) localization.
+A modern, dark-themed graphical interface built on `CustomTkinter` with seamless English and Russian (RU/EN/UK/KK/DE/ES/FR/PL/PT/TR/ZH/KO/JA) localization.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
