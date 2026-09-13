@@ -18,7 +18,13 @@ class StatisticsFrame(ctk.CTkFrame):
     def __init__(self, master, controller, **kwargs):
         super().__init__(master, corner_radius=10, fg_color="transparent", **kwargs)
         self.controller = controller
-        self.cached_stats = None  # Кэш для защиты от спама диска при ресайзе окна
+        self.cached_stats = None  
+        
+        # Интерактивные стейты и надежное хранение системного ключа периода
+        self.current_period_key = "14d"
+        self.chart_buckets = []
+        self.rendered_hitboxes = [] 
+        self.selected_bar_index = None
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
@@ -61,8 +67,10 @@ class StatisticsFrame(ctk.CTkFrame):
         self.lbl_chart.pack(pady=10)
         
         self.canvas = ctk.CTkCanvas(chart_container, bg="#1e1e1e", highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        self.canvas.pack(fill="both", expand=True, padx=10, pady=(0, 20))
+        
         self.canvas.bind("<Configure>", lambda e: self.draw_chart())
+        self.canvas.bind("<Button-1>", self.on_canvas_click)
 
         # --- ПОДВАЛ (Синхронизация по времени и Сброс) ---
         footer_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -101,29 +109,16 @@ class StatisticsFrame(ctk.CTkFrame):
 
     def update_language(self, lang):
         self.lbl_title.configure(text=get_text(lang, "stat_title"))
-        self.lbl_title_0_0.configure(text=get_text(lang, "stat_total_tit"))
-        self.lbl_title_0_1.configure(text=get_text(lang, "stat_today_tit"))
-        self.lbl_title_0_2.configure(text=get_text(lang, "stat_potions"))
-        self.lbl_title_1_0.configure(text=get_text(lang, "stat_rooms"))
-        self.lbl_title_1_1.configure(text=get_text(lang, "stat_floors"))
-        self.lbl_title_1_2.configure(text=get_text(lang, "stat_rules"))
-        
         self.lbl_chart.configure(text=get_text(lang, "stat_chart_title"))
         self.lbl_manual.configure(text=get_text(lang, "stat_manual_add"))
         self.btn_add_manual.configure(text=get_text(lang, "stat_btn_add"))
         self.btn_reset.configure(text=get_text(lang, "stat_reset"))
 
-        # 1. Локализация периода графика
-        current_val = self.period_var.get()
+        # Обновляем локализацию выпадающего списка
         values = [get_text(lang, f"stat_period_{k}") for k in self.get_period_keys()]
         self.opt_period.configure(values=values)
-        
-        for k in self.get_period_keys():
-            if k == current_val:
-                self.period_var.set(get_text(lang, f"stat_period_{k}"))
-                break
+        self.period_var.set(get_text(lang, f"stat_period_{self.current_period_key}"))
 
-        # 2. ДИНАМИЧЕСКАЯ ГЕНЕРАЦИЯ 7 ДНЕЙ ДЛЯ СИНХРОНИЗАЦИИ
         base_date = get_game_datetime()
         sync_dates = []
         for i in range(7):
@@ -138,19 +133,22 @@ class StatisticsFrame(ctk.CTkFrame):
             sync_dates.append(val)
             
         self.opt_sync_date.configure(values=sync_dates)
-        
         current_sync = self.opt_sync_date.get()
         if not current_sync or current_sync not in sync_dates:
             self.opt_sync_date.set(sync_dates[0])
+            
+        self.update_summary_cards()
 
     def on_period_change(self, selected_text):
         lang = getattr(self.controller, 'current_lang', 'RU')
+        # Ищем системный ключ по выбранному локализованному тексту
         for k in self.get_period_keys():
             if get_text(lang, f"stat_period_{k}") == selected_text:
-                self.period_var.set(k)
-                self.draw_chart()
+                self.current_period_key = k
                 self.period_var.set(selected_text)
-                self.opt_period._current_value = k 
+                self.selected_bar_index = None 
+                self.draw_chart()
+                self.update_summary_cards()
                 break
 
     def count_rules(self):
@@ -166,75 +164,207 @@ class StatisticsFrame(ctk.CTkFrame):
         return count
 
     def refresh_data(self):
-        # Читаем с диска ТОЛЬКО при обновлении и сохраняем в кэш
         self.cached_stats = load_stats()
-        stats = self.cached_stats
+        self.selected_bar_index = None
+        self.update_summary_cards()
+        self.draw_chart()
+
+    def update_summary_cards(self):
+        if not self.cached_stats: return
+        lang = getattr(self.controller, 'current_lang', 'RU')
+        
+        self.lbl_val_rules.configure(text=str(self.count_rules()))
+        self.lbl_title_1_2.configure(text=get_text(lang, "stat_rules"))
         
         today = get_game_date()
-        daily_stats = stats.get("daily", {}).get(today, {})
-        
-        self.lbl_val_tit_total.configure(text=format_number(stats.get("total_titanite", 0)))
-        self.lbl_val_potions.configure(text=format_number(stats.get("total_potions", 0)))
-        self.lbl_val_rooms.configure(text=format_number(stats.get("total_rooms", 0)))
-        self.lbl_val_floors.configure(text=format_number(stats.get("total_floors", 0)))
-        
+        daily_stats = self.cached_stats.get("daily", {}).get(today, {})
         self.lbl_val_tit_today.configure(text=format_number(daily_stats.get("titanite", 0)))
-        self.lbl_val_rules.configure(text=str(self.count_rules()))
+        self.lbl_title_0_1.configure(text=get_text(lang, "stat_today_tit"))
+
+        if self.selected_bar_index is not None and self.selected_bar_index < len(self.chart_buckets):
+            bucket = self.chart_buckets[self.selected_bar_index]
+            date_label = f" ({bucket['date_str']})"
+            
+            self.lbl_title_0_0.configure(text=get_text(lang, "stat_total_tit") + date_label)
+            self.lbl_val_tit_total.configure(text=format_number(bucket["titanite"]))
+            
+            self.lbl_title_0_2.configure(text=get_text(lang, "stat_potions") + date_label)
+            self.lbl_val_potions.configure(text=format_number(bucket["potions"]))
+            
+            self.lbl_title_1_0.configure(text=get_text(lang, "stat_rooms") + date_label)
+            self.lbl_val_rooms.configure(text=format_number(bucket["rooms"]))
+            
+            self.lbl_title_1_1.configure(text=get_text(lang, "stat_floors") + date_label)
+            self.lbl_val_floors.configure(text=format_number(bucket["floors"]))
+        else:
+            self.lbl_title_0_0.configure(text=get_text(lang, "stat_total_tit"))
+            self.lbl_val_tit_total.configure(text=format_number(self.cached_stats.get("total_titanite", 0)))
+            
+            self.lbl_title_0_2.configure(text=get_text(lang, "stat_potions"))
+            self.lbl_val_potions.configure(text=format_number(self.cached_stats.get("total_potions", 0)))
+            
+            self.lbl_title_1_0.configure(text=get_text(lang, "stat_rooms"))
+            self.lbl_val_rooms.configure(text=format_number(self.cached_stats.get("total_rooms", 0)))
+            
+            self.lbl_title_1_1.configure(text=get_text(lang, "stat_floors"))
+            self.lbl_val_floors.configure(text=format_number(self.cached_stats.get("total_floors", 0)))
+
+    def build_buckets(self, period):
+        buckets = []
+        daily = self.cached_stats.get("daily", {})
+        base_date = get_game_datetime()
         
-        self.draw_chart()
+        if period in ["14d", "1m"]:
+            days = 14 if period == "14d" else 30
+            for i in range(days-1, -1, -1):
+                d = base_date - timedelta(days=i)
+                date_str = d.strftime("%Y-%m-%d")
+                d_stats = daily.get(date_str, {})
+                buckets.append({
+                    "label": d.strftime("%d.%m"),
+                    "date_str": d.strftime("%d.%m.%Y"),
+                    "titanite": d_stats.get("titanite", 0),
+                    "rooms": d_stats.get("rooms", 0),
+                    "floors": d_stats.get("floors", 0),
+                    "potions": d_stats.get("potions", 0)
+                })
+        elif period in ["3m", "6m"]:
+            weeks = 12 if period == "3m" else 26
+            for w in range(weeks-1, -1, -1):
+                w_tit, w_room, w_fl, w_pot = 0, 0, 0, 0
+                start_d = base_date - timedelta(days=w*7 + 6)
+                end_d = base_date - timedelta(days=w*7)
+                for i in range(7):
+                    d = start_d + timedelta(days=i)
+                    d_stats = daily.get(d.strftime("%Y-%m-%d"), {})
+                    w_tit += d_stats.get("titanite", 0)
+                    w_room += d_stats.get("rooms", 0)
+                    w_fl += d_stats.get("floors", 0)
+                    w_pot += d_stats.get("potions", 0)
+                buckets.append({
+                    "label": f"{start_d.strftime('%d.%m')} - {end_d.strftime('%d.%m')}",
+                    "date_str": f"{start_d.strftime('%d.%m')} - {end_d.strftime('%d.%m')}",
+                    "titanite": w_tit, "rooms": w_room, "floors": w_fl, "potions": w_pot
+                })
+        elif period == "1y":
+            for m in range(11, -1, -1):
+                target_month = (base_date.month - m - 1) % 12 + 1
+                target_year = base_date.year + ((base_date.month - m - 1) // 12)
+                m_tit, m_room, m_fl, m_pot = 0, 0, 0, 0
+                for date_str, d_stats in daily.items():
+                    if date_str.startswith(f"{target_year:04d}-{target_month:02d}"):
+                        m_tit += d_stats.get("titanite", 0)
+                        m_room += d_stats.get("rooms", 0)
+                        m_fl += d_stats.get("floors", 0)
+                        m_pot += d_stats.get("potions", 0)
+                buckets.append({
+                    "label": f"{target_month:02d}.{str(target_year)[2:]}",
+                    "date_str": f"{target_month:02d}.{target_year}",
+                    "titanite": m_tit, "rooms": m_room, "floors": m_fl, "potions": m_pot
+                })
+        return buckets
+
+    def get_nice_max(self, val):
+        if val <= 150: return 150
+        if val <= 500: return 500
+        if val <= 1000: return 1000
+        if val <= 5000: return 5000
+        if val <= 10000: return 10000
+        if val <= 50000: return 50000
+        return ((val // 10000) + 1) * 10000
 
     def draw_chart(self):
         self.canvas.delete("all")
+        self.rendered_hitboxes.clear()
         
-        # Если кэш пуст, не пытаемся рисовать (защита от краша при инициализации)
         if getattr(self, 'cached_stats', None) is None:
             return
             
-        stats = self.cached_stats
-        daily = stats.get("daily", {})
-        
         width = self.canvas.winfo_width()
         height = self.canvas.winfo_height()
         if width <= 1 or height <= 1: return
         
-        raw_val = getattr(self.opt_period, '_current_value', "14d")
-        days_map = {"14d": 14, "1m": 30, "3m": 90, "6m": 180, "1y": 365}
-        days = days_map.get(raw_val, 14)
+        # Строго используем системный ключ
+        self.chart_buckets = self.build_buckets(self.current_period_key)
         
-        base_date = get_game_datetime()
+        # ЗАЩИТА ОТ КРАША: Запрещаем деление на 0, если данных нет
+        days = max(1, len(self.chart_buckets)) 
         
-        dates = [(base_date - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days-1, -1, -1)]
-        values = [daily.get(d, {}).get("titanite", 0) for d in dates]
-        labels = [(base_date - timedelta(days=i)).strftime("%d.%m") for i in range(days-1, -1, -1)]
+        real_max = max((b["titanite"] for b in self.chart_buckets), default=0)
+        max_val = self.get_nice_max(real_max)
         
-        max_val = max(values) if values and max(values) > 0 else 150
+        pad_left, pad_right, pad_top, pad_bottom = 50, 20, 20, 25
+        chart_w = width - pad_left - pad_right
+        chart_h = height - pad_top - pad_bottom
         
-        pad_x, pad_y = 30, 20
-        chart_w = width - 2 * pad_x
-        chart_h = height - 2 * pad_y
+        # 1. Отрисовка Оси Y (Сетка)
+        lines = 3
+        for i in range(lines + 1):
+            y = pad_top + chart_h - (i * chart_h / lines)
+            val = int(max_val * (i / lines))
+            self.canvas.create_line(pad_left, y, width - pad_right, y, fill="#333333", dash=(4, 4))
+            if i > 0: 
+                self.canvas.create_text(pad_left - 10, y, text=format_number(val), fill="gray", font=("Arial", 9), anchor="e")
+        
+        # Базовая линия X
+        self.canvas.create_line(pad_left, height - pad_bottom, width - pad_right, height - pad_bottom, fill="#666666", width=2)
+        
+        # 2. Отрисовка баров
         spacing = chart_w / days
-        bar_w = spacing * 0.8
+        bar_w = spacing * 0.7
         
-        self.canvas.create_line(pad_x, height - pad_y, width - pad_x, height - pad_y, fill="#555555", width=2)
-        
-        for i, val in enumerate(values):
-            x_center = pad_x + spacing * i + spacing / 2
+        for i, bucket in enumerate(self.chart_buckets):
+            val = bucket["titanite"]
+            x_center = pad_left + spacing * i + spacing / 2
+            
+            self.rendered_hitboxes.append(x_center)
+            
+            is_selected = (self.selected_bar_index == i)
+            is_dimmed = (self.selected_bar_index is not None and not is_selected)
             
             if val > 0:
-                bar_h = (val / max_val) * (chart_h - 20)
+                bar_h = (val / max_val) * chart_h
                 x1 = x_center - bar_w / 2
-                y1 = height - pad_y - bar_h
+                y1 = height - pad_bottom - bar_h
                 x2 = x_center + bar_w / 2
-                y2 = height - pad_y
+                y2 = height - pad_bottom
                 
-                color = "#28a745" if val >= 150 else "#007bff"
+                color = "#28a745" if not is_dimmed else "#1e3d29" 
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
                 
-                if bar_w > 20:
-                    self.canvas.create_text(x_center, y1 - 10, text=format_number(val), fill="white", font=("Arial", 10, "bold"))
+                # Текст значения над баром только при выделении или малом кол-ве баров
+                if is_selected or (self.selected_bar_index is None and days <= 14):
+                    if bar_w > 15:
+                        txt_color = "white" if not is_dimmed else "gray"
+                        self.canvas.create_text(x_center, y1 - 10, text=format_number(val), fill=txt_color, font=("Arial", 10, "bold"))
                 
-            if spacing > 25 or i % max(1, days // 10) == 0:
-                self.canvas.create_text(x_center, height - pad_y + 10, text=labels[i], fill="gray", font=("Arial", 9))
+            # ЧИСТЫЙ UI: Дата на оси X появляется ТОЛЬКО под выделенным баром
+            if is_selected:
+                self.canvas.create_text(x_center, height - pad_bottom + 12, text=bucket["label"], fill="white", font=("Arial", 9, "bold"))
+
+    def on_canvas_click(self, event):
+        if not self.rendered_hitboxes: return
+        
+        clicked_idx = None
+        width = self.canvas.winfo_width()
+        pad_left, pad_right = 50, 20
+        
+        # Защита от деления на 0 при клике
+        hitbox_count = max(1, len(self.rendered_hitboxes))
+        spacing = (width - pad_left - pad_right) / hitbox_count
+        
+        for i, center_x in enumerate(self.rendered_hitboxes):
+            if abs(event.x - center_x) <= spacing / 2:
+                clicked_idx = i
+                break
+                
+        if clicked_idx is not None and clicked_idx == self.selected_bar_index:
+            self.selected_bar_index = None
+        else:
+            self.selected_bar_index = clicked_idx
+            
+        self.update_summary_cards()
+        self.draw_chart()
 
     def calc_rewards(self, titanite):
         if titanite <= 60:
@@ -250,10 +380,8 @@ class StatisticsFrame(ctk.CTkFrame):
         val = self.entry_manual.get()
         if val.isdigit():
             new_total = int(val)
-            
             date_selection = self.opt_sync_date.get()
             
-            # Умное извлечение даты, поддерживает и "Сегодня (2026-08-25)", и просто "2026-08-23"
             if "(" in date_selection:
                 target_date = date_selection.split("(")[-1].strip(")")
             else:

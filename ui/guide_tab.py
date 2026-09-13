@@ -64,8 +64,17 @@ class GuideFrame(ctk.CTkFrame):
     def update_language(self, lang):
         self.lbl_title.configure(text=get_text(lang, "guide_title"))
         
-        file_name = "guide_ru.md" if lang == "RU" else "guide_en.md"
-        file_path = os.path.join("docs", file_name)
+        # Динамическое формирование имени файла на основе кода языка
+        lang_lower = lang.lower()
+        target_file = f"guide_{lang_lower}.md"
+        target_path = os.path.join("docs", target_file)
+        fallback_path = os.path.join("docs", "guide_en.md")
+        
+        # Проверяем наличие целевого файла, иначе откатываемся на английский
+        if os.path.exists(target_path):
+            file_path = target_path
+        else:
+            file_path = fallback_path
         
         guide_content = ""
         if os.path.exists(file_path):
@@ -73,12 +82,10 @@ class GuideFrame(ctk.CTkFrame):
                 with open(file_path, "r", encoding="utf-8") as f:
                     guide_content = f.read()
             except Exception as e:
-                guide_content = f"## ОШИБКА ЧТЕНИЯ\n\nНе удалось прочитать файл:\n**{e}**"
+                guide_content = f"## ОШИБКА ЧТЕНИЯ / READ ERROR\n\nНе удалось прочитать файл / Failed to read file:\n**{e}**"
         else:
-            if lang == "RU":
-                guide_content = f"## ОШИБКА 404\n\nФайл не найден: **{file_path}**\nСоздайте папку 'docs' в корне проекта и положите туда файлы руководства."
-            else:
-                guide_content = f"## ERROR 404\n\nFile not found: **{file_path}**\nCreate a 'docs' folder and put the guide files inside."
+            # Универсальное сообщение, если нет даже английского файла
+            guide_content = f"## 404 NOT FOUND\n\nФайл не найден / File not found: **{file_path}**\nСоздайте папку 'docs' и добавьте файл руководства / Create a 'docs' folder and add the guide file."
 
         self.render_markdown(guide_content)
         self.context_menu.entryconfigure(0, label=get_text(lang, "ctx_copy"))

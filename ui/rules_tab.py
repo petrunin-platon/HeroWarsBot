@@ -2,7 +2,7 @@
 import customtkinter as ctk
 import os
 import yaml
-import shutil  # Импортируем модуль для создания теневых бэкапов
+import shutil 
 from ui.team_selector import TeamSelectorDialog
 from ui.rule_builder_dialog import RuleBuilderDialog
 from ui.active_rules_dialog import ActiveRulesDialog
@@ -17,9 +17,7 @@ class RulesFrame(ctk.CTkFrame):
         self.room_btns = {}
         self.cond_btns = []
         
-        # Хранилище настроек телеграма до сохранения профиля
         self.tg_settings = {"active": False, "token": "", "chat_id": ""}
-        
         self.goals_data = {"titanite": 0, "rooms": 0, "floors": 0, "time": 0}
         self.current_goal_key = "titanite" 
 
@@ -54,11 +52,13 @@ class RulesFrame(ctk.CTkFrame):
         self.lbl_hp.grid(row=0, column=0, padx=5)
         self.entry_hp = ctk.CTkEntry(self.hp_frame, width=60)
         self.entry_hp.grid(row=0, column=1, padx=10)
+        self.entry_hp.bind("<KeyRelease>", self.validate_hp_input)
         
         self.lbl_delta = ctk.CTkLabel(self.hp_frame, text="")
         self.lbl_delta.grid(row=0, column=2, padx=(15, 5))
         self.entry_delta = ctk.CTkEntry(self.hp_frame, width=60)
         self.entry_delta.grid(row=0, column=3, padx=10)
+        self.entry_delta.bind("<KeyRelease>", self.validate_hp_input)
 
         self.time_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.time_frame.grid(row=3, column=0, columnspan=3, sticky="w", pady=5)
@@ -91,7 +91,6 @@ class RulesFrame(ctk.CTkFrame):
         self.btn_show_rules = ctk.CTkButton(self, text="", fg_color="#444444", hover_color="#555555", command=self.open_active_rules)
         self.btn_show_rules.grid(row=10, column=0, columnspan=3, pady=(20, 5), sticky="ew")
 
-        # НОВЫЙ БЛОК: Разделение нижнего ряда на две кнопки (Сохранить и Сбросить)
         self.footer_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.footer_frame.grid(row=11, column=0, columnspan=3, pady=(5, 10), sticky="ew")
         self.footer_frame.grid_columnconfigure((0, 1), weight=1)
@@ -118,7 +117,6 @@ class RulesFrame(ctk.CTkFrame):
         self.btn_show_rules.configure(text=get_text(lang, "rules_btn_active"))
         self.btn_save_rules.configure(text=get_text(lang, "rules_btn_save"))
         
-        # Подстраховка для новой кнопки, если ключа еще нет в i18n
         restore_txt = get_text(lang, "rules_btn_restore")
         if restore_txt == "rules_btn_restore":
             restore_txt = "Восстановить / Сброс" if lang == "RU" else "Restore / Reset"
@@ -134,6 +132,20 @@ class RulesFrame(ctk.CTkFrame):
 
         for btn in self.cond_btns:
             btn.configure(text=get_text(lang, "rules_btn_cond"))
+
+    def validate_hp_input(self, event=None):
+        """Валидация: удаляет буквы и ограничивает значение до 100%"""
+        for entry in [self.entry_hp, self.entry_delta]:
+            val = entry.get()
+            clean_val = ''.join(filter(str.isdigit, val))
+            
+            if clean_val:
+                if int(clean_val) > 100:
+                    clean_val = "100"
+                    
+            if val != clean_val:
+                entry.delete(0, 'end')
+                entry.insert(0, clean_val)
 
     def open_tg_dialog(self):
         def on_save(data):
@@ -157,11 +169,18 @@ class RulesFrame(ctk.CTkFrame):
             self.goals_data[self.current_goal_key] = int(val)
 
     def reset_goals(self):
+        # Жестко обнуляем все цели в памяти
         for k in self.goals_data:
             self.goals_data[k] = 0
+            
+        # Обновляем видимое поле
         self.entry_goal_val.delete(0, 'end')
         self.entry_goal_val.insert(0, "0")
-        self.controller.frames["dash"].append_log("[GUI] Target reset!\n")
+        
+        lang = getattr(self.controller, 'current_lang', 'RU')
+        msg = "[GUI] Все цели успешно сброшены!\n" if lang == "RU" else "[GUI] All targets successfully reset!\n"
+        if hasattr(self.controller, 'frames') and "dash" in self.controller.frames:
+            self.controller.frames["dash"].append_log(msg)
 
     def open_active_rules(self):
         ActiveRulesDialog(self.controller, self.controller)
@@ -235,7 +254,6 @@ class RulesFrame(ctk.CTkFrame):
         try:
             with open("profile.yml", 'r', encoding='utf-8') as f: 
                 profile = yaml.safe_load(f) or {}
-            # УСПЕХ: Создаем теневой бэкап
             shutil.copy2("profile.yml", "profile.yml.bak")
             
         except yaml.YAMLError as e:
@@ -258,7 +276,12 @@ class RulesFrame(ctk.CTkFrame):
         self.entry_goal_val.insert(0, str(self.goals_data[self.current_goal_key]))
         
         thresholds = profile.get("global_thresholds", {})
+        
+        # Исправление бага с наслаиванием текста
+        self.entry_hp.delete(0, 'end')
         self.entry_hp.insert(0, str(thresholds.get("critical_hp", 40)))
+        
+        self.entry_delta.delete(0, 'end')
         self.entry_delta.insert(0, str(thresholds.get("max_hp_delta", 30)))
         
         reset_hour = settings.get("reset_hour", 5)
@@ -309,32 +332,21 @@ class RulesFrame(ctk.CTkFrame):
         profile["settings"]["angus_manual_control"] = (self.switch_angus_var.get() == "on")
         profile["settings"]["telegram"] = self.tg_settings
         
-        # АТОМАРНОЕ СОХРАНЕНИЕ: Сначала пишем во временный файл
-        temp_path = "profile.yml.tmp"
-        with open(temp_path, 'w', encoding='utf-8') as f:
+        with open("profile.yml", 'w', encoding='utf-8') as f:
             yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
-        
-        # Мгновенная подмена файла (защита от краша)
-        os.replace(temp_path, "profile.yml")
             
-        # Обновляем бэкап при успешном ручном сохранении
-        import shutil
         shutil.copy2("profile.yml", "profile.yml.bak")
         self.controller.frames["dash"].append_log("[GUI] Профиль настроек сохранен!\n")
 
     def restore_profile(self):
-        """Интеллектуальная функция восстановления или жесткого сброса профиля"""
         dash = self.controller.frames.get("dash")
-        
         if os.path.exists("profile.yml.bak"):
-            # Если есть бэкап, восстанавливаемся из него
             try:
                 shutil.copy2("profile.yml.bak", "profile.yml")
                 if dash: dash.append_log("[GUI] ♻️ Профиль успешно восстановлен из резервной копии!\n")
             except Exception as e:
                 if dash: dash.append_log(f"[ОШИБКА] Не удалось восстановить профиль: {e}\n")
         else:
-            # Если бэкапа нет (например, файл сломался еще до запуска программы), делаем полный сброс
             if os.path.exists("profile.yml"):
                 try:
                     os.remove("profile.yml")
@@ -342,5 +354,4 @@ class RulesFrame(ctk.CTkFrame):
                 except Exception as e:
                     if dash: dash.append_log(f"[ОШИБКА] Не удалось удалить профиль: {e}\n")
         
-        # Перезагружаем интерфейс
         self.load_profile_to_gui()

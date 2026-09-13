@@ -5,7 +5,6 @@ import threading
 import subprocess
 import sys
 import os
-import keyboard
 import datetime
 import webbrowser
 import time
@@ -64,7 +63,7 @@ class DashboardFrame(ctk.CTkFrame):
         self.log_box.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 10), padx=5)
         
         self.setup_readonly_and_menu(self.log_box)
-        self.log_box.insert("end", "[СИСТЕМА] Интерфейс загружен. Ожидание подключения... (Версия 1.5.1)\n")
+        self.log_box.insert("end", "[СИСТЕМА] Интерфейс загружен. Ожидание подключения... (Версия 1.6.1)\n")
 
         log_footer = ctk.CTkFrame(self, fg_color="transparent")
         log_footer.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 15), padx=5)
@@ -150,7 +149,7 @@ class DashboardFrame(ctk.CTkFrame):
                 if win.isMinimized: win.restore()
                 win.activate()
                 time.sleep(0.3) 
-                keyboard.send('alt+o') 
+                pyautogui.hotkey('alt', 'o') 
                 self.append_log("[ИНФО] Экран телефона погашен для экономии батареи!\n")
             else:
                 self.append_log("[ОШИБКА] Окно трансляции не найдено.\n")
@@ -442,7 +441,7 @@ class DashboardFrame(ctk.CTkFrame):
         dialog = ctk.CTkToplevel(self)
         dialog.title(get_text(lang, "test_title"))
         dialog.geometry("450x300")
-        dialog.attributes("-topmost", True)
+        dialog.transient(self.controller)
         dialog.after(100, dialog.grab_set)
         
         ctk.CTkLabel(dialog, text=get_text(lang, "test_success"), font=ctk.CTkFont(size=18, weight="bold"), text_color="#28a745").pack(pady=(15, 5))

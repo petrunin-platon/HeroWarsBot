@@ -48,8 +48,8 @@ ctk.set_default_color_theme("blue")
 LANGUAGE_MAP = {
     "Русский": "RU",
     "English": "EN",
-    "Беларуская": "BY",
     "Українська": "UK",
+    "Қазақша": "KK",
     "Deutsch": "DE",
     "Español": "ES",
     "Français": "FR",
