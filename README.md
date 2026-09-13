@@ -36,7 +36,6 @@ The bot's interface is localized into 14 languages. You can switch the language 
 
 - 🇬🇧 English (EN)
 - 🇷🇺 Русский (RU)
-- 🇧🇾 Беларуская (BY)
 - 🇺🇦 Українська (UK)
 - 🇰🇿 Қазақша (KK)
 - 🇩🇪 Deutsch (DE)
