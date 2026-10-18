@@ -9,16 +9,16 @@ import cv2
 import numpy as np
 import threading
 import queue
-import builtins 
+import atexit
 import ctypes # <-- ИСПОЛЬЗУЕМ CTYPES ВМЕСТО KEYBOARD
 
 # --- ПЕРЕОПРЕДЕЛЕНИЕ PRINT ДЛЯ GUI ---
-# Заставляем Python всегда сбрасывать буфер в терминал без задержек
-original_print = builtins.print
-def unbuffered_print(*args, **kwargs):
-    kwargs.setdefault('flush', True)
-    original_print(*args, **kwargs)
-builtins.print = unbuffered_print
+# Время в начале каждой строки, сброс буфера без задержек и копия всего лога в bot_data/logs/.
+# Включаем до остальных импортов, чтобы их строки тоже попали в лог.
+import session_log
+session_log.install()
+SESSION_LOG = session_log.SESSION
+ROOM_TIMER = SESSION_LOG.timer
 # -------------------------------------
 
 from config import CONFIG, LIMITS, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS
@@ -54,6 +54,7 @@ def wait_for_input():
         except queue.Empty:
             if GRACEFUL_STOP:
                 print("[ТАКТИКА] Экстренная остановка по команде пользователя (Ctrl+Q).")
+                SESSION_LOG.set_stop_reason("Ручная остановка пользователем (Ctrl+Q)")
                 sys.exit(0)
 
 def trigger_graceful_stop():
@@ -62,9 +63,18 @@ def trigger_graceful_stop():
         print("\n[ИНФО] Команда 'Ctrl+Q' принята! Бот завершит бой и остановится.")
         GRACEFUL_STOP = True
 
+def print_session_summary():
+    """Блок [ИТОГ]. Печатается один раз при любой остановке."""
+    SESSION_LOG.print_summary(SESSION_STATS["rooms_cleared"], SESSION_STATS["titanite_gathered"])
+
 def trigger_emergency_stop():
     print("\n[ЭКСТРЕННАЯ ОСТАНОВКА] Принудительное завершение (Ctrl+Shift+Q)!")
-    os._exit(0) 
+    SESSION_LOG.set_stop_reason("Экстренная остановка пользователем (Ctrl+Shift+Q)")
+    try:
+        print_session_summary()  # os._exit не запускает atexit, поэтому итог печатаем здесь
+    except Exception:
+        pass
+    os._exit(0)
 
 # --- БЕЗОПАСНЫЙ (AV-FRIENDLY) ПЕРЕХВАТЧИК ГОРЯЧИХ КЛАВИШ ---
 def background_hotkey_listener():
@@ -150,6 +160,9 @@ SESSION_STATS = {
     "titanite_gathered": 0
 }
 
+# Итог сессии при любой остановке: лимит, Ctrl+Q, STOP, ошибка Python
+atexit.register(print_session_summary)
+
 def get_stop_reason():
     if GRACEFUL_STOP:
         return "Ручная остановка пользователем (Ctrl+Q)"
@@ -231,6 +244,7 @@ with mss.MSS() as sct:
         if NEEDS_CONTEXT_RECOVERY:
             STATE = recover_context(game_window, sct)
             NEEDS_CONTEXT_RECOVERY = False
+            ROOM_TIMER.restart("hallway")  # старт и конец паузы в замеры комнат не входят
             continue
             
         # === ГЛОБАЛЬНАЯ ЗАЩИТА ОТ ДИСКОННЕКТОВ И ЛАГОВ ===
@@ -243,8 +257,10 @@ with mss.MSS() as sct:
         # =================================================
         
         if STATE == "WAIT_FOR_OK" and get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
-            active_pack = CURRENT_PACK 
-            
+            ROOM_TIMER.begin("result")
+            counted_room = None  # номер комнаты, если она засчитана и нужна строка [ВРЕМЯ]
+            active_pack = CURRENT_PACK
+
             if active_pack:
                 print("[ЛОГИКА] Ожидание завершения анимаций (1.5 сек)...")
                 time.sleep(1.5)
@@ -329,23 +345,28 @@ with mss.MSS() as sct:
                     except Exception as e:
                         print(f"[СИСТЕМА] Ошибка сохранения скриншота: {e}")
                             
+                    print(f"[SOS] Причина: {panic_reason}")
+                    SESSION_LOG.count("sos")
                     print(f"\n[SOS_TRIGGER] {json.dumps(critical_data)}")
                     sys.stdout.flush()
-                    
+
                     print("[ЛОГИКА] Ожидание команды от GUI или Telegram...")
-                    decision = wait_for_input() 
-                    force_window_focus() 
-                    
+                    with ROOM_TIMER.excluded("sos_wait"):
+                        decision = wait_for_input()
+                    force_window_focus()
+
                     if decision == "MANUAL":
                         print("\n[ТАКТИКА] Включен ручной режим. Бот ОТКЛЮЧАЕТСЯ!")
                         print("[ИНФО] Окно игры свободно. Нажми 'Ещё раз' и переиграй бой руками.")
+                        SESSION_LOG.set_stop_reason("Пользователь выбрал ручной режим в окне SOS")
                         # Жесткий стоп. Гарантирует, что бот НЕ нажмет кнопку "ОК"
                         sys.exit(0)
-                        
+
                     elif decision == "STOP":
                         print("[ТАКТИКА] Экстренная остановка по команде пользователя.")
+                        SESSION_LOG.set_stop_reason("Команда STOP из окна SOS")
                         sys.exit(0)
-                        
+
                     elif decision.startswith("ROLLBACK"):
                         new_team = []
                         if ":" in decision:
@@ -371,7 +392,9 @@ with mss.MSS() as sct:
                             }
                             
                         log_battle(current_room, CURRENT_ENEMIES, active_pack, "ROLLBACK", tactic_result["reason"], team_status)
-                        
+                        SESSION_LOG.count("rollbacks")
+                        ROOM_TIMER.begin("rollback")
+
                         if execute_rollback(game_window, sct):
                             STATE = "HALLWAY"
                             continue
@@ -402,7 +425,8 @@ with mss.MSS() as sct:
                         }
                         print(f"\n[SOS_TRIGGER] TEST_SUCCESS:{json.dumps(success_data)}")
                         sys.stdout.flush()
-                        decision = wait_for_input()
+                        with ROOM_TIMER.excluded("sos_wait"):
+                            decision = wait_for_input()
                         force_window_focus()
                         
                         if decision == "CONFIRM":
@@ -430,7 +454,9 @@ with mss.MSS() as sct:
                                 PENDING_RULE["team"] = new_team 
                                 if decision.startswith("ROLLBACK_TG"):
                                     PENDING_RULE["source"] = "telegram"
-                            
+
+                            SESSION_LOG.count("rollbacks")
+                            ROOM_TIMER.begin("rollback")
                             if execute_rollback(game_window, sct):
                                 STATE = "HALLWAY"
                                 continue
@@ -464,19 +490,27 @@ with mss.MSS() as sct:
                         add_metrics_bulk(bulk_updates, is_bot=True)
                         
                         print(f"[СТАТИСТИКА] Комнат: {SESSION_STATS['rooms_cleared']} | Титанит: {SESSION_STATS['titanite_gathered']}")
-                            
+                        counted_room = SESSION_STATS["rooms_cleared"]
+
                         if CONFIG.get("debug_mode"):
                             print("\n[ПАУЗА ОТЛАДКИ] Бой завершен. Подтвердите продолжение в GUI.")
-                            sys.stdout.flush() 
-                            wait_for_input()
+                            sys.stdout.flush()
+                            with ROOM_TIMER.excluded("sos_wait"):
+                                wait_for_input()
                             force_window_focus()
 
             find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD)
             STATE = "HALLWAY"
-            time.sleep(0.5) 
+            if counted_room:
+                # Окно результата закрыто — комната завершена. Пауза 0.5 с ниже уже считается следующей комнате
+                print(SESSION_LOG.finish_room(counted_room, current_room))
+            else:
+                ROOM_TIMER.restart("hallway")
+            time.sleep(0.5)
             continue
             
         if STATE == "HALLWAY":
+            ROOM_TIMER.begin("hallway")
             if os.path.exists("pause.flag"):
                 print("\n[МЯГКАЯ ПАУЗА] Бот ждет в коридоре...")
                 while os.path.exists("pause.flag"):
@@ -490,6 +524,7 @@ with mss.MSS() as sct:
             stop_reason = get_stop_reason()
             if stop_reason:
                 print(f"\n🛑 ОСТАНОВКА: {stop_reason}")
+                SESSION_LOG.set_stop_reason(stop_reason)
                 sys.exit(0)
                 
             CURRENT_ENEMIES = []
@@ -511,7 +546,8 @@ with mss.MSS() as sct:
             
         elif STATE == "SET_TEAM":
             if get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD) or get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD):
-                
+                ROOM_TIMER.begin("team")  # экран выбора команды виден: коридор и вход закончились
+
                 if PENDING_RULE and PENDING_RULE["room"] == current_room:
                     target_pack = PENDING_RULE["team"]
                     reason = "Тестирование нового пака"
@@ -535,29 +571,34 @@ with mss.MSS() as sct:
                         "enemies": CURRENT_ENEMIES,
                         "reason": reason
                     }
+                    print(f"[SOS] Причина: {reason}")
+                    SESSION_LOG.count("sos")
                     print(f"\n[SOS_TRIGGER] {json.dumps(stop_data)}")
                     sys.stdout.flush()
-                    
+
                     print("[ЛОГИКА] Ожидание команды от GUI (MANUAL или NEW_PACK)...")
-                    decision = wait_for_input()
+                    with ROOM_TIMER.excluded("sos_wait"):
+                        decision = wait_for_input()
                     force_window_focus()
-                    
+
                     if decision == "MANUAL":
                         print("[ТАКТИКА] Включен ручной режим. Жду старта боя (кликните 'В бой' в игре)...")
-                        with open("pause.flag", "w") as f: 
+                        with open("pause.flag", "w") as f:
                             f.write("1")
-                        
-                        while os.path.exists("pause.flag"):
-                            wait_for_focus()
-                            # Если бой начался (появилась пауза или отключенный автобой)
-                            if get_match_loc('btn_round_auto_off.png', game_window, sct, 0.75) or get_match_loc('btn_round_auto_on.png', game_window, sct, 0.75):
-                                print("[ИНФО] Зафиксировано ручное начало боя. Снимаю паузу.")
-                                if os.path.exists("pause.flag"):
-                                    os.remove("pause.flag")
-                                STATE = "WAIT_FOR_OK" # Переходим к ожиданию победы
-                                break
-                            time.sleep(1)
-                        continue 
+
+                        # Пока вы играете руками, время в замеры не идёт
+                        with ROOM_TIMER.excluded("sos_wait"):
+                            while os.path.exists("pause.flag"):
+                                wait_for_focus()
+                                # Если бой начался (появилась пауза или отключенный автобой)
+                                if get_match_loc('btn_round_auto_off.png', game_window, sct, 0.75) or get_match_loc('btn_round_auto_on.png', game_window, sct, 0.75):
+                                    print("[ИНФО] Зафиксировано ручное начало боя. Снимаю паузу.")
+                                    if os.path.exists("pause.flag"):
+                                        os.remove("pause.flag")
+                                    STATE = "WAIT_FOR_OK" # Переходим к ожиданию победы
+                                    break
+                                time.sleep(1)
+                        continue
                         
                     elif decision.startswith("NEW_PACK"):
                         # Парсим новый пак из GUI, например: "NEW_PACK: iyari, sigurd, moloch, hyperion, araji"
@@ -574,6 +615,7 @@ with mss.MSS() as sct:
                         
                     elif decision == "STOP":
                         print("[ТАКТИКА] Экстренная остановка по команде пользователя.")
+                        SESSION_LOG.set_stop_reason("Команда STOP из окна «Нет подходящего пака»")
                         sys.exit(0)
                 # =================================================================
                 
@@ -582,6 +624,7 @@ with mss.MSS() as sct:
                 
                 if not target_pack:
                     print(f"\n[ОШИБКА] Пак не найден в правилах.")
+                    SESSION_LOG.set_stop_reason("Пак не найден в правилах")
                     sys.exit(0)
                 
                 if target_pack == LAST_USED_TEAMS.get(current_room):
@@ -594,6 +637,7 @@ with mss.MSS() as sct:
                 
                 if not team_ready:
                     print(f"\n[ОШИБКА] Ошибка расстановки титанов.")
+                    SESSION_LOG.set_stop_reason("Ошибка расстановки титанов")
                     sys.exit(0)
                 
                 if CURRENT_SPECIAL_ULT == "angus":
@@ -602,13 +646,15 @@ with mss.MSS() as sct:
                     STATE = "PREP_AUTO"
             continue
             
-        elif STATE == "PREP_SPECIAL_ANGUS": 
+        elif STATE == "PREP_SPECIAL_ANGUS":
+            ROOM_TIMER.begin("battle")
             if find_and_click_bulletproof('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD):
                 execute_angus_ult(game_window, sct)
                 STATE = "WAIT_FOR_OK" 
             continue
             
         elif STATE == "PREP_AUTO":
+            ROOM_TIMER.begin("battle")
             print("[ТАКТИКА] Выполняю быстрый старт боя (Fire-and-Forget)...")
             auto_coords = get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD)
             if auto_coords:
