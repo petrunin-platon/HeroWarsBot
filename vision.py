@@ -12,6 +12,7 @@ import base64
 from functools import lru_cache
 from config import CONFIG
 import session_log
+import click_logic
 
 # Пытаемся импортировать упакованные ассеты
 try:
@@ -186,13 +187,15 @@ def imread_cyrillic(image_name):
 
 def click_human(x, y, exact=False, jitter=4):
     global LAST_WINDOW_RECT
+    """Нажимает через adb. Возвращает процесс нажатия (по нему видно, когда команда дошла до телефона)
+    или None, если нажать не удалось."""
     if not LAST_WINDOW_RECT or not GEOMETRY_CACHE["is_calibrated"]:
-        return
+        return None
 
     game_w = GEOMETRY_CACHE["game_w"]
     game_h = GEOMETRY_CACHE["game_h"]
     
-    if game_w == 0 or game_h == 0: return
+    if game_w == 0 or game_h == 0: return None
 
     pct_x = (x - LAST_WINDOW_RECT["left"] - GEOMETRY_CACHE["offset_x"]) / game_w
     pct_y = (y - LAST_WINDOW_RECT["top"] - GEOMETRY_CACHE["offset_y"]) / game_h
@@ -211,6 +214,7 @@ def click_human(x, y, exact=False, jitter=4):
     tap_proc = subprocess.Popen(["adb", "shell", "input", "tap", str(tap_x), str(tap_y)], creationflags=0x08000000)
     session_log.track_tap(tap_proc, tap_started)  # замер задержки в фоне, бота не задерживает
     time.sleep(0.1 if exact else random.uniform(0.1, 0.2))
+    return tap_proc
 
 def swipe_scrcpy(window_rect, direction="down"):
     real_w, real_h = get_device_resolution()
@@ -233,7 +237,9 @@ def get_window_rect(title):
     LAST_WINDOW_RECT = {"top": win.top, "left": win.left, "width": win.width, "height": win.height}
     return LAST_WINDOW_RECT
 
-def get_match_loc(image_name, window_rect, sct, threshold):
+def get_match_info(image_name, window_rect, sct, threshold):
+    """Ищет картинку на новом снимке. Возвращает словарь с положением (в игровой области), размером картинки
+    и степенью совпадения или None. Случайности здесь нет — по нему можно следить, стоит ли предмет на месте."""
     screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
 
     template = imread_cyrillic(image_name)
@@ -242,83 +248,105 @@ def get_match_loc(image_name, window_rect, sct, threshold):
 
     res = cv2.matchTemplate(screenshot_cv, template, cv2.TM_CCOEFF_NORMED)
     _, max_val, _, max_loc = cv2.minMaxLoc(res)
-    
-    if max_val >= threshold:
-        h, w = template.shape[:-1]
-        scale = GEOMETRY_CACHE.get("scale", 1.0)
-        
-        # =====================================================================
-        # ИНТЕЛЛЕКТУАЛЬНАЯ РАНДОМИЗАЦИЯ КЛИКОВ (ЗАЩИТА ОТ ДЕТЕКТА)
-        # =====================================================================
-        if "flag_enter" in image_name:
-            # ИСКЛЮЧЕНИЕ: Логика для дверей 
-            door_w = int(165 * scale)
-            door_h = int(245 * scale)
-            
-            # Центр флага по оси X
-            center_x = max_loc[0] + w // 2
-            
-            # Границы красной зоны
-            start_x = center_x - door_w // 2
-            end_x = center_x + door_w // 2
-            start_y = max_loc[1] + h 
-            end_y = start_y + door_h
-            
-            # 10% отступа внутрь от границ красной зоны для безопасности
-            margin_x = int(door_w * 0.1)
-            margin_y = int(door_h * 0.1)
-            
-            rand_x = random.randint(start_x + margin_x, end_x - margin_x)
-            rand_y = random.randint(start_y + margin_y, end_y - margin_y)
-            
-        else:
-            # СТАНДАРТНАЯ КНОПКА: Отсекаем по 20% с каждого края
-            margin_x = max(1, int(w * 0.2))
-            margin_y = max(1, int(h * 0.2))
-            
-            # Защита на случай крошечных кнопок (отключаем отступ, если кнопка слишком мала)
-            if margin_x * 2 >= w: margin_x = 0
-            if margin_y * 2 >= h: margin_y = 0
-            
-            rand_x = random.randint(max_loc[0] + margin_x, max_loc[0] + w - margin_x)
-            rand_y = random.randint(max_loc[1] + margin_y, max_loc[1] + h - margin_y)
-        # =====================================================================
-        
-        # Универсальный возврат (ox и oy будут нулевыми, если обрезка не применялась)
-        return (window_rect["left"] + ox + rand_x,
-                window_rect["top"] + oy + rand_y)
-            
-    return None
+
+    if max_val < threshold:
+        return None
+    h, w = template.shape[:2]
+    return {"x": max_loc[0], "y": max_loc[1], "w": w, "h": h, "score": float(max_val), "ox": ox, "oy": oy}
+
+def click_point_from_info(image_name, info, window_rect):
+    """Случайная точка нажатия внутри найденной картинки, в координатах экрана."""
+    w, h = info["w"], info["h"]
+    x, y = info["x"], info["y"]
+    scale = GEOMETRY_CACHE.get("scale", 1.0)
+
+    # =====================================================================
+    # ИНТЕЛЛЕКТУАЛЬНАЯ РАНДОМИЗАЦИЯ КЛИКОВ (ЗАЩИТА ОТ ДЕТЕКТА)
+    # =====================================================================
+    if "flag_enter" in image_name:
+        # ИСКЛЮЧЕНИЕ: Логика для дверей — случайная точка в центральной части зоны под флажком
+        rand_x, rand_y = click_logic.door_click_point(x, y, w, h, scale)
+    else:
+        # СТАНДАРТНАЯ КНОПКА: Отсекаем по 20% с каждого края
+        margin_x = max(1, int(w * 0.2))
+        margin_y = max(1, int(h * 0.2))
+
+        # Защита на случай крошечных кнопок (отключаем отступ, если кнопка слишком мала)
+        if margin_x * 2 >= w: margin_x = 0
+        if margin_y * 2 >= h: margin_y = 0
+
+        rand_x = random.randint(x + margin_x, x + w - margin_x)
+        rand_y = random.randint(y + margin_y, y + h - margin_y)
+    # =====================================================================
+
+    # Универсальный возврат (ox и oy будут нулевыми, если обрезка не применялась)
+    return (window_rect["left"] + info["ox"] + rand_x,
+            window_rect["top"] + info["oy"] + rand_y)
+
+def get_match_loc(image_name, window_rect, sct, threshold):
+    info = get_match_info(image_name, window_rect, sct, threshold)
+    if info is None:
+        return None
+    return click_point_from_info(image_name, info, window_rect)
+
+def grab_small_gray(window_rect, sct, size=(96, 54)):
+    """Уменьшенный серый кадр игры — для проверки «картинка замерла»."""
+    screenshot_cv, _, _, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
+    gray = cv2.cvtColor(screenshot_cv, cv2.COLOR_BGR2GRAY)
+    return cv2.resize(gray, size, interpolation=cv2.INTER_AREA)
+
+def wait_until_still(window_rect, sct, max_wait=click_logic.STILL_MAX_WAIT_S, poll=0.15):
+    """Ждёт, пока картинка перестанет двигаться. Возвращает (замерла ли, сколько секунд ждали)."""
+    watcher = click_logic.StillnessWatcher()
+    started = time.monotonic()
+    while time.monotonic() - started < max_wait:
+        if watcher.update(grab_small_gray(window_rect, sct)):
+            return True, time.monotonic() - started
+        time.sleep(poll)
+    return False, time.monotonic() - started
 
 def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=6.0):
     """
-    Человечный и надежный клик с защитой от непрокликивания.
+    Человечный и надежный клик с защитой от непрокликивания и от лишних нажатий.
+
+    Нажимает один раз и ждёт, пока кнопка пропадёт с экрана. Повторно жмёт, только если через
+    click_logic.RETRY_AFTER_S после того, как команда нажатия дошла до телефона, экран не отреагировал.
+    Если окно уже закрывается (кнопка бледнеет или едет), ждёт дольше.
+    timeout — сколько искать кнопку и сколько можно начинать новые нажатия.
     """
     start_time = time.time()
-    clicked = False
-    
-    while time.time() - start_time < timeout:
-        coords = get_match_loc(image_name, window_rect, sct, threshold)
-        if not coords:
-            if clicked:
-                # Если мы уже кликали, а кнопка пропала - это 100% успех
+    policy = None
+
+    while True:
+        elapsed = time.time() - start_time
+        info = get_match_info(image_name, window_rect, sct, threshold)
+
+        if info is None:
+            if policy is not None:
+                # Мы уже нажимали, а кнопка пропала — это 100% успех
                 return True
+            if elapsed >= timeout:
+                break
             time.sleep(0.1)
             continue
-            
-        # Доверяем твоей родной математике из get_match_loc (обрезание 20% краев)
-        click_human(coords[0], coords[1])
-        clicked = True
-        
-        # Задержка рандомизирована, глобальный модуль random загружен в начале файла
-        time.sleep(random.uniform(0.5, 0.8))
-        
-        if not get_match_loc(image_name, window_rect, sct, threshold):
-            return True 
-            
-        print(f"[VISION] Клик по '{image_name}' не зарегистрирован сервером. Повторяю...")
-        session_log.count("repeat_clicks")
-        
+
+        pos = (info["x"], info["y"])
+        if policy is not None:
+            verdict = policy.observe(True, info["score"], pos)
+            if verdict == click_logic.WAIT:
+                time.sleep(0.1)
+                continue
+            if elapsed >= timeout:
+                break
+            waited = policy.seconds_since_tap()
+            print(f"[VISION] Клик по '{image_name}' не зарегистрирован сервером (экран не отреагировал {waited:.1f} с). Повторяю...")
+            session_log.count("repeat_clicks")
+
+        coords = click_point_from_info(image_name, info, window_rect)
+        tap_proc = click_human(coords[0], coords[1])
+        policy = click_logic.RetryPolicy(click_logic.TapWatch(tap_proc, clock=time.monotonic),
+                                         info["score"], pos, clock=time.monotonic)
+
     print(f"[VISION] Ошибка: Не удалось прожать '{image_name}' за {timeout} сек.")
     return False
 
@@ -354,3 +382,30 @@ def wait_for_ui_element(template_name, window_rect, sct, threshold=0.75, timeout
     # Если вышли из цикла, значит время вышло
     print(f"[VISION] Таймаут: элемент '{template_name}' не появился за {timeout} сек.")
     return None
+
+def wait_after_tap(template_name, window_rect, sct, tap_proc, threshold=0.75, react_s=click_logic.DOOR_REACT_S,
+                   settle_time=0.0, poll_rate=0.05):
+    """
+    Ждёт реакцию на нажатие: появление элемента. Время отсчитывается не от нажатия, а от момента,
+    когда команда adb дошла до телефона (иначе медленный adb выглядит как промах).
+
+    :return: координаты элемента или None, если за react_s после нажатия экран не отреагировал.
+    """
+    watch = click_logic.TapWatch(tap_proc, clock=time.monotonic)
+
+    while True:
+        done = watch.done_time()
+        if done is not None and time.monotonic() - done >= react_s:
+            return None
+
+        coords = get_match_loc(template_name, window_rect, sct, threshold)
+        if coords:
+            if settle_time <= 0:
+                return coords
+            time.sleep(settle_time)
+            coords_final = get_match_loc(template_name, window_rect, sct, threshold)
+            if coords_final:
+                return coords_final
+            continue
+
+        time.sleep(poll_rate)

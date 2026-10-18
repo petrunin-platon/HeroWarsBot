@@ -6,6 +6,8 @@ import os
 from config import CONFIG, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS, ENEMY_TITANS
 from vision import click_human, get_match_loc, find_and_click_bulletproof, imread_cyrillic, wait_for_ui_element
 from analyzer import scan_enemy_team
+import click_logic
+import session_log
 
 # Подключаем движок правил для проверки запретов
 from rules_engine import engine 
@@ -116,8 +118,11 @@ def find_smart_door(window_rect, sct, current_state=None):
         local_x = best_btn[0]
         enemies = scan_enemy_team(window_rect, sct, ENEMY_TITANS, local_x)
         start_time = time.time()
-        
-        while time.time() - start_time < 6.0:
+        policy = None  # появляется после первого нажатия «Атаковать»
+
+        # Жмём один раз. Повтор — только если через click_logic.RETRY_AFTER_S после нажатия окно не отреагировало
+        while True:
+            elapsed = time.time() - start_time
             if os.path.exists("pause.flag"): return None, []
             
             scr = np.array(sct.grab(window_rect))
@@ -126,21 +131,36 @@ def find_smart_door(window_rect, sct, current_state=None):
             loc = np.where(res >= ACTION_THRESHOLD)
             
             dyn_buttons = []
+            dyn_scores = {}
             for pt in zip(*loc[::-1]):
                 cx, cy = pt[0] + w // 2, pt[1] + h // 2
                 if not any(abs(cx - ax) < 40 for ax, ay in dyn_buttons):
                     dyn_buttons.append((cx, cy))
+                    dyn_scores[(cx, cy)] = float(res[pt[1], pt[0]])
             
-            if dyn_buttons:
-                target_btn = min(dyn_buttons, key=lambda b: abs(b[0] - local_x))
-                click_human(window_rect["left"] + target_btn[0], window_rect["top"] + target_btn[1])
-                local_x = target_btn[0] 
-                
-            time.sleep(0.15)
+            if not dyn_buttons:
+                if policy is not None:
+                    # Мы нажимали, а кнопки «Атаковать» больше нет — вошли в комнату
+                    print(f"[КОМБАТ] Успешный вход. Комната: {room_type.upper()} | Враги: {enemies}")
+                    return room_type, enemies
+                if elapsed >= 6.0: break
+                time.sleep(0.1)
+                continue
             
-            if not get_match_loc('btn_attack.png', window_rect, sct, ACTION_THRESHOLD):
-                print(f"[КОМБАТ] Успешный вход. Комната: {room_type.upper()} | Враги: {enemies}")
-                return room_type, enemies
+            target_btn = min(dyn_buttons, key=lambda b: abs(b[0] - local_x))
+            score = dyn_scores[target_btn]
+            if policy is not None:
+                if policy.observe(True, score, target_btn) == click_logic.WAIT:
+                    time.sleep(0.1)
+                    continue
+                if elapsed >= 6.0: break
+                print(f"[КОМБАТ] Нажатие на 'Атаковать' не сработало (экран не отреагировал {policy.seconds_since_tap():.1f} с). Повторяю...")
+                session_log.count("repeat_clicks")
+            
+            tap_proc = click_human(window_rect["left"] + target_btn[0], window_rect["top"] + target_btn[1])
+            policy = click_logic.RetryPolicy(click_logic.TapWatch(tap_proc, clock=time.monotonic),
+                                             score, target_btn, clock=time.monotonic)
+            local_x = target_btn[0] 
                 
     return None, []
 
