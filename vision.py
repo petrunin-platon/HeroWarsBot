@@ -11,6 +11,7 @@ import re
 import base64
 from functools import lru_cache
 from config import CONFIG
+import session_log
 
 # Пытаемся импортировать упакованные ассеты
 try:
@@ -206,7 +207,9 @@ def click_human(x, y, exact=False, jitter=4):
         tap_x += random.randint(-phone_jitter, phone_jitter)
         tap_y += random.randint(-phone_jitter, phone_jitter)
         
-    subprocess.Popen(["adb", "shell", "input", "tap", str(tap_x), str(tap_y)], creationflags=0x08000000)
+    tap_started = time.monotonic()
+    tap_proc = subprocess.Popen(["adb", "shell", "input", "tap", str(tap_x), str(tap_y)], creationflags=0x08000000)
+    session_log.track_tap(tap_proc, tap_started)  # замер задержки в фоне, бота не задерживает
     time.sleep(0.1 if exact else random.uniform(0.1, 0.2))
 
 def swipe_scrcpy(window_rect, direction="down"):
@@ -314,6 +317,7 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
             return True 
             
         print(f"[VISION] Клик по '{image_name}' не зарегистрирован сервером. Повторяю...")
+        session_log.count("repeat_clicks")
         
     print(f"[VISION] Ошибка: Не удалось прожать '{image_name}' за {timeout} сек.")
     return False
