@@ -132,6 +132,31 @@ class RulesEngine:
         special_ult = self._resolve_special_ult(default_team, {})
         return default_team, "ПРИОРИТЕТ 3: Базовый пак", None, special_ult
 
+    def rescue_rules_fired_by_battle(self, room_type, enemies, before_state, after_state, fighters):
+        """
+        Правила отхила (titan_hp_below), которые сработали ИЗ-ЗА этого боя:
+        до боя ХП-условие не выполнялось, после боя выполняется, и один из титанов
+        условия только что дрался (он в fighters). Возвращает названия через запятую или "".
+        Правила skip и условия по энергии не учитываются.
+        """
+        rules = self.rules_cache.get(room_type, {}).get("rules", [])
+        fired = []
+        for rule in rules:
+            if rule.get("action") == "skip":
+                continue
+            hp_cond = rule.get("condition", {}).get("titan_hp_below")
+            if not hp_cond or not any(t in fighters for t in hp_cond):
+                continue
+            only_hp = {"titan_hp_below": hp_cond}
+            # Условие по врагам оставляем: правило отхила могло быть привязано к составу врагов
+            if "enemies_contain" in rule["condition"]:
+                only_hp["enemies_contain"] = rule["condition"]["enemies_contain"]
+            if self._evaluate_condition(only_hp, enemies, before_state):
+                continue  # уже срабатывало до боя
+            if self._evaluate_condition(only_hp, enemies, after_state):
+                fired.append(rule.get("name", "правило отхила"))
+        return ", ".join(fired)
+
     def _resolve_special_ult(self, team, rule):
         if rule.get("special_ult"):
             return rule.get("special_ult")
