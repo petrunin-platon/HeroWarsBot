@@ -1,25 +1,57 @@
 rules:
 - team:
   - hyperion
+  - araji
   - sigurd
-  - tidus
-  - nova
-  - mairi
+  - iyari
+  - lumira
   stats:
     wins: 0
     fails: 0
   condition:
-    enemies_contain:
-    - eden
-    - silva
-    - araji
-    - ignis
-    - vulcan
-  name: Анти-пак (Тактика) - 1
-  allowed_delta: 43
+    titan_hp_below:
+      araji: 65
+  name: Авто-отхил (araji < 65%)
+  allowed_delta: 62
+- name: Auto Rule
+  condition:
+    titan_hp_below:
+      sigurd: 50
+  team: []
+  action: skip
+- name: Auto Rule
+  condition:
+    titan_hp_below:
+      rigel: 35
+  team:
+  - rigel
+  - iyari
+  - lumira
+  - hyperion
+  - sigurd
+- name: Auto Rule
+  condition:
+    titan_hp_below:
+      moloch: 40
+  team:
+  - moloch
+  - rigel
+  - iyari
+  - lumira
+  - hyperion
+- name: Auto Rule
+  condition:
+    titan_hp_below:
+      araji: 50
+  team:
+  - araji
+  - hyperion
+  - rigel
+  - iyari
+  - lumira
 default_team:
 - hyperion
-- araji
 - rigel
 - iyari
 - lumira
+- amon

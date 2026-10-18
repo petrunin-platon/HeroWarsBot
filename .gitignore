@@ -11,11 +11,11 @@ ENV/
 profile.yml
 
 # === Логи, Метрики и Машинное обучение ===
-logs/
-*.log
-*.jsonl
-*.csv
-stats.json
+# logs/
+# *.log
+# *.jsonl
+# *.csv
+# stats.json
 
 # === Флаги состояний и Дампы памяти (Computer Vision) ===
 pause.flag
@@ -37,8 +37,6 @@ scrcpy-noconsole.vbs
 .DS_Store
 Thumbs.db
 
-assets/
-
 # Сборка PyInstaller
 build/
 dist/
@@ -50,11 +48,11 @@ __pycache__/
 *.pyo
 
 # Логи и локальная база бота
-logs/
-stats.json
+
+
 pause.flag
 temp_sos.png
-profile.yml
+# profile.yml
 pack_assets.py
 make_backup.py
 assets_db.py

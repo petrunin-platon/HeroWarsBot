@@ -1,4 +1,14 @@
-rules: []
+rules:
+- name: Auto Rule
+  condition:
+    titan_hp_below:
+      araji: 35
+  team:
+  - araji
+  - ignis
+  - acheron
+  - vulcan
+  - moloch
 default_team:
 - araji
 - ignis

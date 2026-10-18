@@ -1,0 +1,28 @@
+{
+    "total_titanite": 2064,
+    "total_rooms": 172,
+    "total_floors": 32,
+    "total_potions": 8600,
+    "daily": {
+        "2026-09-01": {
+            "titanite": 192,
+            "rooms": 16,
+            "floors": 2,
+            "potions": 800,
+            "bot_rooms": 16,
+            "bot_titanite": 192,
+            "bot_potions": 800,
+            "bot_floors": 2
+        },
+        "2026-10-18": {
+            "titanite": 1872,
+            "rooms": 156,
+            "floors": 30,
+            "potions": 7800,
+            "bot_rooms": 156,
+            "bot_titanite": 1872,
+            "bot_potions": 7800,
+            "bot_floors": 30
+        }
+    }
+}
