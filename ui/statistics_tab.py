@@ -5,6 +5,7 @@ import yaml
 from datetime import datetime, timedelta
 from stats_manager import load_stats, add_metric, reset_stats, get_game_date, get_game_datetime
 from i18n import get_text
+import data_paths
 
 def format_number(num):
     """Превращает 150000 в 150K, а 1500000 в 1.5M"""
@@ -154,7 +155,7 @@ class StatisticsFrame(ctk.CTkFrame):
     def count_rules(self):
         count = 0
         for r_id in ["earth", "water", "fire", "mix"]:
-            path = f"rules/{r_id}.yml"
+            path = data_paths.rules_path(r_id)
             if os.path.exists(path):
                 try:
                     with open(path, 'r', encoding='utf-8') as f:

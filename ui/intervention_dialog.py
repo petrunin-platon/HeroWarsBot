@@ -5,6 +5,7 @@ import yaml
 import threading
 from i18n import get_text
 from telegram_agent import TelegramAgent
+import data_paths
 
 class InterventionDialog(ctk.CTkToplevel):
     def __init__(self, master, titan_data, callback, is_manual=False, can_rollback=True):
@@ -90,7 +91,7 @@ class InterventionDialog(ctk.CTkToplevel):
                 titan_name = get_text(lang, f"titan_{titan}")
                 msg += f"➤ {titan_name.upper()}: {hp}% HP\n"
                 
-            msg_id = self.tg_agent.send_sos("temp_sos.png", msg, is_manual=self.is_manual, can_rollback=self.can_rollback)
+            msg_id = self.tg_agent.send_sos(data_paths.temp_sos_file(), msg, is_manual=self.is_manual, can_rollback=self.can_rollback)
             
             # --- СТРОГАЯ ПРОВЕРКА ФЛАГА ПЕРЕД ПОЛЛИНГОМ ---
             if self.is_destroyed:

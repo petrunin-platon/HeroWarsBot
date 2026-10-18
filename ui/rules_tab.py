@@ -8,6 +8,7 @@ from ui.rule_builder_dialog import RuleBuilderDialog
 from ui.active_rules_dialog import ActiveRulesDialog
 from ui.telegram_dialog import TelegramDialog
 from i18n import get_text
+import data_paths
 
 class RulesFrame(ctk.CTkFrame):
     def __init__(self, master, controller, **kwargs):
@@ -199,7 +200,7 @@ class RulesFrame(ctk.CTkFrame):
         self.cond_btns.append(btn_rule)
 
     def get_yaml_team(self, room_type):
-        path = f"rules/{room_type}.yml"
+        path = data_paths.rules_path(room_type)
         if os.path.exists(path):
             try:
                 with open(path, 'r', encoding='utf-8') as f:
@@ -228,8 +229,7 @@ class RulesFrame(ctk.CTkFrame):
         RuleBuilderDialog(self.controller, room_type, on_rule_saved)
 
     def save_default_pack_to_yaml(self, room_type, team):
-        if not os.path.exists("rules"): os.makedirs("rules")
-        file_path = f"rules/{room_type}.yml"
+        file_path = data_paths.rules_path(room_type)
         data = {"rules": []}
         if os.path.exists(file_path):
             try:
@@ -254,7 +254,7 @@ class RulesFrame(ctk.CTkFrame):
         try:
             with open("profile.yml", 'r', encoding='utf-8') as f: 
                 profile = yaml.safe_load(f) or {}
-            shutil.copy2("profile.yml", "profile.yml.bak")
+            shutil.copy2("profile.yml", data_paths.profile_backup_file())
             
         except yaml.YAMLError as e:
             mark = getattr(e, 'problem_mark', None)
@@ -335,14 +335,15 @@ class RulesFrame(ctk.CTkFrame):
         with open("profile.yml", 'w', encoding='utf-8') as f:
             yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
             
-        shutil.copy2("profile.yml", "profile.yml.bak")
+        shutil.copy2("profile.yml", data_paths.profile_backup_file())
         self.controller.frames["dash"].append_log("[GUI] Профиль настроек сохранен!\n")
 
     def restore_profile(self):
         dash = self.controller.frames.get("dash")
-        if os.path.exists("profile.yml.bak"):
+        backup_file = data_paths.profile_backup_file()
+        if os.path.exists(backup_file):
             try:
-                shutil.copy2("profile.yml.bak", "profile.yml")
+                shutil.copy2(backup_file, "profile.yml")
                 if dash: dash.append_log("[GUI] ♻️ Профиль успешно восстановлен из резервной копии!\n")
             except Exception as e:
                 if dash: dash.append_log(f"[ОШИБКА] Не удалось восстановить профиль: {e}\n")

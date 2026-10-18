@@ -1,5 +1,6 @@
 import yaml
 import os
+import data_paths
 
 class RulesEngine:
     def __init__(self):
@@ -24,7 +25,7 @@ class RulesEngine:
     def load_rules(self):
         rooms = ["earth", "water", "fire", "mix"]
         for r in rooms:
-            path = f"rules/{r}.yml"
+            path = data_paths.rules_path(r)
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
                     self.rules_cache[r] = yaml.safe_load(f) or {}
@@ -169,7 +170,7 @@ class RulesEngine:
 
     def learn_new_rule(self, room_type, enemies, team, custom_delta=None, before_state=None):
         """Интеллектуальное создание правила с анализом причин провала"""
-        path = f"rules/{room_type}.yml"
+        path = data_paths.rules_path(room_type)
         data = {"default_team": [], "rules": []}
         
         if os.path.exists(path):
@@ -217,7 +218,7 @@ class RulesEngine:
             
         data["rules"].insert(0, new_rule)
         
-        os.makedirs("rules", exist_ok=True)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'w', encoding='utf-8') as f:
             yaml.dump(data, f, allow_unicode=True, sort_keys=False)
             
