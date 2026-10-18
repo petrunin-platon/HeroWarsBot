@@ -3,6 +3,7 @@ import os
 import yaml
 import copy
 from i18n import get_text
+import data_paths
 from ui.rule_builder_dialog import RuleBuilderDialog
 
 class ActiveRulesDialog(ctk.CTkToplevel):
@@ -64,7 +65,7 @@ class ActiveRulesDialog(ctk.CTkToplevel):
 
     def load_draft_from_disk(self):
         for r_id in self.draft_rules.keys():
-            path = f"rules/{r_id}.yml"
+            path = data_paths.rules_path(r_id)
             if os.path.exists(path):
                 try:
                     with open(path, 'r', encoding='utf-8') as f:
@@ -211,7 +212,7 @@ class ActiveRulesDialog(ctk.CTkToplevel):
 
     def save_changes(self):
         for r_id, rules_list in self.draft_rules.items():
-            path = f"rules/{r_id}.yml"
+            path = data_paths.rules_path(r_id)
             data = {"rules": []}
             
             if os.path.exists(path):

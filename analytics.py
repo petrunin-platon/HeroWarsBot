@@ -3,15 +3,15 @@ import json
 import os
 import glob
 from datetime import datetime
+import data_paths
 
-# 1. Создаем папку для логов, если её нет
-if not os.path.exists("logs"):
-    os.makedirs("logs")
+# 1. История боёв лежит в bot_data/logs/ (создаём папку и один раз копируем туда старые файлы из logs/)
+LOG_DIR = data_paths.logs_dir()
 
-# 2. РОТАЦИЯ ЛОГОВ (Оставляем не более 20 файлов каждого типа)
+# 2. РОТАЦИЯ ЛОГОВ (Оставляем не более 20 файлов каждого типа). Только в bot_data/logs/, ваша папка logs/ не трогается
 def rotate_logs():
     for ext in ["*.jsonl", "*.txt"]:
-        files = sorted(glob.glob(f"logs/{ext}"), key=os.path.getmtime, reverse=True)
+        files = sorted(glob.glob(f"{LOG_DIR}/{ext}"), key=os.path.getmtime, reverse=True)
         for old_file in files[20:]:
             try: 
                 os.remove(old_file)
@@ -22,8 +22,8 @@ rotate_logs()
 
 # 3. Генерируем уникальное имя файла для текущей сессии
 SESSION_ID = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-SESSION_LOG_FILE = f"logs/battle_log_{SESSION_ID}.jsonl"
-GUI_LOG_FILE = "logs/battle_log.csv" 
+SESSION_LOG_FILE = f"{LOG_DIR}/battle_log_{SESSION_ID}.jsonl"
+GUI_LOG_FILE = f"{LOG_DIR}/battle_log.csv" 
 
 def log_battle(room_type, enemies, pack, action, reason, team_status):
     """Журналирует бой в уникальный файл сессии"""

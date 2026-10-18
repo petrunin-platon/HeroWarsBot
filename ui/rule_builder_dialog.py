@@ -2,6 +2,7 @@ import customtkinter as ctk
 import os
 import yaml
 from i18n import get_text
+import data_paths
 from ui.team_selector import TeamSelectorDialog, ELEMENTS, ALLOWED_ELEMENTS
 
 DUNGEON_ENEMIES_EN = ["angus", "avalon", "eden", "silva", "verdok", "sigurd", "hyperion", "nova", "mairi", "araji", "ignis", "vulcan", "moloch"]
@@ -275,8 +276,7 @@ class RuleBuilderDialog(ctk.CTkToplevel):
             return
 
         # ИНАЧЕ - СТАРАЯ ЛОГИКА (Прямое сохранение на жесткий диск из RulesTab)
-        if not os.path.exists("rules"): os.makedirs("rules")
-        file_path = f"rules/{self.room_type}.yml"
+        file_path = data_paths.rules_path(self.room_type)
         
         data = {"rules": []}
         if os.path.exists(file_path):

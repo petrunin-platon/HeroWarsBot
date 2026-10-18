@@ -13,6 +13,7 @@ import pygetwindow as gw
 import pyautogui
 from environment import launch_scrcpy, calibrate_window
 from i18n import get_text
+import data_paths
 from config import PAUSE_FLAG_FILE, GAME_WINDOW_TITLE # <-- ИМПОРТ КОНСТАНТ ИЗ КОНФИГА
 
 class DashboardFrame(ctk.CTkFrame):
@@ -179,10 +180,11 @@ class DashboardFrame(ctk.CTkFrame):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         default_name = f"gui_log_{timestamp}.txt"
         
-        if not os.path.exists("logs"): os.makedirs("logs")
+        # Рядом с логом, который бот сам сохраняет (bot_data/logs/)
+        logs_dir = data_paths.logs_dir()
             
         filepath = ctk.filedialog.asksaveasfilename(
-            initialdir=os.path.abspath("logs"),
+            initialdir=os.path.abspath(logs_dir),
             initialfile=default_name,
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
@@ -432,7 +434,7 @@ class DashboardFrame(ctk.CTkFrame):
                     titan_name = get_text(lang, f"titan_{titan}")
                     msg += f"➤ {titan_name.capitalize()}: {hp_val}% HP\n"
                     
-                msg_id = agent.send_test_result("temp_test.png", msg)
+                msg_id = agent.send_test_result(data_paths.temp_test_file(), msg)
                 if msg_id:
                     agent.start_polling(msg_id, on_tg_decision)
                 return 

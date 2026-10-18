@@ -30,6 +30,7 @@ from analyzer import scan_team_health
 from analytics import log_battle
 from rules_engine import engine
 from stats_manager import add_metric, add_metrics_bulk
+import data_paths
 
 WINDOW_TITLE = "HeroWarsBot_Arena"
 GRACEFUL_STOP = False
@@ -341,7 +342,7 @@ with mss.MSS() as sct:
                             
                     try:
                         scr = np.array(sct.grab(game_window))
-                        cv2.imwrite("temp_sos.png", cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
+                        cv2.imwrite(data_paths.temp_sos_file(), cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
                     except Exception as e:
                         print(f"[СИСТЕМА] Ошибка сохранения скриншота: {e}")
                             
@@ -414,7 +415,7 @@ with mss.MSS() as sct:
                         # ДЕЛАЕМ СКРИНШОТ УСПЕШНОГО БОЯ ДЛЯ ТЕЛЕГРАМА
                         try:
                             scr = np.array(sct.grab(game_window))
-                            cv2.imwrite("temp_test.png", cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
+                            cv2.imwrite(data_paths.temp_test_file(), cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
                         except Exception as e:
                             print(f"[СИСТЕМА] Ошибка сохранения скриншота теста: {e}")
                             

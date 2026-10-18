@@ -4,8 +4,8 @@ import os
 import yaml
 import time  # <-- Добавлен импорт time для задержек retry
 from datetime import datetime, timedelta
+import data_paths
 
-STATS_FILE = "stats.json"
 PROFILE_FILE = "profile.yml"
 
 # Кэш для хранения сдвига времени (читаем диск 1 раз)
@@ -48,7 +48,8 @@ def load_stats():
         "daily": {}
     }
     
-    if not os.path.exists(STATS_FILE):
+    stats_file = data_paths.stats_file()
+    if not os.path.exists(stats_file):
         return empty_stats.copy()
 
     max_retries = 5
@@ -56,7 +57,7 @@ def load_stats():
 
     for attempt in range(max_retries):
         try:
-            with open(STATS_FILE, 'r', encoding='utf-8') as f:
+            with open(stats_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 if "total_potions" not in data:
                     data["total_potions"] = 0
@@ -79,12 +80,13 @@ def load_stats():
 
 def save_stats(stats):
     """Сохраняет структуру во временный файл, затем атомарно перезаписывает основной."""
-    temp_file = f"{STATS_FILE}.tmp"
+    stats_file = data_paths.stats_file()
+    temp_file = f"{stats_file}.tmp"
     with open(temp_file, 'w', encoding='utf-8') as f:
         json.dump(stats, f, indent=4, ensure_ascii=False)
     
     # Атомарная подмена файла (гарантирует защиту от Race Condition и обрывов питания)
-    os.replace(temp_file, STATS_FILE)
+    os.replace(temp_file, stats_file)
 
 def add_metric(metric, amount=1, date_str=None, is_bot=False):
     """(СТАРАЯ ВЕРСИЯ) Добавляет одиночное значение к счетчикам. Оставлена для обратной совместимости."""

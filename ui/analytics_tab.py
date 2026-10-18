@@ -8,6 +8,7 @@ import yaml
 import threading
 from collections import defaultdict
 from i18n import get_text
+import data_paths
 
 class AnalyticsFrame(ctk.CTkFrame):
     def __init__(self, master, controller, **kwargs):
@@ -112,15 +113,16 @@ class AnalyticsFrame(ctk.CTkFrame):
         
         # 2. Выносим тяжелую логику I/O и математики во внутреннюю функцию
         def process_analysis():
-            if not os.path.exists("logs"):
-                err_msg = "[ОШИБКА] Папка logs/ не найдена. Проведите несколько боев!" if lang == "RU" else "[ERROR] logs/ folder not found. Run some battles!"
+            logs_dir = data_paths.logs_dir()
+            if not os.path.exists(logs_dir):
+                err_msg = f"[ОШИБКА] Папка {logs_dir}/ не найдена. Проведите несколько боев!" if lang == "RU" else f"[ERROR] {logs_dir}/ folder not found. Run some battles!"
                 self.after(0, self.append_text, err_msg)
                 self.after(0, lambda: self.btn_run.configure(state="normal"))
                 return
 
-            files = glob.glob("logs/*.jsonl")
+            files = glob.glob(f"{logs_dir}/*.jsonl")
             if not files:
-                err_msg = "[ОШИБКА] Файлы логов (*.jsonl) не найдены. Проведите несколько боев!" if lang == "RU" else "[ERROR] Log files (*.jsonl) not found. Run some battles!"
+                err_msg = f"[ОШИБКА] Файлы логов (*.jsonl) не найдены в {logs_dir}/. Проведите несколько боев!" if lang == "RU" else f"[ERROR] Log files (*.jsonl) not found in {logs_dir}/. Run some battles!"
                 self.after(0, self.append_text, err_msg)
                 self.after(0, lambda: self.btn_run.configure(state="normal"))
                 return
@@ -204,7 +206,7 @@ class AnalyticsFrame(ctk.CTkFrame):
                     
                     is_implemented = False
                     if winrate >= 80:
-                        path = f"rules/{room}.yml"
+                        path = data_paths.rules_path(room)
                         if os.path.exists(path):
                             with open(path, 'r', encoding='utf-8') as f:
                                 yml_data = yaml.safe_load(f) or {}
@@ -277,7 +279,7 @@ class AnalyticsFrame(ctk.CTkFrame):
             
         # 2. Обрабатываем каждую комнату ПАКЕТНО (1 чтение и 1 запись на файл)
         for room, rules_for_room in grouped_rules.items():
-            path = f"rules/{room}.yml"
+            path = data_paths.rules_path(room)
             data = {"rules": [], "default_team": []}
             
             # Защита старых правил: аккуратно считываем существующие данные!
