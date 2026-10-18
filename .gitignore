@@ -57,3 +57,4 @@ temp_sos.png
 profile.yml
 pack_assets.py
 make_backup.py
+assets_db.py
