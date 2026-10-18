@@ -393,7 +393,6 @@ with mss.MSS() as sct:
                                 PENDING_RULE["room"], 
                                 PENDING_RULE["enemies"], 
                                 PENDING_RULE["team"],
-                                custom_delta=PENDING_RULE.get("max_observed_loss"),
                                 before_state=PENDING_RULE.get("before_state")
                             )
                             LAST_USED_TEAMS[current_room] = PENDING_RULE["team"]

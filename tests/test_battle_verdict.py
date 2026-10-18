@@ -202,3 +202,12 @@ def test_next_room_after_heal_uses_base_pack(engine):
         "mix", [], state(araji=100, hyperion=100, rigel=55, iyari=100, lumira=100))
     assert team == ["hyperion", "rigel", "iyari", "lumira", "amon"]
     assert "Базовый" in reason
+
+
+def test_learned_rule_has_no_own_allowed_delta(engine):
+    """Новое правило после отката не получает свой допуск (раньше туда попадала потеря из неудачного боя)."""
+    engine.learn_new_rule("mix", ["avalon", "eden"], ["hyperion", "araji", "sigurd", "iyari", "lumira"],
+                          before_state={"araji": 49, "hyperion": 100})
+    new_rule = engine.rules_cache["mix"]["rules"][0]
+    assert new_rule["name"] == "Авто-отхил (araji < 65%)"
+    assert "allowed_delta" not in new_rule

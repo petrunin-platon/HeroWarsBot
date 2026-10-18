@@ -193,8 +193,12 @@ class RulesEngine:
                     
         return True
 
-    def learn_new_rule(self, room_type, enemies, team, custom_delta=None, before_state=None):
-        """Интеллектуальное создание правила с анализом причин провала"""
+    def learn_new_rule(self, room_type, enemies, team, before_state=None):
+        """
+        Интеллектуальное создание правила с анализом причин провала.
+        allowed_delta в новое правило НЕ пишем: раньше туда попадала потеря из неудачного боя
+        (например 6% или 62%), и такой допуск ломал последующие бои. Действует допуск из профиля.
+        """
         path = data_paths.rules_path(room_type)
         data = {"default_team": [], "rules": []}
         
@@ -235,9 +239,6 @@ class RulesEngine:
             new_rule["condition"] = {"enemies_contain": enemies}
             new_rule["name"] = f"Анти-пак (Тактика) - {len(data['rules']) + 1}"
         
-        if custom_delta is not None:
-            new_rule["allowed_delta"] = custom_delta
-            
         if "angus" in team:
             new_rule["special_ult"] = "angus"
             
