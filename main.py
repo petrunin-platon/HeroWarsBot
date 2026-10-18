@@ -28,6 +28,7 @@ from navigation import smart_navigate_hallway
 from team_manager import verify_and_set_team
 from analyzer import scan_team_health
 from analytics import log_battle
+from battle_verdict import evaluate_battle
 from rules_engine import engine
 from stats_manager import add_metric, add_metrics_bulk
 import data_paths
@@ -270,62 +271,19 @@ with mss.MSS() as sct:
                 
                 global_panic = engine.get_global_setting("critical_hp", 40)
                 effective_delta = CURRENT_ALLOWED_DELTA if CURRENT_ALLOWED_DELTA is not None else engine.get_global_setting("max_hp_delta", 30)
-                
-                is_panic = False
-                panic_reason = ""
-                max_observed_loss = 0
-                
-                temporary_state = {}
 
-                for titan in active_pack:
-                    stats = team_status.get(titan)
-                    
-                    # ФИКС: Если титана не было в бою, просто пропускаем его!
-                    if stats and stats.get("status") == "ОТСУТСТВУЕТ":
-                        print(f"[ЛОГИКА] {titan.upper()} отсутствовал на арене. Пропускаю.")
-                        continue 
-                    
-                    if not stats:
-                        current_hp = 0
-                        energy = 0
-                    else:
-                        current_hp = stats.get("hp", 100)
-                        energy = stats.get("energy", 100)
-
-                    before_hp = GLOBAL_TITAN_STATE.get(titan, {}).get("hp", 100)
-                    hp_lost = max(0, before_hp - current_hp)
-                    
-                    if hp_lost > max_observed_loss:
-                        max_observed_loss = hp_lost
-
-                    temporary_state[titan] = {
-                        "hp": current_hp,
-                        "energy": energy 
-                    }
-
-                    if current_hp == 0:
-                        is_panic = True
-                        panic_reason = f"ФАТАЛЬНО! {titan.upper()} мертв (иконка не найдена или ХП=0)!"
-                        break
-                    elif current_hp < global_panic:
-                        is_panic = True
-                        panic_reason = f"Критический порог! {titan.upper()} имеет {current_hp}% ХП (порог: {global_panic}%)"
-                        break
-                    elif hp_lost > effective_delta:
-                        is_panic = True
-                        panic_reason = f"Превышена Дельта потерь! {titan.upper()} потерял {hp_lost}% ХП (допуск: {effective_delta}%)"
-                        break
-                
-                if not is_panic and not PENDING_RULE:
-                    post_battle_state = GLOBAL_TITAN_STATE.copy()
-                    post_battle_state.update(temporary_state)
-                    
-                    rule_team, rule_reason, _, _ = engine.get_battle_decision(current_room, CURRENT_ENEMIES, post_battle_state)
-                    
-                    if rule_team != active_pack:
-                        is_panic = True
-                        panic_reason = f"Сработало правило: {rule_reason}"
-                        print(f"\n[АЛЕРТ] Движок правил заблокировал результат: {rule_reason}")
+                # Бой оценивается по ХП и по правилам отхила, которые сработали из-за этого боя.
+                # Движок правил заново не спрашиваем: после удачного отхила он бы ответил «базовый пак»
+                # и бот ложно счёл бы бой плохим. Правила по энергии сработают перед следующим боем.
+                # Тестовый пак (PENDING_RULE) проверяется только по ХП.
+                verdict = evaluate_battle(
+                    active_pack, team_status, GLOBAL_TITAN_STATE, global_panic, effective_delta,
+                    engine=None if PENDING_RULE else engine, room=current_room, enemies=CURRENT_ENEMIES
+                )
+                is_panic = verdict["bad"]
+                panic_reason = verdict["reason"]
+                max_observed_loss = verdict["max_loss"]
+                temporary_state = verdict["after_state"]
 
                 if is_panic:
                     tactic_result = {"action": "rollback", "reason": panic_reason}
