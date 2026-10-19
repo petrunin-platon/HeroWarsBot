@@ -311,6 +311,10 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
                 # Мы уже нажимали, а кнопка пропала — это 100% успех
                 if retried_at is not None:
                     print(f"[VISION] '{image_name}': после повтора кнопка пропала через {time.monotonic() - retried_at:.1f} с")
+                else:
+                    since = policy.seconds_since_tap()
+                    if since is not None and since >= 1.5:
+                        print(f"[VISION] '{image_name}': окно отреагировало медленно, через {since:.1f} с после нажатия")
                 return True
             if elapsed >= timeout:
                 break
