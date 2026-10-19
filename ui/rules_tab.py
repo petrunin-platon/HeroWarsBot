@@ -7,6 +7,7 @@ from ui.team_selector import TeamSelectorDialog
 from ui.rule_builder_dialog import RuleBuilderDialog
 from ui.active_rules_dialog import ActiveRulesDialog
 from ui.telegram_dialog import TelegramDialog
+from ui.tactics_dialog import TacticsDialog
 from i18n import get_text
 import data_paths
 
@@ -71,6 +72,15 @@ class RulesFrame(ctk.CTkFrame):
         self.opt_reset_hour = ctk.CTkOptionMenu(self.time_frame, values=hours_list, width=90)
         self.opt_reset_hour.grid(row=0, column=1, padx=10)
 
+        # Бот решает сам (задача 9): переключатель сохраняется сразу, подробности — в окне «Тактика»
+        self.switch_tactics_var = ctk.StringVar(value="off")
+        self.switch_tactics = ctk.CTkSwitch(self.time_frame, text="", variable=self.switch_tactics_var,
+                                            onvalue="on", offvalue="off", command=self.on_tactics_switch)
+        self.switch_tactics.grid(row=0, column=2, padx=(30, 5))
+        self.btn_tactics = ctk.CTkButton(self.time_frame, text="", width=110, fg_color="#17a2b8", hover_color="#138496",
+                                         command=self.open_tactics_dialog)
+        self.btn_tactics.grid(row=0, column=3, padx=5)
+
         self.misc_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.misc_frame.grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 10))
 
@@ -113,6 +123,8 @@ class RulesFrame(ctk.CTkFrame):
         self.lbl_reset_hour.configure(text=get_text(lang, "rules_reset_hour"))
         self.switch_angus.configure(text=get_text(lang, "rules_angus"))
         self.btn_tg_setup.configure(text=get_text(lang, "rules_btn_tg"))
+        self.switch_tactics.configure(text=get_text(lang, "rules_auto_tactics"))
+        self.btn_tactics.configure(text=get_text(lang, "rules_btn_tactics"))
         
         self.lbl_title_rooms.configure(text=get_text(lang, "rules_title_rooms"))
         self.btn_show_rules.configure(text=get_text(lang, "rules_btn_active"))
@@ -153,6 +165,32 @@ class RulesFrame(ctk.CTkFrame):
             self.tg_settings = data
             self.controller.frames["dash"].append_log("[GUI] Настройки Telegram обновлены (не забудьте сохранить профиль)!\n")
         TelegramDialog(self.controller, self.controller, self.tg_settings, on_save)
+
+    def open_tactics_dialog(self):
+        TacticsDialog(self.controller, self.controller)
+
+    def on_tactics_switch(self):
+        """«Бот решает сам»: сохраняем в profile.yml сразу, без кнопки «Сохранить профиль»."""
+        lang = getattr(self.controller, 'current_lang', 'RU')
+        dash = self.controller.frames.get("dash") if hasattr(self.controller, 'frames') else None
+        enabled = self.switch_tactics_var.get() == "on"
+        profile = {}
+        if os.path.exists("profile.yml"):
+            try:
+                with open("profile.yml", 'r', encoding='utf-8') as f:
+                    profile = yaml.safe_load(f) or {}
+            except Exception:
+                profile = None
+        if not isinstance(profile, dict):
+            if dash: dash.append_log(get_text(lang, "tac_err_profile"))
+            self.switch_tactics_var.set("off" if enabled else "on")
+            return
+        if not isinstance(profile.get("settings"), dict): profile["settings"] = {}
+        profile["settings"]["auto_rollback"] = enabled
+        with open("profile.yml", 'w', encoding='utf-8') as f:
+            yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
+        shutil.copy2("profile.yml", data_paths.profile_backup_file())
+        if dash: dash.append_log(get_text(lang, "rules_auto_on" if enabled else "rules_auto_off"))
 
     def on_goal_switch(self, selected_text):
         lang = getattr(self.controller, 'current_lang', 'RU')
@@ -289,6 +327,9 @@ class RulesFrame(ctk.CTkFrame):
         
         if settings.get("angus_manual_control", False): self.switch_angus.select()
         else: self.switch_angus.deselect()
+
+        if settings.get("auto_rollback", False) is True: self.switch_tactics.select()
+        else: self.switch_tactics.deselect()
             
         tg_data = settings.get("telegram", {})
         self.tg_settings = {
@@ -330,6 +371,7 @@ class RulesFrame(ctk.CTkFrame):
             return
             
         profile["settings"]["angus_manual_control"] = (self.switch_angus_var.get() == "on")
+        profile["settings"]["auto_rollback"] = (self.switch_tactics_var.get() == "on")
         profile["settings"]["telegram"] = self.tg_settings
         
         with open("profile.yml", 'w', encoding='utf-8') as f:

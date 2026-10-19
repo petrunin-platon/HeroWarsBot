@@ -1,19 +1,5 @@
 rules:
 - team:
-  - araji
-  - hyperion
-  - rigel
-  - iyari
-  - lumira
-  stats:
-    wins: 0
-    fails: 0
-  condition:
-    titan_hp_below:
-      araji: 65
-  name: Авто-отхил (araji < 65%)
-  allowed_delta: 6
-- team:
   - hyperion
   - araji
   - sigurd

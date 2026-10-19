@@ -26,7 +26,7 @@ SESSION_LOG_FILE = f"{LOG_DIR}/battle_log_{SESSION_ID}.jsonl"
 GUI_LOG_FILE = f"{LOG_DIR}/battle_log.csv" 
 
 def log_battle(room_type, enemies, pack, action, reason, team_status):
-    """Журналирует бой в уникальный файл сессии"""
+    """Журналирует бой в уникальный файл сессии. Возвращает запись (для истории боёв в tactics.py)."""
     entry = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "room": room_type,
@@ -42,5 +42,7 @@ def log_battle(room_type, enemies, pack, action, reason, team_status):
         
     with open(GUI_LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"{entry['timestamp']},{room_type},{action},{reason}\n")
+
+    return entry
 
 print(f"[АНАЛИТИКА] Логи сессии будут сохранены в: {SESSION_LOG_FILE}")

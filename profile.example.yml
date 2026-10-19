@@ -6,8 +6,14 @@ default_packs:
 global_thresholds:
   critical_hp: 20
   max_hp_delta: 30
+  # Настройки тактики задаются в окне программы: вкладка «Мастер правил» →
+  # переключатель «🤖 Бот решает сам» и кнопка «⚙️ Тактика». Руками их править не нужно.
+  group_loss_titans: 3
+  group_loss_percent: 40
 settings:
   angus_manual_control: true
+  auto_rollback: false
+  auto_rollback_tries: 2
   telegram:
     active: false
     chat_id: 'YOUR_CHAT_ID_HERE'

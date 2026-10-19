@@ -202,3 +202,58 @@ def test_next_room_after_heal_uses_base_pack(engine):
         "mix", [], state(araji=100, hyperion=100, rigel=55, iyari=100, lumira=100))
     assert team == ["hyperion", "rigel", "iyari", "lumira", "amon"]
     assert "Базовый" in reason
+
+
+# --- Задача 9: общие потери пака и личные пороги ---
+GROUP = (3, 40)
+
+
+def test_room_129_group_loss_is_bad(engine):
+    """Комната 129 (ваше замечание 128): четверо потеряли 41–54%, каждый в допуске 60% — теперь бой плохой."""
+    before = state(hyperion=100, rigel=100, iyari=100, lumira=100, amon=100)
+    after = status(hyperion=59, rigel=100, iyari=59, lumira=46, amon=51)
+    old = evaluate_battle(list(before), after, before, CRITICAL_HP, MAX_DELTA, engine=engine, room="mix", enemies=[])
+    assert not old["bad"]  # без проверки общих потерь бой «нормальный», как было в сессии
+    result = evaluate_battle(list(before), after, before, CRITICAL_HP, MAX_DELTA,
+                             engine=engine, room="mix", enemies=[], group_loss=GROUP)
+    assert result["bad"]
+    assert "Большие потери пака" in result["reason"]
+    for name in ("HYPERION 41%", "IYARI 41%", "LUMIRA 54%", "AMON 49%"):
+        assert name in result["reason"]
+
+
+def test_room_55_with_group_check_is_still_good(engine):
+    """Комната 55: просел только Ригель (45%) — один титан, общие потери в норме."""
+    before = state(araji=48, hyperion=100, rigel=100, iyari=100, lumira=100)
+    result = evaluate_battle(["araji", "hyperion", "rigel", "iyari", "lumira"],
+                             status(araji=100, hyperion=100, rigel=55, iyari=100, lumira=100), before,
+                             CRITICAL_HP, MAX_DELTA, engine=engine, room="mix", enemies=[], group_loss=GROUP)
+    assert not result["bad"], result["reason"]
+
+
+def test_group_loss_needs_enough_titans(engine):
+    """Двое по 50% при пороге «трое» — бой хороший; healed (ХП выросло) потерей не считается."""
+    before = state(araji=40, hyperion=100, rigel=100, iyari=100, lumira=100)
+    after = status(araji=100, hyperion=50, rigel=50, iyari=100, lumira=100)
+    result = evaluate_battle(list(before), after, before, CRITICAL_HP, MAX_DELTA, group_loss=GROUP)
+    assert not result["bad"], result["reason"]
+
+
+def test_group_loss_can_be_switched_off(engine):
+    before = state(hyperion=100, rigel=100, iyari=100, lumira=100, amon=100)
+    after = status(hyperion=59, rigel=100, iyari=59, lumira=46, amon=51)
+    for off in (None, (0, 40)):
+        assert not evaluate_battle(list(before), after, before, CRITICAL_HP, MAX_DELTA, group_loss=off)["bad"]
+
+
+def test_personal_panic_threshold_replaces_global():
+    """Личный порог: Сигурду можно опуститься до 20% (общий 30%), а Ригелю нельзя ниже 25%."""
+    before = state(sigurd=100, rigel=100)
+    personal = {"sigurd": 19, "rigel": 25}
+    ok = evaluate_battle(["sigurd"], status(sigurd=20), before, CRITICAL_HP, 90, titan_critical_hp=personal)
+    assert not ok["bad"], ok["reason"]
+    bad = evaluate_battle(["rigel"], status(rigel=24), before, CRITICAL_HP, 90, titan_critical_hp=personal)
+    assert bad["bad"] and "личный порог: 25%" in bad["reason"]
+    # У остальных — общий порог
+    other = evaluate_battle(["hyperion"], status(hyperion=29), {}, CRITICAL_HP, 90, titan_critical_hp=personal)
+    assert other["bad"] and "порог: 30%" in other["reason"]
