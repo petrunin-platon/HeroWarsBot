@@ -614,6 +614,7 @@ with mss.MSS() as sct:
                                 # Если бой начался (появилась пауза или отключенный автобой)
                                 if get_match_loc('btn_round_auto_off.png', game_window, sct, 0.75) or get_match_loc('btn_round_auto_on.png', game_window, sct, 0.75):
                                     print("[ИНФО] Зафиксировано ручное начало боя. Снимаю паузу.")
+                                    LAST_USED_TEAMS[current_room] = []  # в ручном бою состав могли поменять: в следующий раз проверим слоты
                                     if os.path.exists("pause.flag"):
                                         os.remove("pause.flag")
                                     STATE = "WAIT_FOR_OK" # Переходим к ожиданию победы

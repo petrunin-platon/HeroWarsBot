@@ -256,6 +256,22 @@ def get_match_info(image_name, window_rect, sct, threshold):
     screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
     return _match_on_frame(screenshot_cv, ox, oy, image_name, threshold)
 
+def match_many_on_frame(names, window_rect, sct, threshold, area=(0.0, 1.0)):
+    """Один снимок экрана на много картинок сразу (например, все титаны в слотах).
+    area — какая часть игровой области по высоте нужна: (от, до) в долях, например (0.75, 1.0) — нижняя четверть.
+    Возвращает {имя: info} только для найденных (info — как у get_match_info; "y" уже считается от верха игровой области).
+    Точку нажатия берите через click_point_from_info."""
+    screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
+    top = int(screenshot_cv.shape[0] * area[0])
+    bottom = int(screenshot_cv.shape[0] * area[1])
+    part = screenshot_cv[top:bottom]
+    found = {}
+    for name in names:
+        info = _match_on_frame(part, ox, oy + top, name + ".png", threshold)
+        if info is not None:
+            found[name] = info
+    return found
+
 def get_first_match(candidates, window_rect, sct):
     """Один снимок экрана на все картинки сразу (быстрее, чем снимок на каждую).
     candidates — список (ключ, [имена картинок], порог) в порядке важности.
