@@ -216,7 +216,7 @@ def recover_context(game_window, sct):
        get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD):
         print("[УМНЫЙ СТАРТ] Бот на экране сборки пака. Запускаю бой для отката...")
         # Жмем автобой, чтобы принудительно начать битву
-        find_and_click_bulletproof('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD, timeout=3.0)
+        find_and_click_bulletproof('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD, timeout=8.0)
         print("[УМНЫЙ СТАРТ] Жду окно результатов для проведения отката (может занять время)...")
         
         wait_start = time.time()

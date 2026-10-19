@@ -143,7 +143,7 @@ def find_smart_door(window_rect, sct, current_state=None):
                     # Мы нажимали, а кнопки «Атаковать» больше нет — вошли в комнату
                     print(f"[КОМБАТ] Успешный вход. Комната: {room_type.upper()} | Враги: {enemies}")
                     return room_type, enemies
-                if elapsed >= 6.0: break
+                if elapsed >= 8.0: break
                 time.sleep(0.1)
                 continue
             
@@ -153,7 +153,7 @@ def find_smart_door(window_rect, sct, current_state=None):
                 if policy.observe(True, score, target_btn) == click_logic.WAIT:
                     time.sleep(0.1)
                     continue
-                if elapsed >= 6.0: break
+                if elapsed >= 8.0: break
                 print(f"[КОМБАТ] Нажатие на 'Атаковать' не сработало (экран не отреагировал {policy.seconds_since_tap():.1f} с). Повторяю...")
                 session_log.count("repeat_clicks")
             
