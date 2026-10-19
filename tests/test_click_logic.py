@@ -11,7 +11,8 @@ sys.modules.setdefault("pygetwindow", types.ModuleType("pygetwindow"))
 
 import click_logic  # noqa: E402
 from click_logic import (  # noqa: E402
-    DONE, RETRY, WAIT, RetryPolicy, StableTracker, StillnessWatcher, TapWatch, door_click_point, door_click_zone,
+    DONE, RETRY, WAIT, RetryPolicy, StableTracker, TapWatch, after_failed_battle_start, door_click_point,
+    door_click_zone,
 )
 
 
@@ -266,34 +267,6 @@ def test_door_click_point_is_in_central_part():
 
 
 # ---------------------------------------------------------------------------
-# Коридор «замер»
-# ---------------------------------------------------------------------------
-def test_stillness_not_while_moving():
-    rng = np.random.default_rng(1)
-    watcher = StillnessWatcher()
-    for _ in range(10):
-        assert watcher.update(rng.integers(0, 255, (54, 96), dtype=np.uint8)) is False
-
-
-def test_stillness_after_frames_stop_changing():
-    rng = np.random.default_rng(2)
-    base = rng.integers(0, 255, (54, 96), dtype=np.uint8)
-    watcher = StillnessWatcher()
-    for _ in range(3):  # камера ещё едет
-        watcher.update(rng.integers(0, 255, (54, 96), dtype=np.uint8))
-    results = [watcher.update(base) for _ in range(5)]
-    assert results == [False, False, False, True, True]  # 3 одинаковых сравнения подряд
-
-
-def test_stillness_tolerates_tiny_noise():
-    base = np.full((54, 96), 120, dtype=np.uint8)
-    noisy = base.copy()
-    noisy[0, :10] += 5  # мелкая анимация в углу
-    watcher = StillnessWatcher()
-    assert [watcher.update(f) for f in (base, noisy, base, noisy)][-1] is True
-
-
-# ---------------------------------------------------------------------------
 # navigation.py: дверь и переход на этаж на подделке экрана
 # ---------------------------------------------------------------------------
 @pytest.fixture
@@ -374,16 +347,75 @@ def test_checkpoint_pressed_once_then_waits_for_new_floor(navigation, clock, mon
     assert calls == ["btn_claim.png", "floor"]
 
 
-def test_new_floor_waits_for_buttons_to_vanish_then_for_stillness(navigation, clock, monkeypatch):
+def test_new_floor_waits_for_door_flag_not_fixed_pause(navigation, clock, monkeypatch):
+    """Сессия 04: спуск на этаж идёт ~8–10 с. Бот ждёт появления флажка, а не фиксированные 4 с,
+    и не дольше FLOOR_FLAG_WAIT_S."""
     start = clock.now
-    still_called_at = []
-    monkeypatch.setattr(navigation, "get_match_loc",
-                        lambda *a, **k: (1, 1) if clock.now - start < 1.0 else None)
-    monkeypatch.setattr(navigation, "wait_until_still",
-                        lambda *a, **k: still_called_at.append(clock.now - start) or (True, 0.4))
+    monkeypatch.setattr(navigation, "get_match_info",
+                        lambda *a, **k: flag_info(500) if clock.now - start >= 8.0 else None)
     navigation.wait_for_new_floor({}, None)
-    assert len(still_called_at) == 1
-    assert 1.0 <= still_called_at[0] <= 1.7  # после исчезновения кнопок, а не через фиксированные 4 с
+    assert 8.0 <= clock.now - start <= 8.3
+
+
+def test_new_floor_gives_up_after_limit(navigation, clock, monkeypatch):
+    start = clock.now
+    monkeypatch.setattr(navigation, "get_match_info", lambda *a, **k: None)
+    navigation.wait_for_new_floor({}, None)
+    assert click_logic.FLOOR_FLAG_WAIT_S <= clock.now - start <= click_logic.FLOOR_FLAG_WAIT_S + 0.3
+
+
+def test_hallway_timeout_on_team_screen_returns_to_set_team(navigation, clock, monkeypatch):
+    """Сессия 04, 03:02:08: «Авто» не сработала, на экране выбор команды, а бот в состоянии HALLWAY.
+    Раньше он бесконечно искал дверь. Теперь после таймаута возвращается к выбору команды."""
+    monkeypatch.setattr(navigation, "get_match_info", lambda *a, **k: None)
+    monkeypatch.setattr(navigation, "get_match_loc",
+                        lambda name, *a, **k: (500, 500) if name == "btn_auto.png" else None)
+    assert navigation.smart_navigate_hallway({}, None) == "SET_TEAM"
+
+
+def test_hallway_timeout_on_unknown_screen_stays_in_hallway(navigation, clock, monkeypatch):
+    monkeypatch.setattr(navigation, "get_match_info", lambda *a, **k: None)
+    monkeypatch.setattr(navigation, "get_match_loc", lambda *a, **k: None)
+    assert navigation.smart_navigate_hallway({}, None) == "HALLWAY"
+
+
+# ---------------------------------------------------------------------------
+# Начало боя: потерянное нажатие «Авто»
+# ---------------------------------------------------------------------------
+def test_failed_start_on_team_screen_tries_again():
+    assert after_failed_battle_start(True, 0) == ("SET_TEAM", 1)
+    assert after_failed_battle_start(True, 1) == ("SET_TEAM", 2)
+
+
+def test_failed_start_stops_after_limit():
+    state, attempts = after_failed_battle_start(True, click_logic.START_BATTLE_ATTEMPTS - 1)
+    assert state == "STOP" and attempts == click_logic.START_BATTLE_ATTEMPTS
+
+
+def test_failed_start_on_other_screen_goes_to_hallway_and_resets_counter():
+    assert after_failed_battle_start(False, 2) == ("HALLWAY", 0)
+
+
+def test_lost_auto_tap_is_repeated_by_bulletproof(vision, clock):
+    """Сессия 04: нажатие «Авто» потерялось. С проверкой бот жмёт ещё раз и бой начинается."""
+    result, taps = run_button(vision, clock, lambda since, n: n < 2, tap_delay=0.3)
+    assert result is True
+    assert len(taps) == 2
+
+
+def test_retry_message_shows_tap_duration_and_reaction(vision, clock, capsys):
+    """Диагностика для следующей сессии: сколько выполнялось нажатие и через сколько после повтора кнопка пропала."""
+    run_button(vision, clock, lambda since, n: n < 2, tap_delay=1.1)
+    out = capsys.readouterr().out
+    assert "нажатие выполнялось 1.1 с" in out
+    assert "после повтора кнопка пропала через" in out
+
+
+def test_tap_watch_duration(clock):
+    watch = TapWatch(FakeProc(clock, 1.1), clock=clock.monotonic)
+    assert watch.duration() is None
+    clock.now += 1.2
+    assert watch.duration() == pytest.approx(1.2)
 
 
 # ---------------------------------------------------------------------------

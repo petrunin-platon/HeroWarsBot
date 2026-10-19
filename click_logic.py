@@ -4,8 +4,6 @@
 import random
 import time
 
-import numpy as np
-
 # --- Повторное нажатие кнопки ---
 # Жмём снова, только если через столько секунд ПОСЛЕ того, как команда нажатия дошла до телефона, кнопка всё ещё на экране
 RETRY_AFTER_S = 1.5
@@ -32,11 +30,13 @@ DOOR_ZONE_W = 165
 DOOR_ZONE_H = 245
 
 # --- Переход на новый этаж ---
-# Коридор «замер»: средняя разница между кадрами (шкала 0–255) меньше этого значения в стольких сравнениях подряд
-STILL_MAX_DIFF = 2.0
-STILL_SHOTS = 3
-# Дольше этого не ждём (раньше была фиксированная пауза 4 с)
-STILL_MAX_WAIT_S = 4.0
+# После «Забрать» ждём, пока на новом этаже появится флажок двери, но не дольше этого времени.
+# Спуск на этаж идёт ~8–10 с, в это время «Активировать» ещё виден — повторно его нажимать нельзя.
+FLOOR_FLAG_WAIT_S = 12.0
+
+# --- Начало боя ---
+# Сколько раз пробуем начать бой («Авто»), если экран выбора команды не закрылся. Потом бот останавливается
+START_BATTLE_ATTEMPTS = 3
 
 # Ответы RetryPolicy.observe
 WAIT, RETRY, DONE = "WAIT", "RETRY", "DONE"
@@ -62,6 +62,11 @@ class TapWatch:
                 self._done_at = now
         return self._done_at
 
+    def duration(self):
+        """Сколько секунд выполнялась команда нажатия. None — ещё выполняется."""
+        done = self.done_time()
+        return None if done is None else done - self._started
+
 
 class RetryPolicy:
     """Решает, пора ли нажать кнопку ещё раз. Вызывается после каждого снимка экрана.
@@ -79,6 +84,9 @@ class RetryPolicy:
         self._retry_after = retry_after
         self._clock = clock
         self._hold_until = 0.0
+
+    def tap_duration(self):
+        return self._watch.duration()
 
     def seconds_since_tap(self):
         done = self._watch.done_time()
@@ -142,24 +150,6 @@ class StableTracker:
         return False
 
 
-class StillnessWatcher:
-    """Определяет, что картинка перестала двигаться: несколько кадров подряд почти не отличаются."""
-
-    def __init__(self, shots=STILL_SHOTS, max_diff=STILL_MAX_DIFF):
-        self._shots = shots
-        self._max_diff = max_diff
-        self._prev = None
-        self._calm = 0
-
-    def update(self, frame):
-        """frame — уменьшенный серый кадр (numpy). True — картинка замерла."""
-        if self._prev is not None:
-            diff = float(np.mean(np.abs(frame.astype(np.int16) - self._prev.astype(np.int16))))
-            self._calm = self._calm + 1 if diff < self._max_diff else 0
-        self._prev = frame
-        return self._calm >= self._shots
-
-
 def door_click_zone(flag_x, flag_y, flag_w, flag_h, scale, margin=DOOR_CENTER_MARGIN):
     """Прямоугольник (x1, y1, x2, y2), куда можно нажимать на дверь: под флажком, ближе к центру двери."""
     door_w = int(DOOR_ZONE_W * scale)
@@ -177,3 +167,21 @@ def door_click_point(flag_x, flag_y, flag_w, flag_h, scale, rng=random):
     """Случайная точка нажатия внутри центральной части двери."""
     x1, y1, x2, y2 = door_click_zone(flag_x, flag_y, flag_w, flag_h, scale)
     return rng.randint(x1, x2), rng.randint(y1, y2)
+
+
+def after_failed_battle_start(team_screen_visible, attempts, limit=START_BATTLE_ATTEMPTS):
+    """Бой не начался за отведённое время. Что делать дальше.
+
+    team_screen_visible — на экране всё ещё выбор команды (кнопка «Авто» не сработала).
+    attempts — сколько неудачных запусков боя уже было подряд (без текущего).
+    Возвращает (состояние бота, сколько неудачных попыток теперь):
+      "SET_TEAM" — вернуться к выбору команды и нажать «Авто» снова;
+      "STOP"     — попытки кончились, бот останавливается с понятной причиной;
+      "HALLWAY"  — на экране не выбор команды (например, загрузка), смотрим коридор, как раньше.
+    """
+    if not team_screen_visible:
+        return "HALLWAY", 0
+    attempts += 1
+    if attempts >= limit:
+        return "STOP", attempts
+    return "SET_TEAM", attempts
