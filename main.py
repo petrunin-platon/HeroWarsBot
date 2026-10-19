@@ -23,7 +23,7 @@ ROOM_TIMER = SESSION_LOG.timer
 # -------------------------------------
 
 from config import CONFIG, LIMITS, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS
-from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, wait_for_ui_element
+from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, wait_for_ui_element, get_first_match
 from combat import find_smart_door, execute_angus_ult, execute_rollback
 from navigation import smart_navigate_hallway
 from click_logic import after_failed_battle_start, START_BATTLE_ATTEMPTS
@@ -38,11 +38,21 @@ from rules_engine import engine
 from stats_manager import add_metric, add_metrics_bulk
 import data_paths
 import result_scan
+import stuck_guard
 
 WINDOW_TITLE = "HeroWarsBot_Arena"
 GRACEFUL_STOP = False
 GLOBAL_TITAN_STATE = {}
 PENDING_RULE = None  
+
+# Защита от зависаний (stuck_guard.py): сторож «давно нет пройденных комнат» и пределы ожидания по состояниям
+WATCHDOG = stuck_guard.Watchdog()
+STATE_CLOCK = stuck_guard.StateClock()
+
+def user_waited():
+    """Бот ждал вас (окно SOS, пауза, ручной бой, окно не в фокусе): это время сторож и пределы не считают."""
+    WATCHDOG.waited_for_user()
+    STATE_CLOCK.reset()
 
 # --- NON-BLOCKING STDIN LISTENER ---
 STDIN_QUEUE = queue.Queue()
@@ -58,7 +68,9 @@ def wait_for_input():
     """Ожидание ввода с обработкой прерываний"""
     while True:
         try:
-            return STDIN_QUEUE.get(timeout=0.2)
+            decision = STDIN_QUEUE.get(timeout=0.2)
+            user_waited()
+            return decision
         except queue.Empty:
             if GRACEFUL_STOP:
                 print("[ТАКТИКА] Экстренная остановка по команде пользователя (Ctrl+Q).")
@@ -74,6 +86,19 @@ def trigger_graceful_stop():
 def print_session_summary():
     """Блок [ИТОГ]. Печатается один раз при любой остановке."""
     SESSION_LOG.print_summary(SESSION_STATS["rooms_cleared"], SESSION_STATS["titanite_gathered"])
+
+def alert_on_crash():
+    """Бот упал с ошибкой Python: ошибку и итог уже напечатали, сообщаем ещё и в Telegram."""
+    reason = SESSION_LOG.stop_reason or ""
+    if not reason.startswith("Ошибка"):
+        return
+    try:
+        text = (f"⛔ Бот остановился из-за ошибки\n{reason}\n"
+                f"Пройдено комнат: {SESSION_STATS['rooms_cleared']}. Подробности — в логе бота.")
+        sent, note = send_alert(text)
+        print(f"[ОШИБКА] Сообщение в Telegram: {note}")
+    except Exception:
+        pass
 
 def trigger_emergency_stop():
     print("\n[ЭКСТРЕННАЯ ОСТАНОВКА] Принудительное завершение (Ctrl+Shift+Q)!")
@@ -120,6 +145,7 @@ def wait_for_focus():
                     print("[ИНФО] Окно снова активно. Продолжаем работу.")
                     time.sleep(0.5) # Даем интерфейсу прогрузиться после разворачивания
                     break
+            user_waited()  # пока окно было перекрыто, сторож не считает
     except Exception:
         pass
 
@@ -169,7 +195,9 @@ SESSION_STATS = {
     "titanite_gathered": 0
 }
 
-# Итог сессии при любой остановке: лимит, Ctrl+Q, STOP, ошибка Python
+# Итог сессии при любой остановке: лимит, Ctrl+Q, STOP, ошибка Python.
+# atexit вызывает функции в обратном порядке: сначала итог, потом сообщение об ошибке в Telegram
+atexit.register(alert_on_crash)
 atexit.register(print_session_summary)
 
 def save_debug_shot(kind, game_window, sct):
@@ -180,8 +208,10 @@ def save_debug_shot(kind, game_window, sct):
         scr = np.array(sct.grab(game_window))
         cv2.imwrite(path, cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
         print(f"[ОТЛАДКА] Скриншот сохранён: {path}")
+        return path
     except Exception as e:
         print(f"[ОТЛАДКА] Не удалось сохранить скриншот: {e}")
+        return None
 
 
 def get_stop_reason():
@@ -248,6 +278,113 @@ def run_rollback(game_window, sct, press_retry=True):
     handle_rollback_failure(result, game_window, sct)
     return False
 
+def count_cleared_room(x2):
+    """Комната пройдена: статистика сессии и дня, строка [СТАТИСТИКА]. Возвращает номер комнаты."""
+    SESSION_STATS["rooms_cleared"] += 1
+    WATCHDOG.progress()
+
+    bulk_updates = {"rooms": 1}
+
+    if SESSION_STATS["rooms_cleared"] % 5 == 0:
+        bulk_updates["floors"] = 1
+
+    if x2:
+        SESSION_STATS["titanite_gathered"] += 12
+        bulk_updates["titanite"] = 12
+        bulk_updates["potions"] = 50
+    else:
+        SESSION_STATS["titanite_gathered"] += 6
+        bulk_updates["titanite"] = 6
+        bulk_updates["potions"] = 25
+
+    # Пакетная отправка: одно чтение и одна запись на весь бой
+    add_metrics_bulk(bulk_updates, is_bot=True)
+
+    print(f"[СТАТИСТИКА] Комнат: {SESSION_STATS['rooms_cleared']} | Титанит: {SESSION_STATS['titanite_gathered']}")
+    return SESSION_STATS["rooms_cleared"]
+
+STATE_NAMES_RU = {
+    "SET_TEAM": "экран выбора команды не появился",
+    "WAIT_FOR_OK": "бой не закончился (нет окна результата)",
+}
+
+def report_state_timeout(state, limit, game_window, sct):
+    """Бот слишком долго в одном состоянии: скриншот для разбора и строка в логе. Дальше — умный старт."""
+    what = STATE_NAMES_RU.get(state, state)
+    print(f"\n[СТОРОЖ] Зависание: {what} за {limit:.0f} с (состояние {STATE}). Запускаю умный старт.")
+    SESSION_LOG.count("stuck")
+    save_debug_shot("stuck", game_window, sct)
+
+def raise_watchdog_alarm(game_window, sct):
+    """Давно не пройдено ни одной комнаты: скриншот, строка в логе, сообщение в Telegram.
+    Возвращает True, если пора на мягкую паузу (тревог подряд слишком много)."""
+    minutes = WATCHDOG.limit / 60
+    pause = WATCHDOG.should_pause()
+    text = f"Бот {minutes:.0f} мин не прошёл ни одной комнаты (состояние {STATE})."
+    print(f"\n[СТОРОЖ] {text} Тревога {WATCHDOG.alarms} из {WATCHDOG.alarms_before_pause}.")
+    SESSION_LOG.count("stuck")
+    screenshot = save_debug_shot("stuck", game_window, sct)
+
+    lines = ["⚠️ Бот, похоже, завис", text]
+    if pause:
+        lines.append("Умный старт не помог. Бот на мягкой паузе: посмотрите, что на экране телефона, "
+                     "верните игру в коридор подземелья и снимите паузу в окне программы.")
+    else:
+        lines.append("Пробую умный старт.")
+    if current_room in ROOM_NAMES_RU:
+        lines.append(f"Последняя комната: {ROOM_NAMES_RU[current_room]}")
+    lines.append(f"Пройдено комнат: {SESSION_STATS['rooms_cleared']}")
+    sent, note = send_alert("\n".join(lines), screenshot)
+    print(f"[СТОРОЖ] Сообщение в Telegram: {note}")
+
+    if pause:
+        with open("pause.flag", "w") as f:
+            f.write("1")
+        print("[ВНИМАНИЕ] Бот на мягкой паузе. Исправьте ситуацию в игре и снимите паузу в окне программы.")
+    return pause
+
+# Что видно на экране, пока вы проходите комнату руками (в порядке важности)
+MANUAL_SCREENS = [
+    (stuck_guard.RESULT, ['btn_ok.png'], CONFIDENCE_THRESHOLD),
+    (stuck_guard.BATTLE, ['btn_pause.png', 'btn_round_auto_off.png', 'btn_round_auto_on.png'], 0.75),
+    (stuck_guard.TEAM, ['btn_auto.png', 'btn_in_battle.png'], CONFIDENCE_THRESHOLD),
+    (stuck_guard.HALLWAY, ['flag_enter.png', 'btn_activate.png'], CONFIDENCE_THRESHOLD),
+    (stuck_guard.HALLWAY, ['btn_attack.png'], 0.68),
+]
+
+def play_manually(game_window, sct, first_screen):
+    """«Пройти руками»: бот ничего не нажимает и ждёт, пока вы вернётесь в коридор. Возвращает ManualPlay."""
+    play = stuck_guard.ManualPlay(first_screen=first_screen)
+    with ROOM_TIMER.excluded("sos_wait"):  # пока вы играете, время в замеры не идёт
+        while True:
+            if GRACEFUL_STOP:
+                print("[ТАКТИКА] Остановка по команде пользователя (Ctrl+Q) во время ручного прохождения.")
+                SESSION_LOG.set_stop_reason("Ручная остановка пользователем (Ctrl+Q)")
+                sys.exit(0)
+            wait_for_focus()
+            found = get_first_match(MANUAL_SCREENS, game_window, sct)
+            if play.observe(found[0] if found else None):
+                break
+            time.sleep(0.5)
+    user_waited()
+    return play
+
+def handle_failed_start(button, game_window, sct):
+    """Бой не начался после нажатия «Авто» или «В бой». Возвращает следующее состояние."""
+    global START_FAILS
+    team_screen = bool(get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD) or
+                       get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD))
+    state, START_FAILS = after_failed_battle_start(team_screen, START_FAILS)
+    if state == "SET_TEAM":
+        print(f"[СЕТЬ] Бой не начался, экран выбора команды всё ещё открыт. Пробую ещё раз ({START_FAILS} из {START_BATTLE_ATTEMPTS - 1})...")
+    elif state == "STOP":
+        print(f"\n[ОШИБКА] Бой не удалось начать {START_FAILS} раза подряд: кнопка «{button}» не срабатывает.")
+        SESSION_LOG.set_stop_reason(f"Не удалось начать бой: «{button}» не срабатывает")
+        sys.exit(0)
+    else:
+        print("[СЕТЬ] Бой не начался. Сброс в HALLWAY...")
+    return state
+
 def recover_context(game_window, sct):
     print("\n[УМНЫЙ СТАРТ] Сканирую экран для восстановления контекста...")
     
@@ -310,7 +447,24 @@ with mss.MSS() as sct:
             STATE = recover_context(game_window, sct)
             NEEDS_CONTEXT_RECOVERY = False
             ROOM_TIMER.restart("hallway")  # старт и конец паузы в замеры комнат не входят
+            STATE_CLOCK.reset()
             continue
+
+        # === ЗАЩИТА ОТ ЗАВИСАНИЙ ===
+        # Слишком долго нет экрана выбора команды или окна результата — умный старт
+        limit = STATE_CLOCK.expired(STATE)
+        if limit:
+            report_state_timeout(STATE, limit, game_window, sct)
+            NEEDS_CONTEXT_RECOVERY = True
+            continue
+        # Сторож: давно не пройдено ни одной комнаты — сообщить и попробовать умный старт
+        if WATCHDOG.due():
+            if raise_watchdog_alarm(game_window, sct):
+                STATE = "HALLWAY"  # мягкая пауза: бот ждёт в коридоре, пока вы её не снимете
+            else:
+                NEEDS_CONTEXT_RECOVERY = True
+            continue
+        # =================================================
             
         # === ГЛОБАЛЬНАЯ ЗАЩИТА ОТ ДИСКОННЕКТОВ И ЛАГОВ ===
         if STATE in ["WAIT_FOR_OK", "SET_TEAM", "PREP_AUTO", "PREP_SPECIAL_ANGUS"]:
@@ -387,11 +541,31 @@ with mss.MSS() as sct:
                     force_window_focus()
 
                     if decision == "MANUAL":
-                        print("\n[ТАКТИКА] Включен ручной режим. Бот ОТКЛЮЧАЕТСЯ!")
-                        print("[ИНФО] Окно игры свободно. Нажми 'Ещё раз' и переиграй бой руками.")
-                        SESSION_LOG.set_stop_reason("Пользователь выбрал ручной режим в окне SOS")
-                        # Жесткий стоп. Гарантирует, что бот НЕ нажмет кнопку "ОК"
-                        sys.exit(0)
+                        print("\n[ТАКТИКА] Ручной режим: бот ничего не нажимает и ждёт, пока вы вернётесь в коридор.")
+                        print("[ИНФО] Окно игры свободно. Нажмите «Ещё раз» и переиграйте бой руками или закройте окно «ОК».")
+                        x2 = bool(get_match_loc('badge_x2.png', game_window, sct, 0.75))
+                        play = play_manually(game_window, sct, stuck_guard.RESULT)
+                        PENDING_RULE = None  # комнату проходили вы, тестовый пак больше не проверяем
+                        # Вы могли поставить в слоты других титанов: в следующий раз бот проверит слоты
+                        LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
+                        if play.room_cleared and not play.replayed:
+                            # Окно результата просто закрыли — бой засчитан как есть, ХП с этого окна верные
+                            print("[ТАКТИКА] Вы закрыли окно результата без переигровки. Засчитываю бой.")
+                            GLOBAL_TITAN_STATE.update(temporary_state)
+                            log_battle(current_room, CURRENT_ENEMIES, active_pack, "SUCCESS", "Окно SOS: закрыто вручную", team_status)
+                            print(SESSION_LOG.finish_room(count_cleared_room(x2), current_room))
+                        elif play.room_cleared:
+                            # Переиграли руками: ХП титанов бот не видел, поэтому забывает их
+                            print("[ТАКТИКА] Комната пройдена вручную. Засчитываю её, состояние титанов сброшено.")
+                            GLOBAL_TITAN_STATE.clear()
+                            print(SESSION_LOG.finish_room(count_cleared_room(x2), current_room))
+                        else:
+                            print("[ТАКТИКА] Вы вернулись в коридор без победы в этой комнате. Комнату не засчитываю.")
+                            GLOBAL_TITAN_STATE.clear()
+                            ROOM_TIMER.restart("hallway")
+                        print("[ИНФО] Продолжаю работу сам.")
+                        STATE = "HALLWAY"
+                        continue
 
                     elif decision == "STOP":
                         print("[ТАКТИКА] Экстренная остановка по команде пользователя.")
@@ -491,27 +665,8 @@ with mss.MSS() as sct:
                         GLOBAL_TITAN_STATE.update(temporary_state)
                         log_battle(current_room, CURRENT_ENEMIES, active_pack, "SUCCESS", tactic_result.get('reason', 'Одобрено'), team_status)
                         
-                        SESSION_STATS["rooms_cleared"] += 1
-                        
-                        bulk_updates = {"rooms": 1}
-                        
-                        if SESSION_STATS["rooms_cleared"] % 5 == 0:
-                            bulk_updates["floors"] = 1
-                        
-                        if get_match_loc('badge_x2.png', game_window, sct, 0.75):
-                            SESSION_STATS["titanite_gathered"] += 12
-                            bulk_updates["titanite"] = 12
-                            bulk_updates["potions"] = 50
-                        else:
-                            SESSION_STATS["titanite_gathered"] += 6
-                            bulk_updates["titanite"] = 6
-                            bulk_updates["potions"] = 25
-                            
-                        # Пакетная отправка: одно чтение и одна запись на весь бой
-                        add_metrics_bulk(bulk_updates, is_bot=True)
-                        
-                        print(f"[СТАТИСТИКА] Комнат: {SESSION_STATS['rooms_cleared']} | Титанит: {SESSION_STATS['titanite_gathered']}")
-                        counted_room = SESSION_STATS["rooms_cleared"]
+                        x2 = bool(get_match_loc('badge_x2.png', game_window, sct, 0.75))
+                        counted_room = count_cleared_room(x2)
 
                         if CONFIG.get("debug_mode"):
                             print("\n[ПАУЗА ОТЛАДКИ] Бой завершен. Подтвердите продолжение в GUI.")
@@ -536,6 +691,8 @@ with mss.MSS() as sct:
                 print("\n[МЯГКАЯ ПАУЗА] Бот ждет в коридоре...")
                 while os.path.exists("pause.flag"):
                     time.sleep(1)
+                user_waited()
+                WATCHDOG.progress()  # вы разобрались с проблемой: тревоги сторожа считаются заново
                 LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
                 GLOBAL_TITAN_STATE.clear()
                 print("[ИНФО] Пауза снята. Кэш составов и здоровья очищен. Включаю механизм Умного Старта.\n")
@@ -603,23 +760,19 @@ with mss.MSS() as sct:
                     force_window_focus()
 
                     if decision == "MANUAL":
-                        print("[ТАКТИКА] Включен ручной режим. Жду старта боя (кликните 'В бой' в игре)...")
-                        with open("pause.flag", "w") as f:
-                            f.write("1")
-
-                        # Пока вы играете руками, время в замеры не идёт
-                        with ROOM_TIMER.excluded("sos_wait"):
-                            while os.path.exists("pause.flag"):
-                                wait_for_focus()
-                                # Если бой начался (появилась пауза или отключенный автобой)
-                                if get_match_loc('btn_round_auto_off.png', game_window, sct, 0.75) or get_match_loc('btn_round_auto_on.png', game_window, sct, 0.75):
-                                    print("[ИНФО] Зафиксировано ручное начало боя. Снимаю паузу.")
-                                    LAST_USED_TEAMS[current_room] = []  # в ручном бою состав могли поменять: в следующий раз проверим слоты
-                                    if os.path.exists("pause.flag"):
-                                        os.remove("pause.flag")
-                                    STATE = "WAIT_FOR_OK" # Переходим к ожиданию победы
-                                    break
-                                time.sleep(1)
+                        print("[ТАКТИКА] Ручной режим: выберите титанов и пройдите комнату сами. Бот ждёт, пока вы вернётесь в коридор.")
+                        play = play_manually(game_window, sct, stuck_guard.TEAM)
+                        # Вы могли поставить в слоты других титанов: в следующий раз бот проверит слоты
+                        LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
+                        GLOBAL_TITAN_STATE.clear()  # ХП после вашего боя бот не видел
+                        if play.room_cleared:
+                            print("[ТАКТИКА] Комната пройдена вручную. Засчитываю её, состояние титанов сброшено.")
+                            print(SESSION_LOG.finish_room(count_cleared_room(False), current_room))
+                        else:
+                            print("[ТАКТИКА] Вы вернулись в коридор без победы в этой комнате. Комнату не засчитываю.")
+                            ROOM_TIMER.restart("hallway")
+                        print("[ИНФО] Продолжаю работу сам.")
+                        STATE = "HALLWAY"
                         continue
                         
                     elif decision.startswith("NEW_PACK"):
@@ -671,8 +824,12 @@ with mss.MSS() as sct:
         elif STATE == "PREP_SPECIAL_ANGUS":
             ROOM_TIMER.begin("battle")
             if find_and_click_bulletproof('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD):
+                START_FAILS = 0
                 execute_angus_ult(game_window, sct)
                 STATE = "WAIT_FOR_OK" 
+            else:
+                # Раньше бот здесь повторял попытку бесконечно
+                STATE = handle_failed_start("В бой", game_window, sct)
             continue
             
         elif STATE == "PREP_AUTO":
@@ -698,18 +855,7 @@ with mss.MSS() as sct:
                 START_FAILS = 0
                 STATE = "WAIT_FOR_OK"
             else:
-                team_screen = bool(get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD) or
-                                   get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD))
-                STATE, START_FAILS = after_failed_battle_start(team_screen, START_FAILS)
-                if STATE == "SET_TEAM":
-                    print(f"[СЕТЬ] Бой не начался, экран выбора команды всё ещё открыт. Пробую ещё раз ({START_FAILS} из {START_BATTLE_ATTEMPTS - 1})...")
-                elif STATE == "STOP":
-                    print(f"\n[ОШИБКА] Бой не удалось начать {START_FAILS} раза подряд: кнопка «Авто» не срабатывает.")
-                    SESSION_LOG.set_stop_reason("Не удалось начать бой: «Авто» не срабатывает")
-                    sys.exit(0)
-                else:
-                    print("[СЕТЬ] Бой не начался за 10 сек. Сброс в HALLWAY...")
-                    STATE = "HALLWAY"
+                STATE = handle_failed_start("Авто", game_window, sct)
             continue
             
         time.sleep(0.1)
