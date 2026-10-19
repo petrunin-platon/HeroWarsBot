@@ -7,6 +7,7 @@ from config import CONFIG, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS, ENEMY_TITANS
 from vision import click_human, get_match_loc, find_and_click_bulletproof, imread_cyrillic, wait_for_ui_element
 from analyzer import scan_enemy_team
 import click_logic
+import rollback_logic
 import session_log
 
 # Подключаем движок правил для проверки запретов
@@ -229,40 +230,43 @@ def execute_angus_ult(window_rect, sct):
     print("[АНГУС] УСПЕХ: Автобой ВЫКЛЮЧЕН.")
     return True
 
-def execute_rollback(window_rect, sct):
+def execute_rollback(window_rect, sct, press_retry=True):
+    """Откат боя: «Ещё раз» → пауза (один раз) → «Отступить» → коридор. Шаги и ожидания — в rollback_logic.py.
+    press_retry=False — бой уже идёт (умный старт), «Ещё раз» не нажимаем.
+    Возвращает rollback_logic.RollbackResult (в условии `if` ведёт себя как True/False)."""
     print("[ОТКАТ] Запускаю протокол отката боя...")
-    
-    if not find_and_click_bulletproof('btn_retry.png', window_rect, sct, ACTION_THRESHOLD, timeout=6.0):
-        print("[ОТКАТ] Не найдена кнопка 'Ещё раз'!")
-        return False
-        
-    print("[ОТКАТ] 'Ещё раз' нажата. Начинаю мгновенный перехват паузы...")
-    pause_coords = wait_for_ui_element('btn_pause.png', window_rect, sct, 0.75, timeout=15.0, settle_time=0.0)
-    
-    if not pause_coords:
-        print("[ОТКАТ] ФАТАЛЬНАЯ ОШИБКА: Пауза не появилась за 15 сек!")
-        return False
-        
-    print("[ОТКАТ] Перехват: спамлю сверхбыстрые клики по паузе через ADB...")
-    for _ in range(3):
-        click_human(pause_coords[0], pause_coords[1])
-        time.sleep(0.05)
-            
-    print("[ОТКАТ] Жду отрисовки меню паузы (динамически)...")
-    
-    if not find_and_click_bulletproof('btn_retreat.png', window_rect, sct, ACTION_THRESHOLD, timeout=6.0):
-        print("[ОТКАТ] ОШИБКА: Не найдена кнопка 'Отступить' в меню паузы!")
-        return False
-        
-    print("[ОТКАТ] Успешно нажато 'Отступить'. Жду интерфейс коридора...")
-    
-    hallway_start = time.time()
-    while time.time() - hallway_start < 15.0:
-        if os.path.exists("pause.flag"): return False
-        if get_match_loc('flag_enter.png', window_rect, sct, 0.75) or get_match_loc('btn_attack.png', window_rect, sct, 0.75):
-            print("[ОТКАТ] Возврат в коридор подтвержден. Боевые флаги сброшены.")
-            return True
-        time.sleep(0.1) 
-        
-    print("[ОТКАТ] ВНИМАНИЕ: Не увидели интерфейс коридора за 15 сек, но откат произведен.")
-    return True
+
+    if press_retry:
+        if not find_and_click_bulletproof('btn_retry.png', window_rect, sct, ACTION_THRESHOLD, timeout=6.0):
+            return rollback_logic.RollbackResult(rollback_logic.NO_RETRY, "Не найдена кнопка «Ещё раз».")
+        print("[ОТКАТ] 'Ещё раз' нажата. Жду кнопку паузы (загрузка боя бывает долгой)...")
+
+    pause_pos = {}
+
+    def look():
+        # Порядок важен: пока меню паузы открыто, кнопка паузы тоже видна, поэтому «Отступить» проверяем первой
+        if get_match_loc('btn_retreat.png', window_rect, sct, ACTION_THRESHOLD):
+            return rollback_logic.RETREAT
+        coords = get_match_loc('btn_pause.png', window_rect, sct, ACTION_THRESHOLD)
+        if coords:
+            pause_pos["xy"] = coords
+            return rollback_logic.PAUSE
+        if get_match_loc('flag_enter.png', window_rect, sct, ACTION_THRESHOLD) or \
+           get_match_loc('btn_attack.png', window_rect, sct, ACTION_THRESHOLD):
+            return rollback_logic.HALLWAY
+        if get_match_loc('btn_retry.png', window_rect, sct, ACTION_THRESHOLD):
+            return rollback_logic.RETRY
+        if get_match_loc('btn_ok.png', window_rect, sct, CONFIDENCE_THRESHOLD):
+            return rollback_logic.OK
+        return None
+
+    return rollback_logic.retreat_from_battle(
+        look=look,
+        tap_pause=lambda: click_human(pause_pos["xy"][0], pause_pos["xy"][1]),
+        press_retreat=lambda: find_and_click_bulletproof('btn_retreat.png', window_rect, sct, ACTION_THRESHOLD, timeout=3.0),
+        press_retry=lambda: find_and_click_bulletproof('btn_retry.png', window_rect, sct, ACTION_THRESHOLD, timeout=3.0),
+        pause_flag_set=lambda: os.path.exists("pause.flag"),
+        log=lambda text: print(f"[ОТКАТ] {text}"),
+        clock=time.monotonic,
+        sleep=time.sleep,
+    )
