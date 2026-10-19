@@ -49,6 +49,9 @@ def precise_select_titan(x, y):
     click_human(x, y, exact=True)
     time.sleep(0.15) 
 
+# Титаны, которых нет в GAME_ORDER, но у которых есть картинка: в слотах их тоже надо видеть, чтобы убрать лишнего
+EXTRA_SLOT_TITANS = ["metida"]
+
 # Какая часть игровой области по высоте — слоты состава (внизу) и сетка выбора (сверху)
 SLOTS_AREA = (0.75, 1.0)
 GRID_AREA = (0.0, 0.75)
@@ -94,7 +97,7 @@ def wait_slots_settled(target_pack, names, window_rect, sct):
 
 
 def verify_and_set_team(target_pack, available_titans, window_rect, sct):
-    names = list(GAME_ORDER) + [t for t in target_pack if t not in GAME_ORDER]
+    names = list(dict.fromkeys(list(GAME_ORDER) + EXTRA_SLOT_TITANS + list(target_pack)))
     sorted_pack = sort_pack(target_pack)
 
     # Быстрая проверка: один снимок нижних слотов. Игра сама помнит последний состав, чаще всего он уже стоит

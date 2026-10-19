@@ -96,3 +96,20 @@ def test_mismatch_removes_unwanted_right_to_left_without_swipes(screen, monkeypa
     assert swipes == []  # свайпов вверх нет, вниз не нужны: никого не надо искать в сетке
     first_four = clicked[:4]
     assert [x for x, _ in first_four] == sorted((x for x, _ in first_four), reverse=True)
+
+
+def test_metida_in_slots_is_seen_as_unwanted(screen, monkeypatch):
+    """Метиды нет в GAME_ORDER, но если она стоит в слоте, а пак без неё — её надо убрать."""
+    sct, rect = screen
+    seen = {}
+
+    def fake_match(names, window_rect, sct_, threshold, area=(0.0, 1.0)):
+        seen["names"] = list(names)
+        return {}
+
+    monkeypatch.setattr(tm, "match_many_on_frame", fake_match)
+    tm.read_slots(list(dict.fromkeys(tm.GAME_ORDER + tm.EXTRA_SLOT_TITANS)), rect, sct)
+    assert "metida" in seen["names"]
+    monkeypatch.setattr(tm, "open_grid_if_needed", lambda *a: False)
+    tm.verify_and_set_team(["hyperion"], None, rect, sct)
+    assert "metida" in seen["names"]
