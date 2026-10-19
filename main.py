@@ -26,6 +26,9 @@ from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, w
 from combat import find_smart_door, execute_angus_ult, execute_rollback
 from navigation import smart_navigate_hallway
 from click_logic import after_failed_battle_start, START_BATTLE_ATTEMPTS
+import rollback_logic
+from telegram_agent import send_alert
+from i18n import get_text
 from team_manager import verify_and_set_team
 from analyzer import scan_team_health
 from analytics import log_battle
@@ -189,14 +192,61 @@ def get_stop_reason():
         return f"Пройдено {max_rooms} комнат."
     return None
 
+ROOM_NAMES_RU = {"water": "вода", "mix": "смешанная", "earth": "земля", "fire": "огонь"}
+
+def handle_rollback_failure(result, game_window, sct):
+    """Откат не удался: пишем причину, шлём в Telegram текст и скриншот, ставим мягкую паузу.
+    Окно «Требуется вмешательство» не трогаем (оно в ui/), поэтому сообщаем через Telegram и лог."""
+    print(f"\n[ОТКАТ] ОШИБКА ({result.code}): {result.text}")
+    if result.code == rollback_logic.SOFT_PAUSE:
+        return  # мягкую паузу включил сам пользователь, сообщать не нужно
+
+    screenshot = None
+    try:
+        scr = np.array(sct.grab(game_window))
+        screenshot = data_paths.temp_sos_file()
+        cv2.imwrite(screenshot, cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
+    except Exception as e:
+        print(f"[СИСТЕМА] Ошибка сохранения скриншота: {e}")
+
+    lines = ["⚠️ Откат боя не удался", result.text]
+    if result.code == rollback_logic.BATTLE_ENDED:
+        lines.append("Окно результата осталось на экране: посмотрите, кто выжил. После снятия паузы бот нажмёт «ОК».")
+    else:
+        lines.append("Посмотрите, что на экране телефона, и верните бота в коридор.")
+    lines.append("Бот на мягкой паузе.")
+    if current_room in ROOM_NAMES_RU:
+        lines.append(f"Комната: {ROOM_NAMES_RU[current_room]}")
+    if CURRENT_ENEMIES:
+        lines.append("Враги: " + ", ".join(get_text("RU", f"titan_{e}") for e in CURRENT_ENEMIES))
+    sent, note = send_alert("\n".join(lines), screenshot)
+    print(f"[ОТКАТ] Сообщение в Telegram: {note}")
+
+    with open("pause.flag", "w") as f:
+        f.write("1")
+    print("[ВНИМАНИЕ] Бот на мягкой паузе. Исправьте ситуацию в игре и снимите паузу в окне программы.")
+
+def run_rollback(game_window, sct, press_retry=True):
+    """Откат боя. True — бот в коридоре. Иначе пользователь уже оповещён и включена мягкая пауза."""
+    result = execute_rollback(game_window, sct, press_retry=press_retry)
+    if result.ok:
+        return True
+    handle_rollback_failure(result, game_window, sct)
+    return False
+
 def recover_context(game_window, sct):
     print("\n[УМНЫЙ СТАРТ] Сканирую экран для восстановления контекста...")
     
-    # 1. Экран результатов (победа или поражение)
-    if get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD) or \
-       get_match_loc('btn_retry.png', game_window, sct, CONFIDENCE_THRESHOLD):
+    # 1. Экран результатов автобоя («Ещё раз» есть) — откатываем
+    if get_match_loc('btn_retry.png', game_window, sct, CONFIDENCE_THRESHOLD):
         print("[УМНЫЙ СТАРТ] Найден экран результатов. Запускаю откат боя...")
-        execute_rollback(game_window, sct)
+        run_rollback(game_window, sct)
+        return "HALLWAY"
+
+    # 1а. Окно результата без «Ещё раз» (ручной бой уже сыгран, переиграть нельзя) — просто закрываем
+    if get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
+        print("[УМНЫЙ СТАРТ] Окно результата без кнопки «Ещё раз»: бой уже сыгран. Закрываю «ОК».")
+        find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD)
         return "HALLWAY"
         
     # 2. Активный бой (ищем кнопку паузы или круглые кнопки автобоя)
@@ -204,11 +254,8 @@ def recover_context(game_window, sct):
        get_match_loc('btn_round_auto_off.png', game_window, sct, 0.75) or \
        get_match_loc('btn_round_auto_on.png', game_window, sct, 0.75):
         print("[УМНЫЙ СТАРТ] Бот находится в бою! Принудительно отступаю...")
-        find_and_click_bulletproof('btn_pause.png', game_window, sct, 0.75, timeout=3.0)
-        wait_for_ui_element('btn_retreat.png', game_window, sct, 0.75, timeout=5.0)
-        find_and_click_bulletproof('btn_retreat.png', game_window, sct, 0.75, timeout=3.0)
-        print("[УМНЫЙ СТАРТ] Отступление выполнено. Возврат в HALLWAY.")
-        time.sleep(2.0)
+        if run_rollback(game_window, sct, press_retry=False):
+            print("[УМНЫЙ СТАРТ] Отступление выполнено. Возврат в HALLWAY.")
         return "HALLWAY"
         
     # 3. Экран сборки пака (видим большую кнопку В бой / Авто)
@@ -223,7 +270,7 @@ def recover_context(game_window, sct):
         while time.time() - wait_start < 120:
             if get_match_loc('btn_retry.png', game_window, sct, 0.75):
                 print("[УМНЫЙ СТАРТ] Бой окончен. Запускаю протокол отката...")
-                execute_rollback(game_window, sct)
+                run_rollback(game_window, sct)
                 return "HALLWAY"
             time.sleep(1.0)
             
@@ -356,15 +403,10 @@ with mss.MSS() as sct:
                         SESSION_LOG.count("rollbacks")
                         ROOM_TIMER.begin("rollback")
 
-                        if execute_rollback(game_window, sct):
-                            STATE = "HALLWAY"
-                            continue
-                        else:
-                            print("\n[ВНИМАНИЕ] Ошибка авто-отката! Перейдите в коридор вручную.")
-                            with open("pause.flag", "w") as f: 
-                                f.write("1")
-                            STATE = "HALLWAY"
-                            continue
+                        # При неудаче run_rollback сам оповестит и включит мягкую паузу
+                        run_rollback(game_window, sct)
+                        STATE = "HALLWAY"
+                        continue
                             
                     elif decision == "IGNORE":
                         print("[ТАКТИКА] Просадка проигнорирована по решению пользователя.")
@@ -418,14 +460,9 @@ with mss.MSS() as sct:
 
                             SESSION_LOG.count("rollbacks")
                             ROOM_TIMER.begin("rollback")
-                            if execute_rollback(game_window, sct):
-                                STATE = "HALLWAY"
-                                continue
-                            else:
-                                with open("pause.flag", "w") as f: 
-                                    f.write("1")
-                                STATE = "HALLWAY"
-                                continue
+                            run_rollback(game_window, sct)
+                            STATE = "HALLWAY"
+                            continue
                                 
                     if not PENDING_RULE:
                         GLOBAL_TITAN_STATE.update(temporary_state)

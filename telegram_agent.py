@@ -15,6 +15,36 @@ BASE_TITANS = [
     "mor", "tenebris", "brustar", "umbra", "keros"
 ]
 
+def send_alert(text, image_path=None, profile_path="profile.yml"):
+    """Присылает в Telegram простое сообщение (со скриншотом, если он есть), без кнопок и без ожидания ответа.
+    Токен и chat_id берёт из profile.yml. Ошибок не бросает: возвращает (удалось, пояснение для лога)."""
+    try:
+        import yaml
+        with open(profile_path, "r", encoding="utf-8") as f:
+            tg = ((yaml.safe_load(f) or {}).get("settings", {}) or {}).get("telegram", {}) or {}
+    except Exception as e:
+        return False, f"не удалось прочитать {profile_path}: {e}"
+    if not tg.get("active", False):
+        return False, "Telegram выключен в настройках"
+    token, chat_id = str(tg.get("token", "") or ""), str(tg.get("chat_id", "") or "")
+    if not token or not chat_id or "YOUR_" in token or "YOUR_" in chat_id:
+        return False, "в настройках Telegram нет токена или chat_id"
+
+    base_url = f"https://api.telegram.org/bot{token}"
+    try:
+        if image_path and os.path.exists(image_path):
+            with open(image_path, "rb") as f:
+                resp = requests.post(f"{base_url}/sendPhoto", data={"chat_id": chat_id, "caption": text[:1000]},
+                                     files={"photo": f}, timeout=20).json()
+        else:
+            resp = requests.post(f"{base_url}/sendMessage", json={"chat_id": chat_id, "text": text}, timeout=20).json()
+    except Exception as e:
+        return False, f"сбой отправки: {e}"
+    if resp.get("ok"):
+        return True, "отправлено"
+    return False, f"Telegram ответил ошибкой: {resp.get('description', resp)}"
+
+
 class TelegramAgent:
     def __init__(self, token, chat_id, lang=None):
         self.token = token
