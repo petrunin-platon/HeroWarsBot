@@ -98,10 +98,23 @@ def test_all_found_scans_once():
     assert not unreadable and sleeps == []
 
 
-def test_one_missing_is_not_rescanned():
-    # один титан не найден — это «не дрался», как и раньше
-    _, unreadable, sleeps = run([status_with_missing("rigel")])
-    assert not unreadable and sleeps == []
+def test_one_missing_is_rescanned():
+    # пак поставил бот, значит все его титаны должны быть на окне: один не найден — пересканируем
+    status, unreadable, sleeps = run([status_with_missing("rigel"), status_with_missing()])
+    assert not unreadable and sleeps == [rs.RESCAN_PAUSE_S]
+
+
+def test_short_pack_searches_only_its_titans():
+    # бот поставил 3 титанов — ищет только их, двоих «лишних» не ждёт
+    pack = ["araji", "hyperion", "rigel"]
+    status = {t: {"hp": 80, "energy": 10, "status": "ЖИВ", "score": 0.9} for t in pack}
+    assert rs.missing_titans(pack, status) == [] and not rs.is_unreadable(pack, status)
+
+
+def test_dead_titan_is_found_not_missing():
+    status = status_with_missing()
+    status["rigel"] = {"hp": 0, "energy": 0, "status": "МЕРТВ", "score": 0.8}
+    assert rs.missing_titans(PACK, status) == []
 
 
 def test_two_missing_rescanned_until_found():
