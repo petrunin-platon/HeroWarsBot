@@ -486,3 +486,12 @@ def test_attack_lost_tap_repeated_once(combat, clock):
     assert room is not None
     assert len(taps) == 2
     assert taps[1] - taps[0] >= click_logic.RETRY_AFTER_S
+
+
+def test_hallway_timeout_on_result_window_goes_to_wait_for_ok(navigation, clock, monkeypatch):
+    """Сессия 06, 18:01:55: бой закончился позже, чем бот его ждал, и окно «ПОБЕДА» стояло на экране,
+    а бот в коридоре бесконечно искал дверь. Теперь он переходит к обработке результата."""
+    monkeypatch.setattr(navigation, "get_match_info", lambda *a, **k: None)
+    monkeypatch.setattr(navigation, "get_match_loc",
+                        lambda name, *a, **k: (500, 500) if name == "btn_ok.png" else None)
+    assert navigation.smart_navigate_hallway({}, None) == "WAIT_FOR_OK"

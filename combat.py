@@ -4,7 +4,8 @@ import numpy as np
 import time
 import os
 from config import CONFIG, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS, ENEMY_TITANS
-from vision import click_human, get_match_loc, find_and_click_bulletproof, imread_cyrillic, wait_for_ui_element
+from vision import click_human, get_match_loc, find_and_click_bulletproof, imread_cyrillic, wait_for_ui_element, \
+    get_first_match, click_point_from_info
 from analyzer import scan_enemy_team
 import click_logic
 import rollback_logic
@@ -243,22 +244,24 @@ def execute_rollback(window_rect, sct, press_retry=True):
 
     pause_pos = {}
 
+    # Порядок важен: пока меню паузы открыто, кнопка паузы тоже видна, поэтому «Отступить» проверяем первой
+    screens = [
+        (rollback_logic.RETREAT, ['btn_retreat.png'], ACTION_THRESHOLD),
+        (rollback_logic.PAUSE, ['btn_pause.png'], ACTION_THRESHOLD),
+        (rollback_logic.HALLWAY, ['flag_enter.png', 'btn_attack.png'], ACTION_THRESHOLD),
+        (rollback_logic.RETRY, ['btn_retry.png'], ACTION_THRESHOLD),
+        (rollback_logic.OK, ['btn_ok.png'], CONFIDENCE_THRESHOLD),
+    ]
+
     def look():
-        # Порядок важен: пока меню паузы открыто, кнопка паузы тоже видна, поэтому «Отступить» проверяем первой
-        if get_match_loc('btn_retreat.png', window_rect, sct, ACTION_THRESHOLD):
-            return rollback_logic.RETREAT
-        coords = get_match_loc('btn_pause.png', window_rect, sct, ACTION_THRESHOLD)
-        if coords:
-            pause_pos["xy"] = coords
-            return rollback_logic.PAUSE
-        if get_match_loc('flag_enter.png', window_rect, sct, ACTION_THRESHOLD) or \
-           get_match_loc('btn_attack.png', window_rect, sct, ACTION_THRESHOLD):
-            return rollback_logic.HALLWAY
-        if get_match_loc('btn_retry.png', window_rect, sct, ACTION_THRESHOLD):
-            return rollback_logic.RETRY
-        if get_match_loc('btn_ok.png', window_rect, sct, CONFIDENCE_THRESHOLD):
-            return rollback_logic.OK
-        return None
+        # Один снимок экрана на все проверки: так бот быстрее замечает кнопку паузы, когда бой загрузился
+        found = get_first_match(screens, window_rect, sct)
+        if found is None:
+            return None
+        label, name, info = found
+        if label == rollback_logic.PAUSE:
+            pause_pos["xy"] = click_point_from_info(name, info, window_rect)
+        return label
 
     return rollback_logic.retreat_from_battle(
         look=look,

@@ -237,11 +237,7 @@ def get_window_rect(title):
     LAST_WINDOW_RECT = {"top": win.top, "left": win.left, "width": win.width, "height": win.height}
     return LAST_WINDOW_RECT
 
-def get_match_info(image_name, window_rect, sct, threshold):
-    """Ищет картинку на новом снимке. Возвращает словарь с положением (в игровой области), размером картинки
-    и степенью совпадения или None. Случайности здесь нет — по нему можно следить, стоит ли предмет на месте."""
-    screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
-
+def _match_on_frame(screenshot_cv, ox, oy, image_name, threshold):
     template = imread_cyrillic(image_name)
     if template is None: return None
     if template.shape[0] > screenshot_cv.shape[0] or template.shape[1] > screenshot_cv.shape[1]: return None
@@ -253,6 +249,24 @@ def get_match_info(image_name, window_rect, sct, threshold):
         return None
     h, w = template.shape[:2]
     return {"x": max_loc[0], "y": max_loc[1], "w": w, "h": h, "score": float(max_val), "ox": ox, "oy": oy}
+
+def get_match_info(image_name, window_rect, sct, threshold):
+    """Ищет картинку на новом снимке. Возвращает словарь с положением (в игровой области), размером картинки
+    и степенью совпадения или None. Случайности здесь нет — по нему можно следить, стоит ли предмет на месте."""
+    screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
+    return _match_on_frame(screenshot_cv, ox, oy, image_name, threshold)
+
+def get_first_match(candidates, window_rect, sct):
+    """Один снимок экрана на все картинки сразу (быстрее, чем снимок на каждую).
+    candidates — список (ключ, [имена картинок], порог) в порядке важности.
+    Возвращает (ключ, имя картинки, info) первой найденной или None."""
+    screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
+    for key, names, threshold in candidates:
+        for name in names:
+            info = _match_on_frame(screenshot_cv, ox, oy, name, threshold)
+            if info is not None:
+                return key, name, info
+    return None
 
 def click_point_from_info(image_name, info, window_rect):
     """Случайная точка нажатия внутри найденной картинки, в координатах экрана."""
