@@ -264,8 +264,12 @@ def wire_combat(combat, clock, visible):
     """visible() — множество имён картинок, видимых сейчас. Возвращает списки нажатий."""
     taps, pressed = [], []
 
-    def fake_loc(name, rect, sct, threshold):
-        return (10, 10) if name in visible() else None
+    def fake_first(candidates, rect, sct):
+        for key, names, threshold in candidates:
+            for name in names:
+                if name in visible():
+                    return key, name, {"x": 10, "y": 10, "w": 20, "h": 10, "score": 0.95, "ox": 0, "oy": 0}
+        return None
 
     def fake_bulletproof(name, rect, sct, threshold, timeout=6.0):
         pressed.append(name)
@@ -276,7 +280,8 @@ def wire_combat(combat, clock, visible):
         taps.append((x, y))
         clock.sleep(0.15)
 
-    combat.get_match_loc = fake_loc
+    combat.get_first_match = fake_first
+    combat.click_point_from_info = lambda name, info, rect: (10, 10)
     combat.find_and_click_bulletproof = fake_bulletproof
     combat.click_human = fake_click
     return taps, pressed
