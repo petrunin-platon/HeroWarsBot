@@ -36,15 +36,29 @@ from analyzer import scan_team_health
 from analytics import log_battle
 from battle_verdict import evaluate_battle
 from rules_engine import engine
-from stats_manager import add_metric, add_metrics_bulk
+from stats_manager import add_metric, add_metrics_bulk, get_game_date
 import data_paths
 import result_scan
 import stuck_guard
+import tactics
+import titan_state
 
 WINDOW_TITLE = "HeroWarsBot_Arena"
 GRACEFUL_STOP = False
-GLOBAL_TITAN_STATE = {}
-PENDING_RULE = None  
+# ХП и энергия титанов после последнего боя. Хранятся в bot_data/titan_state.json до конца игрового дня
+GLOBAL_TITAN_STATE = titan_state.TitanMemory(data_paths.titan_state_file(), get_game_date)
+if GLOBAL_TITAN_STATE:
+    print(f"[СОСТОЯНИЕ] Состояние титанов за игровой день {GLOBAL_TITAN_STATE.day} загружено "
+          f"(сохранено {GLOBAL_TITAN_STATE.saved_at}): {GLOBAL_TITAN_STATE.describe()}")
+# Пак, который проверяется в этой комнате после отката: {"room", "enemies", "team", "base_condition", "source", "tried"}.
+# source: "gui"/"telegram" — пак выбрали вы, "auto" — запасной пак, бот выбрал сам (tactics.py)
+PENDING_RULE = None
+
+# Настройки тактики (profile.yml) и история боёв против этих врагов (bot_data/logs/*.jsonl)
+TACTICS = tactics.Settings(engine.get_global_setting)
+for _line in TACTICS.describe():
+    print(_line)
+HISTORY = tactics.BattleHistory.load(data_paths.logs_dir())
 
 # Защита от зависаний (stuck_guard.py): сторож «давно нет пройденных комнат» и пределы ожидания по состояниям
 WATCHDOG = stuck_guard.Watchdog()
@@ -196,6 +210,8 @@ CURRENT_ENEMIES = []
 CURRENT_PACK = [] 
 CURRENT_SPECIAL_ULT = "auto"
 CURRENT_ALLOWED_DELTA = None
+CURRENT_CONDITION = {}  # условие правила, которое дало текущий пак ({} — базовый пак). Нужно для обучения
+ROOM_AUTO_ROLLBACKS = 0  # сколько раз бот сам откатил бой в этой комнате
 START_FAILS = 0  # сколько раз подряд не удалось начать бой («Авто» не сработала)
 
 LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
@@ -291,7 +307,9 @@ def run_rollback(game_window, sct, press_retry=True):
 
 def count_cleared_room(x2):
     """Комната пройдена: статистика сессии и дня, строка [СТАТИСТИКА]. Возвращает номер комнаты."""
+    global ROOM_AUTO_ROLLBACKS
     SESSION_STATS["rooms_cleared"] += 1
+    ROOM_AUTO_ROLLBACKS = 0
     WATCHDOG.progress()
 
     bulk_updates = {"rooms": 1}
@@ -313,6 +331,27 @@ def count_cleared_room(x2):
 
     print(f"[СТАТИСТИКА] Комнат: {SESSION_STATS['rooms_cleared']} | Титанит: {SESSION_STATS['titanite_gathered']}")
     return SESSION_STATS["rooms_cleared"]
+
+def record_battle(room, enemies, pack, action, reason, team_status):
+    """Бой в историю (bot_data/logs/*.jsonl) и в память для выбора запасного пака."""
+    HISTORY.add(log_battle(room, enemies, pack, action, reason, team_status))
+
+def find_backup(tried):
+    """Запасной пак для текущей комнаты (tactics.choose_backup). tried — паки, которые уже проиграли здесь."""
+    return tactics.choose_backup(
+        current_room, CURRENT_ENEMIES, tried, GLOBAL_TITAN_STATE, TACTICS, engine.room_packs(current_room), HISTORY,
+        forbidden=engine.forbidden_titans(current_room, CURRENT_ENEMIES, GLOBAL_TITAN_STATE))
+
+def pending_pack(team, source, tried):
+    """Пак для проверки в этой же комнате после отката (PENDING_RULE)."""
+    return {
+        "room": current_room,
+        "enemies": list(CURRENT_ENEMIES),
+        "team": team,
+        "base_condition": dict(CURRENT_CONDITION),
+        "source": source,
+        "tried": [list(p) for p in tried],
+    }
 
 STATE_NAMES_RU = {
     "SET_TEAM": "экран выбора команды не появился",
@@ -499,16 +538,16 @@ with mss.MSS() as sct:
                 team_status, unreadable = result_scan.scan_with_retries(
                     lambda: scan_team_health(game_window, sct, active_pack), active_pack, sleep=time.sleep)
                 
-                global_panic = engine.get_global_setting("critical_hp", 40)
-                effective_delta = CURRENT_ALLOWED_DELTA if CURRENT_ALLOWED_DELTA is not None else engine.get_global_setting("max_hp_delta", 30)
+                effective_delta = CURRENT_ALLOWED_DELTA if CURRENT_ALLOWED_DELTA is not None else TACTICS.max_hp_delta
 
                 # Бой оценивается по ХП и по правилам отхила, которые сработали из-за этого боя.
                 # Движок правил заново не спрашиваем: после удачного отхила он бы ответил «базовый пак»
                 # и бот ложно счёл бы бой плохим. Правила по энергии сработают перед следующим боем.
-                # Тестовый пак (PENDING_RULE) проверяется только по ХП.
+                # Тестовый пак (PENDING_RULE) проверяется только по ХП (и по общим потерям пака).
                 verdict = evaluate_battle(
-                    active_pack, team_status, GLOBAL_TITAN_STATE, global_panic, effective_delta,
-                    engine=None if PENDING_RULE else engine, room=current_room, enemies=CURRENT_ENEMIES
+                    active_pack, team_status, GLOBAL_TITAN_STATE, TACTICS.critical_hp, effective_delta,
+                    engine=None if PENDING_RULE else engine, room=current_room, enemies=CURRENT_ENEMIES,
+                    group_loss=TACTICS.group_loss, titan_critical_hp=TACTICS.titan_critical_hp
                 )
                 is_panic = verdict["bad"]
                 panic_reason = verdict["reason"]
@@ -525,7 +564,31 @@ with mss.MSS() as sct:
                     tactic_result = {"action": "rollback", "reason": panic_reason}
                 else:
                     tactic_result = {"action": "success", "reason": "Потери в пределах нормы"}
-                
+
+                # === БОТ РЕШАЕТ САМ (auto_rollback): откат и запасной пак без окна SOS ===
+                if is_panic and TACTICS.auto_rollback:
+                    tried = (PENDING_RULE["tried"] if PENDING_RULE else []) + [active_pack]
+                    blocker = tactics.auto_rollback_blocker(
+                        TACTICS, CURRENT_SPECIAL_ULT == "angus", unreadable, ROOM_AUTO_ROLLBACKS,
+                        user_pack=bool(PENDING_RULE) and PENDING_RULE["source"] != "auto")
+                    backup, source = (None, None) if blocker else find_backup(tried)
+                    if backup:
+                        print(f"\n[ТАКТИКА] Плохой бой: {panic_reason}")
+                        print(f"[ТАКТИКА] Откатываю бой сам и переиграю паком {backup} (взят: {source}).")
+                        record_battle(current_room, CURRENT_ENEMIES, active_pack, "ROLLBACK",
+                                      f"Авто-откат: {panic_reason}", team_status)
+                        PENDING_RULE = pending_pack(backup, "auto", tried)
+                        ROOM_AUTO_ROLLBACKS += 1
+                        SESSION_LOG.count("rollbacks")
+                        SESSION_LOG.count("auto_rollbacks")
+                        ROOM_TIMER.begin("rollback")
+                        # При неудаче run_rollback сам оповестит и включит мягкую паузу
+                        run_rollback(game_window, sct)
+                        STATE = "HALLWAY"
+                        continue
+                    why = blocker or "подходящего запасного пака нет (другие паки уже проигрывали этим врагам или в них раненые титаны)"
+                    print(f"[ТАКТИКА] Сам не откатываю: {why}. Спрашиваю вас.")
+
                 if tactic_result["action"] == "rollback":
                     critical_data = {
                         "titans": {},
@@ -557,13 +620,14 @@ with mss.MSS() as sct:
                         x2 = bool(get_match_loc('badge_x2.png', game_window, sct, 0.75))
                         play = play_manually(game_window, sct, stuck_guard.RESULT)
                         PENDING_RULE = None  # комнату проходили вы, тестовый пак больше не проверяем
+                        ROOM_AUTO_ROLLBACKS = 0
                         # Вы могли поставить в слоты других титанов: в следующий раз бот проверит слоты
                         LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
                         if play.room_cleared and not play.replayed:
                             # Окно результата просто закрыли — бой засчитан как есть, ХП с этого окна верные
                             print("[ТАКТИКА] Вы закрыли окно результата без переигровки. Засчитываю бой.")
                             GLOBAL_TITAN_STATE.update(temporary_state)
-                            log_battle(current_room, CURRENT_ENEMIES, active_pack, "SUCCESS", "Окно SOS: закрыто вручную", team_status)
+                            record_battle(current_room, CURRENT_ENEMIES, active_pack, "SUCCESS", "Окно SOS: закрыто вручную", team_status)
                             print(SESSION_LOG.finish_room(count_cleared_room(x2), current_room))
                         elif play.room_cleared:
                             # Переиграли руками: ХП титанов бот не видел, поэтому забывает их
@@ -596,18 +660,11 @@ with mss.MSS() as sct:
                                 
                             print(f"\n[ТАКТИКА] Получен тестовый пак: {new_team}")
                             
-                            before_battle_hp = {t: GLOBAL_TITAN_STATE.get(t, {}).get("hp", 100) for t in active_pack}
-                            
-                            PENDING_RULE = {
-                                "room": current_room,
-                                "enemies": CURRENT_ENEMIES,
-                                "team": new_team,
-                                "max_observed_loss": max_observed_loss,
-                                "before_state": before_battle_hp,
-                                "source": "telegram" if decision.startswith("ROLLBACK_TG") else "gui"
-                            }
-                            
-                        log_battle(current_room, CURRENT_ENEMIES, active_pack, "ROLLBACK", tactic_result["reason"], team_status)
+                            tried = (PENDING_RULE["tried"] if PENDING_RULE else []) + [active_pack]
+                            PENDING_RULE = pending_pack(
+                                new_team, "telegram" if decision.startswith("ROLLBACK_TG") else "gui", tried)
+
+                        record_battle(current_room, CURRENT_ENEMIES, active_pack, "ROLLBACK", tactic_result["reason"], team_status)
                         SESSION_LOG.count("rollbacks")
                         ROOM_TIMER.begin("rollback")
 
@@ -621,6 +678,14 @@ with mss.MSS() as sct:
                         tactic_result["action"] = "success"
                         
                 if tactic_result["action"] != "rollback": 
+                    if PENDING_RULE and PENDING_RULE["source"] == "auto" and not is_panic:
+                        # Запасной пак, который бот выбрал сам, справился: запоминаем без вопросов
+                        print(f"[ТАКТИКА] Запасной пак {PENDING_RULE['team']} справился. Запоминаю его против этих врагов.")
+                        engine.learn_new_rule(
+                            PENDING_RULE["room"], PENDING_RULE["enemies"], PENDING_RULE["team"],
+                            base_condition=PENDING_RULE["base_condition"], success_loss=max_observed_loss, source="auto")
+                        PENDING_RULE = None
+
                     if PENDING_RULE:
                         # ДЕЛАЕМ СКРИНШОТ УСПЕШНОГО БОЯ ДЛЯ ТЕЛЕГРАМА
                         try:
@@ -641,13 +706,11 @@ with mss.MSS() as sct:
                         force_window_focus()
                         
                         if decision == "CONFIRM":
+                            # Допуск потерь — из этого (удачного) боя, а не из проигранного
                             engine.learn_new_rule(
-                                PENDING_RULE["room"], 
-                                PENDING_RULE["enemies"], 
-                                PENDING_RULE["team"],
-                                custom_delta=PENDING_RULE.get("max_observed_loss"),
-                                before_state=PENDING_RULE.get("before_state")
-                            )
+                                PENDING_RULE["room"], PENDING_RULE["enemies"], PENDING_RULE["team"],
+                                base_condition=PENDING_RULE["base_condition"], success_loss=max_observed_loss,
+                                source=PENDING_RULE["source"])
                             LAST_USED_TEAMS[current_room] = PENDING_RULE["team"]
                             PENDING_RULE = None
                             
@@ -662,7 +725,8 @@ with mss.MSS() as sct:
                                     print("\n[ЗАЩИТА] Получен пустой пак. Игнорирую фантомную команду!")
                                     continue
                                     
-                                PENDING_RULE["team"] = new_team 
+                                PENDING_RULE["team"] = new_team
+                                PENDING_RULE["tried"].append(list(active_pack))
                                 if decision.startswith("ROLLBACK_TG"):
                                     PENDING_RULE["source"] = "telegram"
 
@@ -674,7 +738,7 @@ with mss.MSS() as sct:
                                 
                     if not PENDING_RULE:
                         GLOBAL_TITAN_STATE.update(temporary_state)
-                        log_battle(current_room, CURRENT_ENEMIES, active_pack, "SUCCESS", tactic_result.get('reason', 'Одобрено'), team_status)
+                        record_battle(current_room, CURRENT_ENEMIES, active_pack, "SUCCESS", tactic_result.get('reason', 'Одобрено'), team_status)
                         
                         x2 = bool(get_match_loc('badge_x2.png', game_window, sct, 0.75))
                         counted_room = count_cleared_room(x2)
@@ -710,6 +774,10 @@ with mss.MSS() as sct:
                 NEEDS_CONTEXT_RECOVERY = True
                 continue
                 
+            if GLOBAL_TITAN_STATE.new_day():
+                print(f"[СОСТОЯНИЕ] Начался новый игровой день {GLOBAL_TITAN_STATE.day}: у всех титанов снова 100% ХП. "
+                      "Состояние титанов сброшено.")
+
             stop_reason = get_stop_reason()
             if stop_reason:
                 print(f"\n🛑 ОСТАНОВКА: {stop_reason}")
@@ -737,15 +805,42 @@ with mss.MSS() as sct:
             if get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD) or get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD):
                 ROOM_TIMER.begin("team")  # экран выбора команды виден: коридор и вход закончились
 
+                # Запасной пак бота — только для той же комнаты (та же стихия и те же враги), где был откат.
+                # Счётчик откатов не сбрасываем: комната не пройдена, второй раз сам бот откатывать не будет
+                if PENDING_RULE and PENDING_RULE["source"] == "auto" and (
+                        PENDING_RULE["room"] != current_room or set(PENDING_RULE["enemies"]) != set(CURRENT_ENEMIES)):
+                    print(f"[ТАКТИКА] Это не та комната, где был откат ({PENDING_RULE['room']} {PENDING_RULE['enemies']}, "
+                          f"сейчас {current_room} {CURRENT_ENEMIES}). Запасной пак здесь не ставлю.")
+                    PENDING_RULE = None
+
                 if PENDING_RULE and PENDING_RULE["room"] == current_room:
                     target_pack = PENDING_RULE["team"]
-                    reason = "Тестирование нового пака"
                     CURRENT_ALLOWED_DELTA = None
-                    CURRENT_SPECIAL_ULT = "angus" if "angus" in target_pack else "auto"
+                    CURRENT_CONDITION = PENDING_RULE["base_condition"]
+                    if PENDING_RULE["source"] == "auto":
+                        reason = "Запасной пак после отката"
+                        CURRENT_SPECIAL_ULT = engine.special_ult_for(target_pack)
+                    else:
+                        reason = "Тестирование нового пака"
+                        CURRENT_SPECIAL_ULT = "angus" if "angus" in target_pack else "auto"
                 else:
-                    target_pack, reason, CURRENT_ALLOWED_DELTA, CURRENT_SPECIAL_ULT = engine.get_battle_decision(
-                        current_room, CURRENT_ENEMIES, GLOBAL_TITAN_STATE
-                    )
+                    choice = engine.battle_decision(current_room, CURRENT_ENEMIES, GLOBAL_TITAN_STATE)
+                    target_pack, reason = choice["team"], choice["reason"]
+                    CURRENT_ALLOWED_DELTA, CURRENT_SPECIAL_ULT = choice["delta"], choice["special_ult"]
+                    CURRENT_CONDITION = choice["condition"]
+
+                    # Опасные враги: в прошлый раз этот пак им проиграл (бой откатили) — сразу ставим запасной.
+                    # Только если бот решает сам (auto_rollback). Удачный бой запомнится как правило.
+                    if TACTICS.auto_rollback and target_pack != ["STOP"] and \
+                            HISTORY.last_failed(current_room, CURRENT_ENEMIES, target_pack):
+                        backup, source = find_backup([target_pack])
+                        if backup:
+                            print(f"[ТАКТИКА] Пак {target_pack} в прошлый раз проиграл этим врагам. "
+                                  f"Сразу ставлю {backup} (взят: {source}).")
+                            PENDING_RULE = pending_pack(backup, "auto", [target_pack])
+                            target_pack, reason = backup, "Запасной пак: основной проигрывал этим врагам"
+                            CURRENT_ALLOWED_DELTA = None
+                            CURRENT_SPECIAL_ULT = engine.special_ult_for(backup)
                 
                 # =================================================================
                 # УМНАЯ ОСТАНОВКА: СВЯЗЬ С GUI (ИНТЕРАКТИВНОЕ СПАСЕНИЕ)
@@ -773,6 +868,8 @@ with mss.MSS() as sct:
                     if decision == "MANUAL":
                         print("[ТАКТИКА] Ручной режим: выберите титанов и пройдите комнату сами. Бот ждёт, пока вы вернётесь в коридор.")
                         play = play_manually(game_window, sct, stuck_guard.TEAM)
+                        PENDING_RULE = None
+                        ROOM_AUTO_ROLLBACKS = 0
                         # Вы могли поставить в слоты других титанов: в следующий раз бот проверит слоты
                         LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
                         GLOBAL_TITAN_STATE.clear()  # ХП после вашего боя бот не видел
@@ -793,7 +890,7 @@ with mss.MSS() as sct:
                         print(f"\n[ТАКТИКА] Применен экстренный пак от пользователя: {new_team}")
                         
                         # Автоматически сохраняем этот пак в правила
-                        engine.learn_new_rule(current_room, CURRENT_ENEMIES, new_team)
+                        engine.learn_new_rule(current_room, CURRENT_ENEMIES, new_team, base_condition=CURRENT_CONDITION)
                         
                         # Подменяем целевой пак и идем расставлять его!
                         target_pack = new_team

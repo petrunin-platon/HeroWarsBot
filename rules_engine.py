@@ -1,6 +1,7 @@
 import yaml
 import os
 import data_paths
+from i18n import get_text
 
 class RulesEngine:
     def __init__(self):
@@ -71,6 +72,21 @@ class RulesEngine:
     def get_battle_decision(self, room_type, enemies, current_state=None):
         """
         Вызывается, когда мы УЖЕ выбрали комнату и обязаны вернуть пак для боя.
+        Возвращает (пак, причина, свой допуск потерь, стратегия ульты).
+        """
+        d = self.battle_decision(room_type, enemies, current_state)
+        return d["team"], d["reason"], d["delta"], d["special_ult"]
+
+    def forbidden_titans(self, room_type, enemies, current_state=None):
+        """Чёрный список титанов комнаты: правила skip, которые сейчас срабатывают."""
+        rules = self.rules_cache.get(room_type, {}).get("rules", [])
+        return self._get_forbidden_titans(rules, enemies, current_state or {})
+
+    def battle_decision(self, room_type, enemies, current_state=None):
+        """
+        То же, что get_battle_decision, но словарём: team, reason, delta, special_ult и
+        condition — условие правила, которое дало пак ({} для базового пака).
+        Условие нужно, чтобы после отката запомнить правило для той же ситуации.
         """
         if current_state is None:
             current_state = {}
@@ -96,9 +112,7 @@ class RulesEngine:
                         continue
                         
                     reason = rule.get("name", "ПРИОРИТЕТ 1: Спасение")
-                    delta = rule.get("allowed_delta")
-                    special_ult = self._resolve_special_ult(team, rule)
-                    return team, reason, delta, special_ult
+                    return self._decision(team, reason, rule)
 
         # 2. ВТОРОЙ ПРОХОД: Тактические правила под состав врагов (Золотые Правила)
         for rule in rules:
@@ -115,9 +129,7 @@ class RulesEngine:
                         continue
                         
                     reason = rule.get("name", "ПРИОРИТЕТ 2: Тактика")
-                    delta = rule.get("allowed_delta")
-                    special_ult = self._resolve_special_ult(team, rule)
-                    return team, reason, delta, special_ult
+                    return self._decision(team, reason, rule)
                     
         # 3. ПРИОРИТЕТ 3: Базовый пак по умолчанию
         default_team = room_data.get("default_team", [])
@@ -127,10 +139,33 @@ class RulesEngine:
             bad_titans = ", ".join([t.upper() for t in forbidden_titans if t in default_team])
             reason = f"ФАТАЛЬНО: Все паки отбракованы. Дефолтный пак содержит запрещенных титанов ({bad_titans})"
             # Возвращаем STOP, main.py поставит бота на паузу.
-            return ["STOP"], reason, None, "auto"
-            
-        special_ult = self._resolve_special_ult(default_team, {})
-        return default_team, "ПРИОРИТЕТ 3: Базовый пак", None, special_ult
+            return {"team": ["STOP"], "reason": reason, "delta": None, "special_ult": "auto", "condition": {}}
+
+        return self._decision(default_team, "ПРИОРИТЕТ 3: Базовый пак", {})
+
+    def _decision(self, team, reason, rule):
+        return {
+            "team": team,
+            "reason": reason,
+            "delta": rule.get("allowed_delta"),
+            "special_ult": self._resolve_special_ult(team, rule),
+            "condition": dict(rule.get("condition") or {}),
+        }
+
+    def room_packs(self, room_type):
+        """Все паки из правил стихии и базовый пак, по порядку файла: [(пак, условие правила)].
+        Правила skip и [STOP] не входят. Нужно для выбора запасного пака (tactics.py)."""
+        room_data = self.rules_cache.get(room_type, {})
+        packs = []
+        for rule in room_data.get("rules", []) or []:
+            team = rule.get("team") or []
+            if rule.get("action") == "skip" or not team or team == ["STOP"]:
+                continue
+            packs.append((list(team), dict(rule.get("condition") or {})))
+        default_team = room_data.get("default_team") or []
+        if default_team:
+            packs.append((list(default_team), {}))
+        return packs
 
     def rescue_rules_fired_by_battle(self, room_type, enemies, before_state, after_state, fighters):
         """
@@ -156,6 +191,10 @@ class RulesEngine:
             if self._evaluate_condition(only_hp, enemies, after_state):
                 fired.append(rule.get("name", "правило отхила"))
         return ", ".join(fired)
+
+    def special_ult_for(self, team):
+        """Стратегия ульты для пака без правила: "angus", если Ангус в паке и включён его ручной контроль."""
+        return self._resolve_special_ult(team, {})
 
     def _resolve_special_ult(self, team, rule):
         if rule.get("special_ult"):
@@ -193,61 +232,92 @@ class RulesEngine:
                     
         return True
 
-    def learn_new_rule(self, room_type, enemies, team, custom_delta=None, before_state=None):
-        """Интеллектуальное создание правила с анализом причин провала"""
+    def learn_new_rule(self, room_type, enemies, team, base_condition=None, success_loss=None, source="gui"):
+        """
+        Запоминает удачный пак после отката (вашего или самостоятельного). Возвращает правило или None.
+        Правило всегда привязано к составу врагов: «против этих врагов ставить этот пак».
+        base_condition — условие правила, чей пак проиграл (например, {"titan_hp_below": {"araji": 50}}).
+          Оно входит в новое правило: тогда новое срабатывает в той же ситуации и стоит выше старого.
+          Пустое (проиграл базовый пак) — получится анти-пак против этих врагов.
+        success_loss — наибольшая потеря ХП в удачном бою. Больше общего допуска — правило получает свой допуск.
+        Правило с тем же условием не дублируется: у него меняется пак, и оно поднимается на 1-е место.
+        """
+        if not enemies:
+            print("[ОБУЧЕНИЕ] Враги не распознаны — правило не сохраняю: без врагов оно срабатывало бы в каждой комнате.")
+            return None
+        team = list(team)
+        condition = {k: v for k, v in (base_condition or {}).items() if k != "enemies_contain"}
+        condition["enemies_contain"] = sorted(enemies)
+
+        new_rule = {"name": learned_rule_name(condition), "condition": condition, "team": team, "source": source}
+        global_delta = self.get_global_setting("max_hp_delta", 30)
+        if success_loss is not None and success_loss > global_delta:
+            new_rule["allowed_delta"] = int(success_loss)
+        if "angus" in team:
+            new_rule["special_ult"] = "angus"
+
         path = data_paths.rules_path(room_type)
         data = {"default_team": [], "rules": []}
-        
         if os.path.exists(path):
             with open(path, 'r', encoding='utf-8') as f:
                 loaded = yaml.safe_load(f)
                 if loaded and isinstance(loaded, dict):
                     data = loaded
-                    
-        if "rules" not in data or not isinstance(data["rules"], list):
+        if not isinstance(data.get("rules"), list):
             data["rules"] = []
-            
-        new_rule = {
-            "team": team,
-            "stats": {"wins": 0, "fails": 0}
-        }
+        rules = data["rules"]
 
-        is_rescue = False
-        
-        if before_state:
-            # Находим всех раненых титанов
-            wounded = {t: hp for t, hp in before_state.items() if hp < 65}
-            if wounded:
-                # Находим самого пострадавшего
-                worst_titan = min(wounded.items(), key=lambda x: x[1])[0]
-                
-                # КРИТИЧЕСКИЙ ФИКС: Является ли это правилом отхила?
-                # Только если этот самый раненый титан ПРИСУТСТВУЕТ в новом паке!
-                if worst_titan in team:
-                    threshold = 65 
-                    new_rule["condition"] = {"titan_hp_below": {worst_titan: threshold}}
-                    new_rule["name"] = f"Авто-отхил ({worst_titan} < {threshold}%)"
-                    is_rescue = True
+        same = next((i for i, r in enumerate(rules)
+                     if r.get("action") != "skip" and same_condition(r.get("condition", {}), condition)), None)
+        if same is None:
+            rules.insert(0, new_rule)
+            print(f"[ОБУЧЕНИЕ] Новое правило '{new_rule['name']}': пак {team}. Сохранено на 1-е место.")
+        else:
+            old = rules.pop(same)
+            if sorted(old.get("team") or []) == sorted(team):
+                rules.insert(0, old)
+                print(f"[ОБУЧЕНИЕ] Правило '{old.get('name', new_rule['name'])}' с этим паком уже есть. Поднимаю на 1-е место.")
+            else:
+                rules.insert(0, new_rule)
+                print(f"[ОБУЧЕНИЕ] Правило '{new_rule['name']}' обновлено: пак {team} вместо {old.get('team')}. "
+                      "Стоит на 1-м месте.")
 
-        # Если это не спасательная операция (или раненого титана убрали из пака)
-        # значит, это тактический Анти-пак против конкретных врагов.
-        if not is_rescue:
-            new_rule["condition"] = {"enemies_contain": enemies}
-            new_rule["name"] = f"Анти-пак (Тактика) - {len(data['rules']) + 1}"
-        
-        if custom_delta is not None:
-            new_rule["allowed_delta"] = custom_delta
-            
-        if "angus" in team:
-            new_rule["special_ult"] = "angus"
-            
-        data["rules"].insert(0, new_rule)
-        
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as f:
+        tmp = f"{path}.tmp"
+        with open(tmp, 'w', encoding='utf-8') as f:
             yaml.dump(data, f, allow_unicode=True, sort_keys=False)
-            
+        os.replace(tmp, path)
+
         self.rules_cache[room_type] = data
-        print(f"[ОБУЧЕНИЕ] Новое правило '{new_rule['name']}' сохранено на 1-е место!")
+        return rules[0]
+
+
+def titan_name_ru(titan):
+    """Имя титана по-русски для названий правил. Нет перевода — id как есть."""
+    key = f"titan_{titan}"
+    name = get_text("RU", key)
+    return titan if name == key else name
+
+
+def learned_rule_name(condition):
+    """Понятное название запомненного правила: против кого и в какой ситуации."""
+    name = "Анти-пак против: " + ", ".join(titan_name_ru(e) for e in condition.get("enemies_contain", []))
+    situation = [f"{titan_name_ru(t)} < {v}% ХП" for t, v in condition.get("titan_hp_below", {}).items()]
+    situation += [f"энергия {titan_name_ru(t)} < {v}%" for t, v in condition.get("titan_energy_below", {}).items()]
+    if situation:
+        name += " (при " + ", ".join(situation) + ")"
+    return name
+
+
+def same_condition(a, b):
+    """Одинаковые ли условия правил (порядок врагов не важен)."""
+    def norm(cond):
+        cond = dict(cond or {})
+        for key in ("enemies_contain", "require_fought"):
+            if key in cond:
+                cond[key] = sorted(cond[key])
+        return cond
+    return norm(a) == norm(b)
+
 
 engine = RulesEngine()

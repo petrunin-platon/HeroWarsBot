@@ -8,6 +8,7 @@ from vision import click_human, get_match_loc, find_and_click_bulletproof, imrea
     get_first_match, click_point_from_info, grab_frame
 from analyzer import scan_enemy_team
 import click_logic
+import tactics
 import rollback_logic
 import session_log
 
@@ -90,29 +91,24 @@ def find_smart_door(window_rect, sct, current_state=None):
             "score": highest_val
         })
         
-    best_btn = None
-    room_type = "unknown"
-    
+    # Все двери в лог (слева направо), выбор — по порядку стихий из профиля (door_order) с учётом правил skip
+    doors = sorted(button_elements, key=lambda b: b["coords"][0])
+    print("[НАВИГАЦИЯ] Двери (слева направо): " + ", ".join(f"{b['element'].upper()} ({b['score']:.2f})" for b in doors))
+    order = tactics.door_order(engine.get_global_setting("door_order"))
+    elements = [b["element"] for b in button_elements]
+    idx, allowed, skipped = tactics.pick_door(elements, order, lambda r: engine.is_room_forbidden(r, current_state))
+    best_btn = button_elements[idx]["coords"]
+    room_type = elements[idx]
+
     if len(button_elements) == 1:
-        best_btn = button_elements[0]["coords"]
-        room_type = button_elements[0]["element"]
-        if engine.is_room_forbidden(room_type, current_state):
-             print(f"[НАВИГАЦИЯ] Комната {room_type.upper()} запрещена, но она единственная! Идем в бой.")
+        if not allowed:
+            print(f"[НАВИГАЦИЯ] Комната {room_type.upper()} запрещена, но она единственная! Идем в бой.")
     else:
-        priority_map = {"water": 1, "mix": 2, "earth": 3, "fire": 4, "unknown": 99}
-        button_elements.sort(key=lambda b: priority_map[b["element"]])
-        
-        for btn_data in button_elements:
-            r_type = btn_data["element"]
-            if not engine.is_room_forbidden(r_type, current_state):
-                best_btn = btn_data["coords"]
-                room_type = r_type
-                print(f"[НАВИГАЦИЯ] Выбрана комната {room_type.upper()} (проверка пройдена)")
-                break
-                
-        if best_btn is None:
-            best_btn = button_elements[0]["coords"]
-            room_type = button_elements[0]["element"]
+        if allowed:
+            for r_type in skipped:
+                print(f"[НАВИГАЦИЯ] Комната {r_type.upper()} под запретом (правило skip), пропускаю.")
+            print(f"[НАВИГАЦИЯ] Выбрана комната {room_type.upper()} (порядок: {' → '.join(order)})")
+        else:
             print(f"[НАВИГАЦИЯ] ВНИМАНИЕ: Все доступные двери под запретом! Вынужденный вход в {room_type.upper()}")
 
     if best_btn:
