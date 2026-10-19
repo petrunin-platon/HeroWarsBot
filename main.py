@@ -25,6 +25,7 @@ from config import CONFIG, LIMITS, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS
 from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, wait_for_ui_element
 from combat import find_smart_door, execute_angus_ult, execute_rollback
 from navigation import smart_navigate_hallway
+from click_logic import after_failed_battle_start, START_BATTLE_ATTEMPTS
 from team_manager import verify_and_set_team
 from analyzer import scan_team_health
 from analytics import log_battle
@@ -153,6 +154,7 @@ CURRENT_ENEMIES = []
 CURRENT_PACK = [] 
 CURRENT_SPECIAL_ULT = "auto"
 CURRENT_ALLOWED_DELTA = None
+START_FAILS = 0  # сколько раз подряд не удалось начать бой («Авто» не сработала)
 
 LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
 
@@ -614,13 +616,10 @@ with mss.MSS() as sct:
             
         elif STATE == "PREP_AUTO":
             ROOM_TIMER.begin("battle")
-            print("[ТАКТИКА] Выполняю быстрый старт боя (Fire-and-Forget)...")
-            auto_coords = get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD)
-            if auto_coords:
-                from vision import click_human # Локальный безопасный импорт
-                click_human(auto_coords[0], auto_coords[1])
-            else:
-                print("[ПРЕДУПРЕЖДЕНИЕ] Кнопка 'В бой' не найдена мгновенно. Жду...")
+            print("[ТАКТИКА] Выполняю быстрый старт боя...")
+            # «Авто» жмём с проверкой: если экран выбора команды не закрылся, нажатие повторится
+            # (одно потерянное нажатие раньше приводило к зависанию: бот ждал боя, которого не было)
+            find_and_click_bulletproof('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD, timeout=3.0)
             
             # Умное ожидание ЛЮБОГО признака боя (Пауза, Авто-кнопки или сразу победа)
             wait_start = time.time()
@@ -635,10 +634,21 @@ with mss.MSS() as sct:
                 time.sleep(0.1)
                 
             if battle_confirmed:
+                START_FAILS = 0
                 STATE = "WAIT_FOR_OK"
             else:
-                print("[СЕТЬ] Бой не начался за 10 сек. Сброс в HALLWAY...")
-                STATE = "HALLWAY"
+                team_screen = bool(get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD) or
+                                   get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD))
+                STATE, START_FAILS = after_failed_battle_start(team_screen, START_FAILS)
+                if STATE == "SET_TEAM":
+                    print(f"[СЕТЬ] Бой не начался, экран выбора команды всё ещё открыт. Пробую ещё раз ({START_FAILS} из {START_BATTLE_ATTEMPTS - 1})...")
+                elif STATE == "STOP":
+                    print(f"\n[ОШИБКА] Бой не удалось начать {START_FAILS} раза подряд: кнопка «Авто» не срабатывает.")
+                    SESSION_LOG.set_stop_reason("Не удалось начать бой: «Авто» не срабатывает")
+                    sys.exit(0)
+                else:
+                    print("[СЕТЬ] Бой не начался за 10 сек. Сброс в HALLWAY...")
+                    STATE = "HALLWAY"
             continue
             
         time.sleep(0.1)

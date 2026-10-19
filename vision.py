@@ -289,22 +289,6 @@ def get_match_loc(image_name, window_rect, sct, threshold):
         return None
     return click_point_from_info(image_name, info, window_rect)
 
-def grab_small_gray(window_rect, sct, size=(96, 54)):
-    """Уменьшенный серый кадр игры — для проверки «картинка замерла»."""
-    screenshot_cv, _, _, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
-    gray = cv2.cvtColor(screenshot_cv, cv2.COLOR_BGR2GRAY)
-    return cv2.resize(gray, size, interpolation=cv2.INTER_AREA)
-
-def wait_until_still(window_rect, sct, max_wait=click_logic.STILL_MAX_WAIT_S, poll=0.15):
-    """Ждёт, пока картинка перестанет двигаться. Возвращает (замерла ли, сколько секунд ждали)."""
-    watcher = click_logic.StillnessWatcher()
-    started = time.monotonic()
-    while time.monotonic() - started < max_wait:
-        if watcher.update(grab_small_gray(window_rect, sct)):
-            return True, time.monotonic() - started
-        time.sleep(poll)
-    return False, time.monotonic() - started
-
 def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=6.0):
     """
     Человечный и надежный клик с защитой от непрокликивания и от лишних нажатий.
@@ -316,6 +300,7 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
     """
     start_time = time.time()
     policy = None
+    retried_at = None  # когда было повторное нажатие (для диагностики в логе)
 
     while True:
         elapsed = time.time() - start_time
@@ -324,6 +309,8 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
         if info is None:
             if policy is not None:
                 # Мы уже нажимали, а кнопка пропала — это 100% успех
+                if retried_at is not None:
+                    print(f"[VISION] '{image_name}': после повтора кнопка пропала через {time.monotonic() - retried_at:.1f} с")
                 return True
             if elapsed >= timeout:
                 break
@@ -339,8 +326,11 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
             if elapsed >= timeout:
                 break
             waited = policy.seconds_since_tap()
-            print(f"[VISION] Клик по '{image_name}' не зарегистрирован сервером (экран не отреагировал {waited:.1f} с). Повторяю...")
+            tap_s = policy.tap_duration()
+            print(f"[VISION] Клик по '{image_name}' не зарегистрирован сервером "
+                  f"(нажатие выполнялось {tap_s:.1f} с, после него экран не отреагировал {waited:.1f} с). Повторяю...")
             session_log.count("repeat_clicks")
+            retried_at = time.monotonic()
 
         coords = click_point_from_info(image_name, info, window_rect)
         tap_proc = click_human(coords[0], coords[1])

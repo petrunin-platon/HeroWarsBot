@@ -2,8 +2,8 @@
 import time
 from config import CONFIDENCE_THRESHOLD
 from vision import (click_human, get_match_loc, get_match_info, click_point_from_info, find_and_click_bulletproof,
-                    wait_for_ui_element, wait_after_tap, wait_until_still)
-from click_logic import StableTracker, DOOR_STABLE_TOL_PX
+                    wait_for_ui_element, wait_after_tap)
+from click_logic import StableTracker, DOOR_STABLE_TOL_PX, FLOOR_FLAG_WAIT_S
 import vision
 import session_log
 
@@ -63,26 +63,24 @@ def smart_navigate_hallway(window_rect, sct):
                 
         time.sleep(0.1) # Сверхбыстрый поллинг экрана
         
+    # Бот считает, что он в коридоре, а на экране выбор команды (например, не сработало нажатие «Авто»).
+    # Раньше он в таком случае бесконечно искал дверь, теперь возвращается к выбору команды.
+    if get_match_loc('btn_auto.png', window_rect, sct, CONFIDENCE_THRESHOLD) or \
+       get_match_loc('btn_in_battle.png', window_rect, sct, CONFIDENCE_THRESHOLD):
+        print("[НАВИГАЦИЯ] Вместо коридора виден экран выбора команды. Возвращаюсь к выбору команды...")
+        return "SET_TEAM"
+
     print("[НАВИГАЦИЯ] Таймаут в коридоре (10 сек). Перезапуск цикла...")
     return "HALLWAY"
 
 def wait_for_new_floor(window_rect, sct):
-    """После награды ждём не фиксированные 4 с, а пока кнопки точки сохранения исчезнут и коридор перестанет двигаться."""
+    """После награды ждём не фиксированные 4 с, а появление флажка двери на новом этаже.
+    Пока идёт спуск (~8–10 с), кнопка «Активировать» ещё видна, поэтому в коридор раньше не возвращаемся.
+    Подвижную дверь дальше отсекает проверка «флажок стоит на месте»."""
     started = time.monotonic()
-    gone_since = None
-    while time.monotonic() - started < 3.0:
-        # Кнопка «Активировать» ещё на экране — окно награды закрывается, повторно её нажимать нельзя
-        if get_match_loc('btn_activate.png', window_rect, sct, CONFIDENCE_THRESHOLD) or \
-           get_match_loc('btn_claim.png', window_rect, sct, CONFIDENCE_THRESHOLD):
-            gone_since = None
-        else:
-            gone_since = gone_since or time.monotonic()
-            if time.monotonic() - gone_since >= 0.3:
-                break
+    while time.monotonic() - started < FLOOR_FLAG_WAIT_S:
+        if get_match_info('flag_enter.png', window_rect, sct, CONFIDENCE_THRESHOLD):
+            print(f"[НАВИГАЦИЯ] На новом этаже появилась дверь через {time.monotonic() - started:.1f} с после награды.")
+            return
         time.sleep(0.1)
-
-    still, waited = wait_until_still(window_rect, sct)
-    if still:
-        print(f"[НАВИГАЦИЯ] Коридор замер через {time.monotonic() - started:.1f} с после награды.")
-    else:
-        print(f"[НАВИГАЦИЯ] Коридор не замер за {waited:.1f} с — продолжаю как есть.")
+    print(f"[НАВИГАЦИЯ] Дверь на новом этаже не появилась за {FLOOR_FLAG_WAIT_S:.0f} с — продолжаю как есть.")
