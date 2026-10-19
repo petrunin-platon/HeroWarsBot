@@ -5,7 +5,7 @@ import time
 import os
 from config import CONFIG, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS, ENEMY_TITANS
 from vision import click_human, get_match_loc, find_and_click_bulletproof, imread_cyrillic, wait_for_ui_element, \
-    get_first_match, click_point_from_info
+    get_first_match, click_point_from_info, grab_frame
 from analyzer import scan_enemy_team
 import click_logic
 import rollback_logic
@@ -21,8 +21,7 @@ def find_smart_door(window_rect, sct, current_state=None):
     if current_state is None:
         current_state = {}
 
-    screenshot = sct.grab(window_rect)
-    img = np.array(screenshot)
+    img = grab_frame(window_rect, sct)
     screenshot_cv = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
     
     attack_template = imread_cyrillic('btn_attack.png')
@@ -127,7 +126,7 @@ def find_smart_door(window_rect, sct, current_state=None):
             elapsed = time.time() - start_time
             if os.path.exists("pause.flag"): return None, []
             
-            scr = np.array(sct.grab(window_rect))
+            scr = grab_frame(window_rect, sct)
             scr_cv = cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR)
             res = cv2.matchTemplate(scr_cv, attack_template, cv2.TM_CCOEFF_NORMED)
             loc = np.where(res >= ACTION_THRESHOLD)

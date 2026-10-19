@@ -13,6 +13,13 @@ from functools import lru_cache
 from config import CONFIG
 import session_log
 import click_logic
+import stuck_guard
+from contextlib import ExitStack
+try:
+    from mss.exception import ScreenShotError
+except ImportError:  # в облачных тестах mss нет
+    class ScreenShotError(Exception):
+        pass
 
 # Пытаемся импортировать упакованные ассеты
 try:
@@ -104,10 +111,35 @@ def _calibrate_geometry(screenshot):
     print(f" ---> Истинный размер игры: {gw_rect}x{gh_rect}\n")
 
 
+# Что делать, когда экран долго недоступен и когда он снова работает. Задаёт main.py (Telegram, сторож)
+SCREEN_HOOKS = {"long_wait": None, "resumed": None}
+
+
+def grab_frame(window_rect, sct):
+    """Снимок окна игры (numpy-массив BGRA). Все снимки бота идут через эту функцию.
+    Если ПК заблокирован (Win+L) и снимок не получается, бот не падает, а ждёт разблокировки.
+    Время ожидания в замеры комнаты не идёт (отдельный счётчик «экран заблокирован»)."""
+    excluded = ExitStack()
+
+    def resumed(seconds):
+        excluded.close()
+        if SCREEN_HOOKS["resumed"]:
+            SCREEN_HOOKS["resumed"](seconds)
+
+    try:
+        return np.array(stuck_guard.grab_or_wait(
+            lambda: sct.grab(window_rect), ScreenShotError,
+            on_blocked=lambda: excluded.enter_context(session_log.excluded("screen_lock")),
+            on_long_wait=SCREEN_HOOKS["long_wait"],
+            on_resumed=resumed))
+    finally:
+        excluded.close()
+
+
 def _crop_screenshot_to_game_area(window_rect, sct):
     """Приватная функция для применения кэша геометрии и обрезки экрана."""
     # 1. Сначала делаем ЕДИНСТВЕННЫЙ захват экрана для всего такта!
-    screenshot = np.array(sct.grab(window_rect))
+    screenshot = grab_frame(window_rect, sct)
     
     # 2. Передаем ГОТОВЫЙ скриншот в калибратор (если он еще не откалиброван)
     if not GEOMETRY_CACHE["is_calibrated"] and window_rect["width"] > 800:
