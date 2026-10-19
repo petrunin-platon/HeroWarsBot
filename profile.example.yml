@@ -6,27 +6,14 @@ default_packs:
 global_thresholds:
   critical_hp: 20
   max_hp_delta: 30
-  # Общие потери пака: бой плохой, если столько титанов (group_loss_titans) потеряли за бой
-  # по group_loss_percent% ХП и больше. 0 — проверка выключена. Без этих строк: 3 титана по 40%.
+  # Настройки тактики задаются в окне программы: вкладка «Мастер правил» →
+  # переключатель «🤖 Бот решает сам» и кнопка «⚙️ Тактика». Руками их править не нужно.
   group_loss_titans: 3
   group_loss_percent: 40
-  # Личные пороги паники (по желанию): для этих титанов вместо critical_hp, у каждого игрока свои.
-  # titan_critical_hp:
-  #   rigel: 25
-  #   sigurd: 19
 settings:
   angus_manual_control: true
-  # Бот решает сам: плохой бой откатывает и переигрывает запасным паком, не спрашивая вас
-  # (не больше auto_rollback_tries раз за комнату, потом окно SOS). false — всегда спрашивать вас.
   auto_rollback: false
-  auto_rollback_tries: 1
-  # Ваши запасные паки по стихиям (по желанию). Бот берёт их первыми,
-  # потом паки из правил стихии, в последнюю очередь — из истории боёв.
-  # backup_teams:
-  #   mix:
-  #     - [hyperion, araji, sigurd, iyari, lumira]
-  # Порядок дверей (по желанию). Без этой строки: water, mix, earth, fire.
-  # door_order: [water, mix, earth, fire]
+  auto_rollback_tries: 2
   telegram:
     active: false
     chat_id: 'YOUR_CHAT_ID_HERE'

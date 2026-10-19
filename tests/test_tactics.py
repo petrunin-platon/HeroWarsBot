@@ -39,7 +39,7 @@ def test_settings_defaults_keep_old_behaviour():
     assert s.group_loss == (3, 40)
     assert s.titan_critical_hp == {}
     assert s.auto_rollback is False          # бот сам не откатывает, пока вы не включите
-    assert s.auto_rollback_tries == 1
+    assert s.auto_rollback_tries == 2        # запасной пак — до 2 раз за комнату
     assert s.backup_teams == {}
     assert s.door_order == ["water", "mix", "earth", "fire"]
 
@@ -86,15 +86,24 @@ def test_history_stats_and_winners():
     ])
     st = h.stats("mix", list(reversed(E)), list(reversed(BASE)))  # порядок не важен
     assert st["wins"] == 2 and st["fails"] == 0 and st["avg_hp"] == 80 and not st["last_failed"]
-    assert h.last_failed("mix", E, HEAL)
-    assert not h.last_failed("mix", OTHER, HEAL)
+    assert h.lost_to("mix", E, HEAL)
+    assert not h.lost_to("mix", OTHER, HEAL)
     assert [team for team, _ in h.winners("mix", E)] == [SIGURD_HEAL, BASE]
 
 
 def test_history_last_result_counts():
     """Пак проиграл, потом выиграл — в последний раз он справился, его можно брать."""
     h = tactics.BattleHistory([battle(HEAL, "ROLLBACK"), battle(HEAL)])
-    assert not h.last_failed("mix", E, HEAL)
+    assert not h.lost_to("mix", E, HEAL)
+
+
+def test_one_loss_does_not_spoil_good_pack():
+    """Пак много раз побеждал этих врагов и один раз проиграл — он по-прежнему годится в запасные."""
+    h = tactics.BattleHistory([battle(SIGURD_HEAL)] * 3 + [battle(SIGURD_HEAL, "ROLLBACK")])
+    assert not h.lost_to("mix", E, SIGURD_HEAL)
+    # А выиграл 1 и проиграл 1 (последним) — проигрывает
+    h = tactics.BattleHistory([battle(SIGURD_HEAL), battle(SIGURD_HEAL, "ROLLBACK")])
+    assert h.lost_to("mix", E, SIGURD_HEAL)
 
 
 def test_history_loads_jsonl_files(tmp_path):
@@ -161,7 +170,8 @@ def test_auto_rollback_blocker():
     assert "выключен" in tactics.auto_rollback_blocker(settings(), False, False, 0)
     assert "вручную" in tactics.auto_rollback_blocker(on, True, False, 0)
     assert "не прочиталось" in tactics.auto_rollback_blocker(on, False, True, 0)
-    assert "уже откатывал" in tactics.auto_rollback_blocker(on, False, False, 1)
+    assert tactics.auto_rollback_blocker(on, False, False, 1) is None    # по умолчанию 2 попытки
+    assert "уже откатывал" in tactics.auto_rollback_blocker(on, False, False, 2)
     assert "выбрали вы" in tactics.auto_rollback_blocker(on, False, False, 0, user_pack=True)
 
 
@@ -247,5 +257,64 @@ def test_no_rule_without_enemies(engine, tmp_path):
 
 def test_history_empty_pack_matches_nothing():
     h = tactics.BattleHistory([battle(HEAL, "ROLLBACK")])
-    assert not h.last_failed("mix", E, [])
+    assert not h.lost_to("mix", E, [])
     assert h.stats("mix", E, [])["wins"] == 0 and h.stats("mix", E, [])["fails"] == 0
+
+
+def test_tries_are_limited():
+    assert settings(auto_rollback_tries=10).auto_rollback_tries == 3   # не по 10 раз
+    assert settings(auto_rollback_tries=0).auto_rollback_tries == 1
+
+
+def test_read_and_write_tactics_keep_other_profile_keys():
+    """Окно программы читает и пишет настройки тактики, не трогая остальное (Telegram, цели)."""
+    profile = {"global_thresholds": {"critical_hp": 30, "max_hp_delta": 20},
+               "settings": {"target_time": 50, "telegram": {"active": True}}}
+    values = tactics.read_tactics(profile)
+    assert values == {"auto_rollback": False, "auto_rollback_tries": 2, "group_loss_titans": 3,
+                      "group_loss_percent": 40, "titan_critical_hp": {}, "backup_teams": {},
+                      "door_order": ["water", "mix", "earth", "fire"]}
+    values.update(auto_rollback=True, auto_rollback_tries=3, titan_critical_hp={"rigel": 25},
+                  backup_teams={"mix": [SIGURD_HEAL]}, door_order=["mix", "water", "earth", "fire"])
+    tactics.write_tactics(profile, values)
+    assert profile["settings"]["telegram"] == {"active": True} and profile["settings"]["target_time"] == 50
+    assert profile["global_thresholds"]["critical_hp"] == 30
+    assert profile["global_thresholds"]["titan_critical_hp"] == {"rigel": 25}
+    assert profile["settings"]["auto_rollback"] is True
+    again = tactics.read_tactics(profile)
+    assert again["backup_teams"] == {"mix": [SIGURD_HEAL]} and again["auto_rollback_tries"] == 3
+    assert again["door_order"][0] == "mix"
+    assert tactics.Settings(tactics.profile_getter(profile)).auto_rollback is True
+
+
+def test_write_tactics_into_empty_profile():
+    profile = tactics.write_tactics({}, {"auto_rollback": True, "group_loss_titans": 2, "чужой_ключ": 1})
+    assert profile == {"global_thresholds": {"group_loss_titans": 2}, "settings": {"auto_rollback": True}}
+
+
+def test_obsolete_rule_is_removed_once(tmp_path, monkeypatch):
+    """Старое правило «Авто-отхил (araji < 65%)» с Ригелем и допуском 6% бот удаляет сам; остальные остаются."""
+    monkeypatch.chdir(tmp_path)
+    old_rule = {"team": ["araji", "hyperion", "rigel", "iyari", "lumira"], "stats": {"wins": 0, "fails": 0},
+                "condition": {"titan_hp_below": {"araji": 65}}, "name": "Авто-отхил (araji < 65%)", "allowed_delta": 6}
+    sigurd_rule = {"team": SIGURD_HEAL, "condition": {"titan_hp_below": {"araji": 65}},
+                   "name": "Авто-отхил (araji < 65%)", "allowed_delta": 62}
+    same_pack_other_delta = dict(old_rule, allowed_delta=20)
+    path = tmp_path / "bot_data" / "rules" / "mix.yml"
+    path.parent.mkdir(parents=True)
+    path.write_text(yaml.dump({"rules": [old_rule, sigurd_rule, same_pack_other_delta], "default_team": BASE},
+                              allow_unicode=True), encoding="utf-8")
+    sys.modules.pop("rules_engine", None)
+    module = importlib.import_module("rules_engine")
+    engine = module.RulesEngine()
+    try:
+        rules = yaml.safe_load(path.read_text(encoding="utf-8"))["rules"]
+        assert [r["team"] for r in rules] == [SIGURD_HEAL, old_rule["team"]]
+        assert rules[1]["allowed_delta"] == 20
+        assert engine.get_battle_decision("mix", E, {"araji": {"hp": 50}})[0] == SIGURD_HEAL
+        # Второй запуск ничего не меняет
+        before = path.read_text(encoding="utf-8")
+        module.RulesEngine()
+        assert path.read_text(encoding="utf-8") == before
+    finally:
+        sys.modules.pop("rules_engine", None)

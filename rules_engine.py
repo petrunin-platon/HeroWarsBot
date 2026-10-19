@@ -30,6 +30,7 @@ class RulesEngine:
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
                     self.rules_cache[r] = yaml.safe_load(f) or {}
+                drop_obsolete_rules(path, self.rules_cache[r])
             else:
                 self.rules_cache[r] = {}
 
@@ -290,6 +291,39 @@ class RulesEngine:
 
         self.rules_cache[room_type] = data
         return rules[0]
+
+
+# Правила, которые старый код обучения записал с ошибкой. Удаляются один раз, по вашему решению.
+# «Авто-отхил (araji < 65%)» с Ригелем: допуск 6% взят из боя, где окно SOS было ложным (сессия 03),
+# поэтому почти любой бой с этим паком давал окно SOS. Оно закрывало правило с Сигурдом.
+OBSOLETE_RULES = [
+    {"condition": {"titan_hp_below": {"araji": 65}},
+     "team": {"araji", "hyperion", "rigel", "iyari", "lumira"}, "allowed_delta": 6},
+]
+
+
+def is_obsolete_rule(rule):
+    return any(rule.get("condition") == bad["condition"] and set(rule.get("team") or []) == bad["team"]
+               and rule.get("allowed_delta") == bad["allowed_delta"] for bad in OBSOLETE_RULES)
+
+
+def drop_obsolete_rules(path, data):
+    """Убирает из файла правил устаревшие правила (OBSOLETE_RULES). Остальные правила не трогает."""
+    rules = data.get("rules") if isinstance(data, dict) else None
+    if not isinstance(rules, list):
+        return
+    keep = [r for r in rules if not (isinstance(r, dict) and is_obsolete_rule(r))]
+    if len(keep) == len(rules):
+        return
+    for r in rules:
+        if isinstance(r, dict) and is_obsolete_rule(r):
+            print(f"[ПРАВИЛА] Удаляю устаревшее правило '{r.get('name')}' (пак {r.get('team')}, "
+                  f"допуск {r.get('allowed_delta')}%) из {path}.")
+    data["rules"] = keep
+    tmp = f"{path}.tmp"
+    with open(tmp, 'w', encoding='utf-8') as f:
+        yaml.dump(data, f, allow_unicode=True, sort_keys=False)
+    os.replace(tmp, path)
 
 
 def titan_name_ru(titan):

@@ -829,13 +829,13 @@ with mss.MSS() as sct:
                     CURRENT_ALLOWED_DELTA, CURRENT_SPECIAL_ULT = choice["delta"], choice["special_ult"]
                     CURRENT_CONDITION = choice["condition"]
 
-                    # Опасные враги: в прошлый раз этот пак им проиграл (бой откатили) — сразу ставим запасной.
-                    # Только если бот решает сам (auto_rollback). Удачный бой запомнится как правило.
+                    # Опасные враги: этот пак им проигрывает (последний бой откатили, побед не больше поражений) —
+                    # сразу ставим запасной. Только если бот решает сам (auto_rollback). Удачный бой запомнится как правило.
                     if TACTICS.auto_rollback and target_pack != ["STOP"] and \
-                            HISTORY.last_failed(current_room, CURRENT_ENEMIES, target_pack):
+                            HISTORY.lost_to(current_room, CURRENT_ENEMIES, target_pack):
                         backup, source = find_backup([target_pack])
                         if backup:
-                            print(f"[ТАКТИКА] Пак {target_pack} в прошлый раз проиграл этим врагам. "
+                            print(f"[ТАКТИКА] Пак {target_pack} проигрывает этим врагам (в прошлый раз бой откатили). "
                                   f"Сразу ставлю {backup} (взят: {source}).")
                             PENDING_RULE = pending_pack(backup, "auto", [target_pack])
                             target_pack, reason = backup, "Запасной пак: основной проигрывал этим врагам"

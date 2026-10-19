@@ -8,6 +8,8 @@ import os
 
 ROOM_TYPES = ("water", "mix", "earth", "fire")
 DEFAULT_DOOR_ORDER = ["water", "mix", "earth", "fire"]
+DEFAULT_TRIES = 2   # сколько раз за комнату бот сам пробует запасной пак
+MAX_TRIES = 3       # больше не бывает: бой не переигрывается по 10 раз
 
 # Откуда взят запасной пак (для строк лога)
 SOURCE_USER = "ваш список запасных паков"
@@ -29,7 +31,7 @@ class Settings:
         self.group_loss = (_number(get("group_loss_titans", 3), 3), _number(get("group_loss_percent", 40), 40))
         self.titan_critical_hp = {str(t): _number(v, 0) for t, v in _dict(get("titan_critical_hp", {})).items()}
         self.auto_rollback = get("auto_rollback", False) is True
-        self.auto_rollback_tries = _number(get("auto_rollback_tries", 1), 1)
+        self.auto_rollback_tries = max(1, min(MAX_TRIES, _number(get("auto_rollback_tries", DEFAULT_TRIES), DEFAULT_TRIES)))
         self.backup_teams = {room: _packs(packs) for room, packs in _dict(get("backup_teams", {})).items()}
         self.door_order = door_order(get("door_order", None))
 
@@ -51,10 +53,54 @@ class Settings:
                          f"запасным паком, не больше {self.auto_rollback_tries} раз(а) за комнату, потом спрашивает вас.")
         else:
             lines.append("[ТАКТИКА] Бот решает сам: выключено. При плохом бое — окно SOS, как раньше "
-                         "(включается строкой auto_rollback: true в profile.yml).")
+                         "(включается во вкладке с настройками: «Бот решает сам»).")
         if self.door_order != DEFAULT_DOOR_ORDER:
             lines.append(f"[ТАКТИКА] Порядок дверей: {' → '.join(self.door_order)}")
         return lines
+
+
+def profile_getter(profile):
+    """Как engine.get_global_setting, но для словаря профиля: сначала global_thresholds, потом settings."""
+    thresholds = _dict(profile.get("global_thresholds"))
+    settings = _dict(profile.get("settings"))
+
+    def get(key, default=None):
+        if key in thresholds:
+            return thresholds[key]
+        return settings.get(key, default)
+    return get
+
+
+# Где в profile.yml лежит каждая настройка тактики (окно программы пишет туда же)
+THRESHOLD_KEYS = ("group_loss_titans", "group_loss_percent", "titan_critical_hp")
+SETTINGS_KEYS = ("auto_rollback", "auto_rollback_tries", "backup_teams", "door_order")
+
+
+def read_tactics(profile):
+    """Настройки тактики из словаря профиля — для окна программы (ui/tactics_dialog.py)."""
+    s = Settings(profile_getter(profile))
+    return {
+        "auto_rollback": s.auto_rollback,
+        "auto_rollback_tries": s.auto_rollback_tries,
+        "group_loss_titans": s.group_loss[0],
+        "group_loss_percent": s.group_loss[1],
+        "titan_critical_hp": dict(s.titan_critical_hp),
+        "backup_teams": {room: [list(p) for p in packs] for room, packs in s.backup_teams.items() if packs},
+        "door_order": list(s.door_order),
+    }
+
+
+def write_tactics(profile, values):
+    """Записывает настройки тактики в словарь профиля (остальные ключи не трогает). Возвращает профиль."""
+    if not isinstance(profile.get("global_thresholds"), dict):
+        profile["global_thresholds"] = {}
+    if not isinstance(profile.get("settings"), dict):
+        profile["settings"] = {}
+    for key, value in values.items():
+        section = "global_thresholds" if key in THRESHOLD_KEYS else "settings" if key in SETTINGS_KEYS else None
+        if section:
+            profile[section][key] = value
+    return profile
 
 
 def door_order(value):
@@ -128,7 +174,8 @@ class BattleHistory:
                 yield e
 
     def stats(self, room, enemies, team):
-        """Как пак играл против этих врагов в этой стихии: wins, fails, avg_hp (среднее ХП после победы) и last_failed."""
+        """Как пак играл против этих врагов в этой стихии: wins, fails, avg_hp (среднее ХП после победы),
+        last_failed (последний бой откатили)."""
         wins, fails, hp, last = 0, 0, [], None
         for e in self._battles(room, enemies, team):
             last = e["action"]
@@ -140,9 +187,13 @@ class BattleHistory:
         return {"wins": wins, "fails": fails, "avg_hp": sum(hp) / len(hp) if hp else 0.0,
                 "last_failed": last == "ROLLBACK"}
 
-    def last_failed(self, room, enemies, team):
-        """Последний бой этого пака против этих врагов откатили (был плохим)."""
-        return bool(enemies) and bool(team) and self.stats(room, enemies, team)["last_failed"]
+    def lost_to(self, room, enemies, team):
+        """Пак «проигрывает этим врагам»: последний бой против них откатили, и побед у него не больше, чем поражений.
+        Пак, который раньше много раз побеждал этих врагов, после одной неудачи из запасных не выпадает."""
+        if not enemies or not team:
+            return False
+        st = self.stats(room, enemies, team)
+        return st["last_failed"] and st["fails"] >= st["wins"]
 
     def winners(self, room, enemies):
         """Паки, которые побеждали этих врагов: [(пак, stats)], лучшие (больше ХП после боя) первыми."""
@@ -179,7 +230,7 @@ def choose_backup(room, enemies, tried, state, settings, rule_packs, history, fo
       3) в последнюю очередь — паки из истории боёв, которые побеждали этих врагов.
     Не берётся пак, который:
       - уже проиграл в этой комнате (tried);
-      - в прошлый раз против этих врагов проиграл (бой откатили);
+      - проигрывает этим врагам (последний бой откатили, а побед не больше, чем поражений);
       - содержит титана из чёрного списка (правила skip) или титана, у которого ХП ниже порога паники.
     """
     tried = {frozenset(p) for p in tried}
@@ -218,7 +269,7 @@ def _usable(pack, room, enemies, tried, state, settings, history, forbidden):
         return False
     if any(state.get(t, {}).get("hp", 100) < max(1, settings.panic_hp(t)) for t in pack):
         return False
-    return not history.last_failed(room, enemies, pack)
+    return not history.lost_to(room, enemies, pack)
 
 
 def auto_rollback_blocker(settings, manual_battle, unreadable, tries_done, user_pack=False):
