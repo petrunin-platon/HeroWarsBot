@@ -4,6 +4,7 @@
 #   bot_data/stats.json          статистика
 #   bot_data/rules/*.yml         рабочие правила (rules/ в репозитории — правила по умолчанию)
 #   bot_data/logs/              история боёв (battle_log_*.jsonl, battle_log.csv), лог бота, замеры
+#   bot_data/debug/             скриншоты окон SOS (sos_комнатаN_стихия_время.png) и нечитаемых окон результата
 #   bot_data/profile.yml.bak     копия профиля
 #   bot_data/temp_sos.png, bot_data/temp_test.png   скриншоты для Telegram
 # Пути относительные: бот и окно программы всегда запускаются из папки проекта.
@@ -15,6 +16,7 @@ import shutil
 BOT_DATA_DIR = "bot_data"
 LOGS_DIR = f"{BOT_DATA_DIR}/logs"
 RULES_DIR = f"{BOT_DATA_DIR}/rules"
+DEBUG_DIR = f"{BOT_DATA_DIR}/debug"
 DEFAULT_RULES_DIR = "rules"
 STATS_FILE = f"{BOT_DATA_DIR}/stats.json"
 PROFILE_BACKUP = f"{BOT_DATA_DIR}/profile.yml.bak"
@@ -105,6 +107,13 @@ def rules_path(room_type):
 def logs_dir():
     ensure_bot_data()
     return LOGS_DIR
+
+
+def debug_dir():
+    """Скриншоты для разбора: окна SOS и нечитаемые окна результата. Папку создаёт этот вызов."""
+    ensure_bot_data()
+    os.makedirs(DEBUG_DIR, exist_ok=True)
+    return DEBUG_DIR
 
 
 def profile_backup_file():

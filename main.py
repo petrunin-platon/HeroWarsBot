@@ -1,5 +1,6 @@
 # main.py
 import json
+from datetime import datetime
 import time
 import mss
 import sys
@@ -36,6 +37,7 @@ from battle_verdict import evaluate_battle
 from rules_engine import engine
 from stats_manager import add_metric, add_metrics_bulk
 import data_paths
+import result_scan
 
 WINDOW_TITLE = "HeroWarsBot_Arena"
 GRACEFUL_STOP = False
@@ -169,6 +171,18 @@ SESSION_STATS = {
 
 # Итог сессии при любой остановке: лимит, Ctrl+Q, STOP, ошибка Python
 atexit.register(print_session_summary)
+
+def save_debug_shot(kind, game_window, sct):
+    """Скриншот окна игры в bot_data/debug/: <kind>_комната<N>_<стихия>_<время>.png. Ошибка сохранения бота не останавливает."""
+    try:
+        name = result_scan.debug_shot_name(kind, SESSION_STATS["rooms_cleared"] + 1, current_room, datetime.now())
+        path = os.path.join(data_paths.debug_dir(), name)
+        scr = np.array(sct.grab(game_window))
+        cv2.imwrite(path, cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
+        print(f"[ОТЛАДКА] Скриншот сохранён: {path}")
+    except Exception as e:
+        print(f"[ОТЛАДКА] Не удалось сохранить скриншот: {e}")
+
 
 def get_stop_reason():
     if GRACEFUL_STOP:
@@ -316,7 +330,9 @@ with mss.MSS() as sct:
                 print("[ЛОГИКА] Ожидание завершения анимаций (1.5 сек)...")
                 time.sleep(1.5)
                 
-                team_status = scan_team_health(game_window, sct, active_pack)
+                # Не нашлись 2 титана и больше — окно, скорее всего, перекрыто или не дорисовано: пересканируем
+                team_status, unreadable = result_scan.scan_with_retries(
+                    lambda: scan_team_health(game_window, sct, active_pack), active_pack, sleep=time.sleep)
                 
                 global_panic = engine.get_global_setting("critical_hp", 40)
                 effective_delta = CURRENT_ALLOWED_DELTA if CURRENT_ALLOWED_DELTA is not None else engine.get_global_setting("max_hp_delta", 30)
@@ -331,6 +347,12 @@ with mss.MSS() as sct:
                 )
                 is_panic = verdict["bad"]
                 panic_reason = verdict["reason"]
+                if unreadable:
+                    # Комнату не засчитываем: решает человек (окно SOS), скриншот остаётся для разбора
+                    is_panic = True
+                    panic_reason = ("Не удалось прочитать окно результата: не найдены "
+                                    f"{result_scan.describe_missing(active_pack, team_status)}")
+                    save_debug_shot("result_unreadable", game_window, sct)
                 max_observed_loss = verdict["max_loss"]
                 temporary_state = verdict["after_state"]
 
@@ -353,6 +375,7 @@ with mss.MSS() as sct:
                     except Exception as e:
                         print(f"[СИСТЕМА] Ошибка сохранения скриншота: {e}")
                             
+                    save_debug_shot("sos", game_window, sct)
                     print(f"[SOS] Причина: {panic_reason}")
                     SESSION_LOG.count("sos")
                     print(f"\n[SOS_TRIGGER] {json.dumps(critical_data)}")

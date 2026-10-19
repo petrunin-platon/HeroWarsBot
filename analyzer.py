@@ -150,15 +150,15 @@ def scan_team_health(window_rect, sct, current_pack):
             ep_perc = min(int((ep_w / max_bar_width) * 100), 100)
             
             if hp_perc == 0:
-                team_status[titan] = {"hp": 0, "energy": 0, "status": "МЕРТВ"}
-                print(f" ---> {titan.upper()}: [МЕРТВ] (ХП = 0%)")
+                team_status[titan] = {"hp": 0, "energy": 0, "status": "МЕРТВ", "score": float(max_val)}
+                print(f" ---> {titan.upper()}: [МЕРТВ] (ХП = 0%, сходство иконки {max_val:.2f})")
             else:
-                team_status[titan] = {"hp": hp_perc, "energy": ep_perc, "status": "ЖИВ"}
+                team_status[titan] = {"hp": hp_perc, "energy": ep_perc, "status": "ЖИВ", "score": float(max_val)}
                 print(f" ---> {titan.upper()}: ХП {hp_perc}%, Энергия {ep_perc}%")
                 
         else:
-            team_status[titan] = {"hp": 0, "energy": 0, "status": "ОТСУТСТВУЕТ"}
-            print(f" ---> {titan.upper()}: [ОТСУТСТВУЕТ] (Не было в бою)")
+            team_status[titan] = {"hp": 0, "energy": 0, "status": "ОТСУТСТВУЕТ", "score": float(max_val)}
+            print(f" ---> {titan.upper()}: [ОТСУТСТВУЕТ] (иконка не найдена: сходство {max_val:.2f}, порог 0.62)")
             
     print("[АНАЛИЗАТОР] Сканирование завершено.\n")
     return team_status
