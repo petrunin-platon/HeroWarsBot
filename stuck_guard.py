@@ -131,3 +131,46 @@ class ManualPlay:
             if screen in (BATTLE, TEAM):
                 self.replayed = True
         return False
+
+
+# --- Снимок экрана не получается (ПК заблокирован, Win+L) ---
+# При блокировке Windows не даёт делать снимки: mss падает с ScreenShotError «BitBlt» (сессия 19.10.2026, 19:50).
+# Бот не падает, а ждёт и пробует снова через столько секунд
+SCREEN_RETRY_S = 2.0
+# Если экран недоступен дольше этого, бот один раз сообщает в Telegram
+SCREEN_LONG_WAIT_S = 60.0
+
+
+def grab_or_wait(grab, errors, sleep=time.sleep, clock=time.monotonic, log=print,
+                 on_blocked=None, on_long_wait=None, on_resumed=None,
+                 retry_s=SCREEN_RETRY_S, long_wait_s=SCREEN_LONG_WAIT_S):
+    """Делает снимок grab(). Если снимок падает с ошибкой из errors — ждёт и пробует снова, пока не получится.
+
+    on_blocked() — снимок впервые не получился; on_long_wait(секунды) — один раз, когда ждём дольше long_wait_s;
+    on_resumed(секунды) — снимок снова получился. Возвращает снимок.
+    """
+    started = None
+    warned = False
+    while True:
+        try:
+            shot = grab()
+        except errors as e:
+            now = clock()
+            if started is None:
+                started = now
+                log(f"[ЭКРАН] Не удаётся сделать снимок экрана ({e}). Похоже, ПК заблокирован (Win+L). "
+                    f"Бот ничего не нажимает и пробует снова каждые {retry_s:.0f} с...")
+                if on_blocked:
+                    on_blocked()
+            if not warned and now - started >= long_wait_s:
+                warned = True
+                if on_long_wait:
+                    on_long_wait(now - started)
+            sleep(retry_s)
+            continue
+        if started is not None:
+            waited = clock() - started
+            log(f"[ЭКРАН] Снимок экрана снова работает (ждали {waited:.0f} с). Продолжаю.")
+            if on_resumed:
+                on_resumed(waited)
+        return shot

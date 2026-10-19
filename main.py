@@ -23,7 +23,8 @@ ROOM_TIMER = SESSION_LOG.timer
 # -------------------------------------
 
 from config import CONFIG, LIMITS, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS
-from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, wait_for_ui_element, get_first_match
+from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, wait_for_ui_element, get_first_match, grab_frame
+import vision
 from combat import find_smart_door, execute_angus_ult, execute_rollback
 from navigation import smart_navigate_hallway
 from click_logic import after_failed_battle_start, START_BATTLE_ATTEMPTS
@@ -50,9 +51,19 @@ WATCHDOG = stuck_guard.Watchdog()
 STATE_CLOCK = stuck_guard.StateClock()
 
 def user_waited():
-    """Бот ждал вас (окно SOS, пауза, ручной бой, окно не в фокусе): это время сторож и пределы не считают."""
+    """Бот ждал вас (окно SOS, пауза, ручной бой, окно не в фокусе, ПК заблокирован): это время сторож и пределы не считают."""
     WATCHDOG.waited_for_user()
     STATE_CLOCK.reset()
+
+def alert_screen_locked(seconds):
+    """ПК заблокирован (Win+L) больше минуты: бот не может делать снимки и ждёт. Сообщаем один раз."""
+    sent, note = send_alert(f"🔒 Экран ПК заблокирован уже {seconds:.0f} с: бот не видит игру и ждёт. "
+                            "Разблокируйте ПК — бот продолжит сам.")
+    print(f"[ЭКРАН] Сообщение в Telegram: {note}")
+
+# Снимок экрана не получается (ПК заблокирован): vision.grab_frame ждёт и зовёт эти функции
+vision.SCREEN_HOOKS["long_wait"] = alert_screen_locked
+vision.SCREEN_HOOKS["resumed"] = lambda seconds: user_waited()
 
 # --- NON-BLOCKING STDIN LISTENER ---
 STDIN_QUEUE = queue.Queue()
@@ -205,7 +216,7 @@ def save_debug_shot(kind, game_window, sct):
     try:
         name = result_scan.debug_shot_name(kind, SESSION_STATS["rooms_cleared"] + 1, current_room, datetime.now())
         path = os.path.join(data_paths.debug_dir(), name)
-        scr = np.array(sct.grab(game_window))
+        scr = grab_frame(game_window, sct)
         cv2.imwrite(path, cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
         print(f"[ОТЛАДКА] Скриншот сохранён: {path}")
         return path
@@ -247,7 +258,7 @@ def handle_rollback_failure(result, game_window, sct):
 
     screenshot = None
     try:
-        scr = np.array(sct.grab(game_window))
+        scr = grab_frame(game_window, sct)
         screenshot = data_paths.temp_sos_file()
         cv2.imwrite(screenshot, cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
     except Exception as e:
@@ -524,7 +535,7 @@ with mss.MSS() as sct:
                         critical_data["titans"][t] = team_status.get(t, {}).get("hp", 0)
                             
                     try:
-                        scr = np.array(sct.grab(game_window))
+                        scr = grab_frame(game_window, sct)
                         cv2.imwrite(data_paths.temp_sos_file(), cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
                     except Exception as e:
                         print(f"[СИСТЕМА] Ошибка сохранения скриншота: {e}")
@@ -613,7 +624,7 @@ with mss.MSS() as sct:
                     if PENDING_RULE:
                         # ДЕЛАЕМ СКРИНШОТ УСПЕШНОГО БОЯ ДЛЯ ТЕЛЕГРАМА
                         try:
-                            scr = np.array(sct.grab(game_window))
+                            scr = grab_frame(game_window, sct)
                             cv2.imwrite(data_paths.temp_test_file(), cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
                         except Exception as e:
                             print(f"[СИСТЕМА] Ошибка сохранения скриншота теста: {e}")

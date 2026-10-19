@@ -28,6 +28,7 @@ STAGE_NAMES = {
 EXTRA_NAMES = {
     "checkpoint": "точка сохранения",
     "sos_wait": "ожидание решения",
+    "screen_lock": "экран заблокирован",
 }
 COUNT_NAMES = {
     "door_misses": "промахи по двери",
@@ -42,6 +43,7 @@ CSV_COLUMNS = [
     "hallway_s", "team_s", "battle_s", "result_s", "rollback_s",
     "total_s", "checkpoint_s", "sos_wait_s",
     "door_misses", "repeat_clicks", "sos", "rollbacks", "stuck",
+    "screen_lock_s",
 ]
 
 
@@ -114,8 +116,8 @@ def format_room_line(record):
     if round(st["rollback"], 1) > 0:
         parts.append(f"{STAGE_NAMES['rollback']} {fmt_s(st['rollback'])}")
     parts.append(f"всего {fmt_s(record['total'])}")
-    for key in ("checkpoint", "sos_wait"):
-        if round(st[key], 1) > 0:
+    for key in EXTRA_NAMES:
+        if round(st.get(key, 0.0), 1) > 0:
             parts.append(f"{EXTRA_NAMES[key]} {fmt_s(st[key])}")
     for key, name in COUNT_NAMES.items():
         if record["counts"].get(key):
@@ -259,6 +261,7 @@ class SessionLog:
                 *(round(st[s], 2) for s in ("hallway", "team", "battle", "result", "rollback")),
                 round(record["total"], 2), round(st["checkpoint"], 2), round(st["sos_wait"], 2),
                 *(counts.get(k, 0) for k in COUNT_NAMES),
+                round(st.get("screen_lock", 0.0), 2),
             ]
             with open(self._csv_path, "a", encoding="utf-8", newline="") as f:
                 writer = csv.writer(f)
@@ -307,8 +310,8 @@ class SessionLog:
             lines.append("[ИТОГ] Замеров комнат нет — не пройдено ни одной комнаты.")
 
         waits = []
-        for key in ("checkpoint", "sos_wait"):
-            total = sum(r["stages"][key] for r in recs)
+        for key in EXTRA_NAMES:
+            total = sum(r["stages"].get(key, 0.0) for r in recs)
             if round(total, 1) > 0:
                 waits.append(f"{EXTRA_NAMES[key]} {fmt_s(total)}")
         if waits:

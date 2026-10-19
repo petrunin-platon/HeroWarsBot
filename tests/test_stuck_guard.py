@@ -214,3 +214,107 @@ def test_crash_prints_error_and_summary(tmp_path):
     assert "Комнат: 3 | Титанит: 18" in out
     # Итог — после ошибки
     assert out.index("[ОШИБКА] Бот остановился") < out.index("[ИТОГ] Причина остановки")
+
+
+# --- ПК заблокирован (Win+L): снимок экрана не получается ---
+
+class ScreenLocked(Exception):
+    pass
+
+
+class LockedScreen:
+    """Снимок падает, пока не пройдёт locked_s секунд поддельного времени."""
+
+    def __init__(self, clock, locked_s):
+        self.clock = clock
+        self.unlock_at = clock() + locked_s
+        self.tries = 0
+
+    def grab(self):
+        self.tries += 1
+        if self.clock() < self.unlock_at:
+            raise ScreenLocked("Windows graphics function failed (no error provided): BitBlt")
+        return "кадр"
+
+
+def test_grab_waits_until_unlocked():
+    clock = FakeClock()
+    screen = LockedScreen(clock, locked_s=150)
+    lines, events = [], []
+    shot = wd.grab_or_wait(screen.grab, ScreenLocked, sleep=clock.advance, clock=clock, log=lines.append,
+                           on_blocked=lambda: events.append("blocked"),
+                           on_long_wait=lambda s: events.append(("long", s)),
+                           on_resumed=lambda s: events.append(("resumed", s)))
+    assert shot == "кадр"
+    # Пробует раз в 2 с, а не без остановки
+    assert screen.tries == 76
+    # Сообщение в Telegram — один раз, через минуту
+    assert events == ["blocked", ("long", 60.0), ("resumed", 150.0)]
+    assert len(lines) == 2
+    assert "ПК заблокирован" in lines[0]
+    assert "снова работает (ждали 150 с)" in lines[1]
+
+
+def test_grab_short_lock_no_telegram():
+    clock = FakeClock()
+    screen = LockedScreen(clock, locked_s=10)
+    events = []
+    wd.grab_or_wait(screen.grab, ScreenLocked, sleep=clock.advance, clock=clock, log=lambda s: None,
+                    on_long_wait=lambda s: events.append("long"), on_resumed=lambda s: events.append("resumed"))
+    assert events == ["resumed"]
+
+
+def test_grab_ok_says_nothing():
+    clock = FakeClock()
+    lines = []
+    assert wd.grab_or_wait(lambda: "кадр", ScreenLocked, sleep=clock.advance, clock=clock, log=lines.append) == "кадр"
+    assert lines == []
+
+
+def test_other_errors_are_not_swallowed():
+    """Другие ошибки по-прежнему останавливают бота (с ошибкой и итогом), а не превращаются в вечное ожидание."""
+    import pytest
+
+    def broken():
+        raise ValueError("другое")
+
+    with pytest.raises(ValueError):
+        wd.grab_or_wait(broken, ScreenLocked, sleep=lambda s: None, log=lambda s: None)
+
+
+def test_vision_grab_frame_survives_lock(monkeypatch):
+    """vision.grab_frame на подделке mss: два снимка падают как при Win+L, третий получается.
+    Время ожидания уходит в отдельный счётчик «экран заблокирован», а не в этап комнаты."""
+    import types
+    import pytest
+    np = pytest.importorskip("numpy")
+    sys.modules.setdefault("pygetwindow", types.ModuleType("pygetwindow"))
+    import vision
+    import session_log
+
+    clock = FakeClock()
+    timer = session_log.RoomTimer(clock)
+    timer.restart("hallway")
+    monkeypatch.setattr(session_log, "excluded", timer.excluded)
+    resumed = []
+    monkeypatch.setitem(vision.SCREEN_HOOKS, "resumed", resumed.append)
+
+    class FakeSct:
+        tries = 0
+
+        def grab(self, rect):
+            FakeSct.tries += 1
+            if FakeSct.tries <= 2:
+                raise vision.ScreenShotError("BitBlt")
+            return np.zeros((4, 4, 4), dtype=np.uint8)
+
+    # grab_or_wait берёт sleep и clock по умолчанию — подменяем их поддельными
+    real = wd.grab_or_wait
+    monkeypatch.setattr(wd, "grab_or_wait",
+                        lambda *a, **k: real(*a, sleep=clock.advance, clock=clock, log=lambda s: None, **k))
+    frame = vision.grab_frame({"top": 0, "left": 0, "width": 4, "height": 4}, FakeSct())
+    assert frame.shape == (4, 4, 4)
+    assert resumed == [4.0]
+    record = timer.finish(1, "water")
+    assert record["stages"]["screen_lock"] == 4.0
+    assert record["stages"]["hallway"] == 0.0
