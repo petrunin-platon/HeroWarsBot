@@ -2,7 +2,7 @@
 import time
 import os
 from config import CONFIDENCE_THRESHOLD
-from vision import click_human, get_match_loc, click_point_from_info, match_many_on_frame, swipe_scrcpy, wait_for_ui_element
+from vision import click_human, get_match_loc, list_root_asset_names, click_point_from_info, match_many_on_frame, swipe_scrcpy, wait_for_ui_element
 
 # Оригинальный, проверенный порог совпадения
 TITAN_THRESHOLD = 0.88 
@@ -49,8 +49,17 @@ def precise_select_titan(x, y):
     click_human(x, y, exact=True)
     time.sleep(0.15) 
 
-# Титаны, которых нет в GAME_ORDER, но у которых есть картинка: в слотах их тоже надо видеть, чтобы убрать лишнего
-EXTRA_SLOT_TITANS = ["metida"]
+# Картинки в корне assets/, которые не титаны (кнопки, враги, значки и т.п.)
+NOT_TITAN_PREFIXES = ("btn_", "res_", "enemy_", "icon_", "flag_", "badge_")
+
+
+def slot_titan_names(extra=()):
+    """Все титаны, которых надо видеть в слотах: берутся из картинок (assets/ или assets_db.py), поэтому новый титан
+    подхватывается сам. Сначала идут титаны из GAME_ORDER (порядок сборки), потом остальные по алфавиту."""
+    found = {n for n in list_root_asset_names() if not n.startswith(NOT_TITAN_PREFIXES)}
+    rest = sorted((found | set(extra)) - set(GAME_ORDER))
+    return list(GAME_ORDER) + rest
+
 
 # Какая часть игровой области по высоте — слоты состава (внизу) и сетка выбора (сверху)
 SLOTS_AREA = (0.75, 1.0)
@@ -97,7 +106,7 @@ def wait_slots_settled(target_pack, names, window_rect, sct):
 
 
 def verify_and_set_team(target_pack, available_titans, window_rect, sct):
-    names = list(dict.fromkeys(list(GAME_ORDER) + EXTRA_SLOT_TITANS + list(target_pack)))
+    names = slot_titan_names(target_pack)
     sorted_pack = sort_pack(target_pack)
 
     # Быстрая проверка: один снимок нижних слотов. Игра сама помнит последний состав, чаще всего он уже стоит

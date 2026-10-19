@@ -145,6 +145,19 @@ def get_clean_game_screen(window_rect, sct):
 
     return screenshot_cv, window_rect
 
+def list_root_asset_names():
+    """Имена картинок (без .png) из корня assets/ — не из папок языков. Берёт и assets_db.py, и папку на диске,
+    потому что в собранном .exe картинки лежат в assets_db.py, а при запуске из исходников — в assets/."""
+    names = set()
+    for key in ASSETS:
+        if "/" not in key and "\\" not in key and key.lower().endswith(".png"):
+            names.add(key[:-4])
+    if os.path.isdir(ASSETS_DIR):
+        for f in os.listdir(ASSETS_DIR):
+            if f.lower().endswith(".png") and os.path.isfile(os.path.join(ASSETS_DIR, f)):
+                names.add(f[:-4])
+    return names
+
 def get_image_data(image_name):
     lang = CONFIG.get("game_language", "RU")
     

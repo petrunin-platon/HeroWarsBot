@@ -98,18 +98,26 @@ def test_mismatch_removes_unwanted_right_to_left_without_swipes(screen, monkeypa
     assert [x for x, _ in first_four] == sorted((x for x, _ in first_four), reverse=True)
 
 
-def test_metida_in_slots_is_seen_as_unwanted(screen, monkeypatch):
-    """Метиды нет в GAME_ORDER, но если она стоит в слоте, а пак без неё — её надо убрать."""
-    sct, rect = screen
-    seen = {}
+def test_slot_names_from_assets_dir_include_metida():
+    names = tm.slot_titan_names()
+    assert "metida" in names and set(tm.GAME_ORDER) <= set(names)
+    assert names[:len(tm.GAME_ORDER)] == tm.GAME_ORDER
+    assert not any(n.startswith(tm.NOT_TITAN_PREFIXES) for n in names)
 
-    def fake_match(names, window_rect, sct_, threshold, area=(0.0, 1.0)):
-        seen["names"] = list(names)
-        return {}
 
-    monkeypatch.setattr(tm, "match_many_on_frame", fake_match)
-    tm.read_slots(list(dict.fromkeys(tm.GAME_ORDER + tm.EXTRA_SLOT_TITANS)), rect, sct)
-    assert "metida" in seen["names"]
-    monkeypatch.setattr(tm, "open_grid_if_needed", lambda *a: False)
-    tm.verify_and_set_team(["hyperion"], None, rect, sct)
-    assert "metida" in seen["names"]
+def test_slot_names_from_assets_db(monkeypatch):
+    """В собранном .exe картинки лежат в assets_db.py (ключи «имя.png» и «RU/имя.png»), а папки assets/ может не быть."""
+    import vision
+    monkeypatch.setattr(vision, "ASSETS", {"newtitan.png": "x", "RU/btn_ok.png": "x", "RU\\btn_ok.png": "x", "btn_auto.png": "x", "enemy_nova.png": "x"})
+    monkeypatch.setattr(vision, "ASSETS_DIR", "/нет/такой/папки")
+    names = tm.slot_titan_names()
+    assert "newtitan" in names
+    assert "btn_auto" not in names and "enemy_nova" not in names and "btn_ok" not in names
+    assert "RU/btn_ok" not in names
+
+
+def test_slot_names_include_target_pack_extras(monkeypatch):
+    import vision
+    monkeypatch.setattr(vision, "ASSETS", {})
+    monkeypatch.setattr(vision, "ASSETS_DIR", "/нет/такой/папки")
+    assert "secret_titan" in tm.slot_titan_names(["secret_titan"])
