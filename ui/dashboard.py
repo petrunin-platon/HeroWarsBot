@@ -388,9 +388,14 @@ class DashboardFrame(ctk.CTkFrame):
     def trigger_sos_dialog(self, sos_data):
         from ui.intervention_dialog import InterventionDialog
         def on_decision(command):
-            if command in ["manual", "stop"]:
+            if command == "stop":
                 self.append_log(f"\n[СИСТЕМА] Выбрано: {command.upper()}. Мгновенная остановка!\n")
                 self.stop_bot()
+            elif command == "manual":
+                # Бот не выключается: ждёт, пока вы пройдёте комнату руками и вернётесь в коридор
+                if self.bot_process and self.bot_process.poll() is None:
+                    self.bot_process.stdin.write("MANUAL\n")
+                    self.bot_process.stdin.flush()
             else:
                 if self.bot_process and self.bot_process.poll() is None:
                     self.bot_process.stdin.write(command + "\n")
@@ -508,9 +513,15 @@ class DashboardFrame(ctk.CTkFrame):
                     self.bot_process.stdin.write(f"ROLLBACK_TG:{team_str}\n")
                     self.bot_process.stdin.flush()
                     
-            elif decision_text in ["manual", "stop"]:
+            elif decision_text == "stop":
                 self.append_log(f"\n[СИСТЕМА] Выбран {decision_text.upper()}. Мгновенная остановка бота для ручного вмешательства!\n")
                 self.stop_bot()
+
+            elif decision_text == "manual":
+                # Бот не выключается: ждёт, пока вы пройдёте комнату руками и вернётесь в коридор
+                if self.bot_process and self.bot_process.poll() is None:
+                    self.bot_process.stdin.write("MANUAL\n")
+                    self.bot_process.stdin.flush()
                 
             else:
                 if self.bot_process and self.bot_process.poll() is None:

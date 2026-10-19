@@ -34,13 +34,14 @@ COUNT_NAMES = {
     "repeat_clicks": "повторные нажатия",
     "sos": "окна SOS",
     "rollbacks": "откаты",
+    "stuck": "зависания",
 }
 
 CSV_COLUMNS = [
     "time", "room_no", "room_type",
     "hallway_s", "team_s", "battle_s", "result_s", "rollback_s",
     "total_s", "checkpoint_s", "sos_wait_s",
-    "door_misses", "repeat_clicks", "sos", "rollbacks",
+    "door_misses", "repeat_clicks", "sos", "rollbacks", "stuck",
 ]
 
 
