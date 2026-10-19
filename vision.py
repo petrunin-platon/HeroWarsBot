@@ -145,6 +145,19 @@ def get_clean_game_screen(window_rect, sct):
 
     return screenshot_cv, window_rect
 
+def list_root_asset_names():
+    """Имена картинок (без .png) из корня assets/ — не из папок языков. Берёт и assets_db.py, и папку на диске,
+    потому что в собранном .exe картинки лежат в assets_db.py, а при запуске из исходников — в assets/."""
+    names = set()
+    for key in ASSETS:
+        if "/" not in key and "\\" not in key and key.lower().endswith(".png"):
+            names.add(key[:-4])
+    if os.path.isdir(ASSETS_DIR):
+        for f in os.listdir(ASSETS_DIR):
+            if f.lower().endswith(".png") and os.path.isfile(os.path.join(ASSETS_DIR, f)):
+                names.add(f[:-4])
+    return names
+
 def get_image_data(image_name):
     lang = CONFIG.get("game_language", "RU")
     
@@ -255,6 +268,22 @@ def get_match_info(image_name, window_rect, sct, threshold):
     и степенью совпадения или None. Случайности здесь нет — по нему можно следить, стоит ли предмет на месте."""
     screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
     return _match_on_frame(screenshot_cv, ox, oy, image_name, threshold)
+
+def match_many_on_frame(names, window_rect, sct, threshold, area=(0.0, 1.0)):
+    """Один снимок экрана на много картинок сразу (например, все титаны в слотах).
+    area — какая часть игровой области по высоте нужна: (от, до) в долях, например (0.75, 1.0) — нижняя четверть.
+    Возвращает {имя: info} только для найденных (info — как у get_match_info; "y" уже считается от верха игровой области).
+    Точку нажатия берите через click_point_from_info."""
+    screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
+    top = int(screenshot_cv.shape[0] * area[0])
+    bottom = int(screenshot_cv.shape[0] * area[1])
+    part = screenshot_cv[top:bottom]
+    found = {}
+    for name in names:
+        info = _match_on_frame(part, ox, oy + top, name + ".png", threshold)
+        if info is not None:
+            found[name] = info
+    return found
 
 def get_first_match(candidates, window_rect, sct):
     """Один снимок экрана на все картинки сразу (быстрее, чем снимок на каждую).
