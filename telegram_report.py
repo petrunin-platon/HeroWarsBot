@@ -111,18 +111,6 @@ def team_lines(titans, before=None, lang="RU"):
     return lines
 
 
-def team_short(titans, lang="RU"):
-    """Пак коротко: «🔴 Араджи 12%» на титана. titans — {титан: ХП} или {титан: {"hp": ..}}."""
-    items = []
-    for titan, value in (titans or {}).items():
-        hp = value.get("hp") if isinstance(value, dict) and value.get("status") != "ОТСУТСТВУЕТ" else \
-            (None if isinstance(value, dict) else value)
-        hp = _number(hp)
-        name = esc(titan_name(titan, lang))
-        items.append(f"❔ {name}" if hp is None else f"{hp_icon(hp)} {name} {hp}%")
-    return items
-
-
 def humanize(text, lang="RU"):
     """Причина из лога по-человечески: «ARAJI: ХП 12%» → «Араджи: ХП 12%» (имена титанов на языке программы)."""
     def name(match):
@@ -200,10 +188,11 @@ def sos_report(titans, info=None, is_manual=False, can_rollback=True, lang="RU")
     elif not can_rollback and not is_manual:
         parts += ["", "❗ <i>Нет правил для смены пака</i>"]
 
-    # ХП пака — коротко, одной строкой: подробности на скриншоте
+    # Наш пак — списком, как враги: полоска ХП, сколько потерял за бой, энергия
     team = info.get("team") or titans
     if team:
-        parts += ["", "🛡 Наш пак: " + "  ".join(team_short(team, lang))]
+        parts += ["", "🛡 <b>Наш пак после боя:</b>"]
+        parts += team_lines(team, info.get("hp_before"), lang)
 
     parts += [LINE]
     if is_manual:

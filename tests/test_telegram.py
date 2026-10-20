@@ -154,7 +154,7 @@ def test_report_data_from_session_log():
 # SOS и проверка пака
 # ---------------------------------------------------------------------------
 def test_sos_report_enemies_first():
-    # Замечание к задаче 13: главное в SOS — на кого шли. Враги сразу под заголовком, ХП пака — одной строкой ниже
+    # Замечание к задаче 13: главное в SOS — на кого шли. Враги сразу под заголовком, под ними пак — тоже списком
     info = {"room": "fire", "room_no": 54, "enemies": ["angus", "silva", "verdok"],
             "reason": "ARAJI: потерял 45% ХП (допуск 30%)",
             "team": {"araji": {"hp": 55, "energy": 47}, "ignis": {"hp": 0}, "acheron": {"hp": 0, "status": "ОТСУТСТВУЕТ"}},
@@ -162,15 +162,16 @@ def test_sos_report_enemies_first():
     text = tr.sos_report({"araji": 55}, info)
     assert text.startswith("🆘 <b>Нужна ваша помощь</b>\nкомната 54 · 🔥 Огонь\n\n⚔️ <b>Враги — на кого шли:</b>\n"
                            "   • <b>Ангус</b>\n   • <b>Сильва</b>\n   • <b>Вердок</b>")
-    assert text.index("Вердок") < text.index("Араджи: потерял 45% ХП") < text.index("🛡 Наш пак")
+    assert text.index("Вердок") < text.index("Араджи: потерял 45% ХП") < text.index("🛡 <b>Наш пак после боя:</b>")
     assert "ARAJI" not in text  # причина не как в логе
-    assert "🛡 Наш пак: 🟡 Араджи 55%  💀 Игнис 0%  ❔ Ашерон" in text
+    assert "🟡 <b>Араджи</b>  <code>▰▰▰▰▰▰▱▱▱▱</code> 55% <i>(−45)</i> · ⚡47%" in text
+    assert "💀 <b>Игнис</b>" in text and "❔ <b>Ашерон</b> — не прочитано" in text
     assert len(text) <= tr.CAPTION_LIMIT
 
 
 def test_sos_report_without_info_and_no_team():
     text = tr.sos_report({"hyperion": 80}, {})
-    assert "🟢 Гиперион 80%" in text and "Враги" not in text
+    assert "🟢 <b>Гиперион</b>  <code>▰▰▰▰▰▰▰▰▱▱</code> 80%" in text and "Враги" not in text
     text = tr.sos_report({}, {"type": "NO_VALID_TEAM", "room": "earth", "enemies": [], "reason": "Нет пака"},
                          can_rollback=False)
     assert "Нет подходящего пака" in text and "не распознаны" in text and "🌿 Земля" in text
