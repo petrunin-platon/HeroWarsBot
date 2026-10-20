@@ -141,7 +141,24 @@ def _result_entry(hp_perc, ep_perc, score):
     return {"hp": hp_perc, "energy": ep_perc, "status": "ЖИВ", "score": float(score)}
 
 
-def scan_team_health(window_rect, sct, current_pack, found=None, frames=None):
+def team_status_lines(pack, team_status):
+    """Строки лога с ХП и энергией титанов пака (как их печатает scan_team_health)."""
+    lines = []
+    for titan in pack:
+        entry = team_status.get(titan)
+        if entry is None:
+            continue
+        if entry["status"] == "ОТСУТСТВУЕТ":
+            lines.append(f" ---> {titan.upper()}: [ОТСУТСТВУЕТ] (иконка не найдена: сходство {entry['score']:.2f}, "
+                         f"порог {RESULT_ICON_THRESHOLD})")
+        elif entry["hp"] == 0:
+            lines.append(f" ---> {titan.upper()}: [МЕРТВ] (ХП = 0%, сходство иконки {entry['score']:.2f})")
+        else:
+            lines.append(f" ---> {titan.upper()}: ХП {entry['hp']}%, Энергия {entry['energy']}%")
+    return lines
+
+
+def scan_team_health(window_rect, sct, current_pack, found=None, frames=None, quiet=False):
     """
     Сканирование здоровья и энергии титанов на окне результатов.
     Абсолютная адаптивность: зона поиска и формула меняются вместе с разрешением.
@@ -149,6 +166,8 @@ def scan_team_health(window_rect, sct, current_pack, found=None, frames=None):
     По нему reread_team_health быстро перечитывает полоски (задача 10).
     frames — список: в него добавляется (когда снят — time.monotonic(), картинка BGR, clean_rect).
     На этом же снимке main.py ищет значок «x2» (задача 11).
+    quiet — ничего не печатать: main.py печатает цифры, только когда полоски замерли (задача 11, сессия после 09:
+    первый снимок попадал на анимацию окна, и в логе было «Араджи 8%», хотя решение принималось по 100%).
     """
     if found is not None:
         found.clear()
@@ -170,9 +189,10 @@ def scan_team_health(window_rect, sct, current_pack, found=None, frames=None):
     
     max_bar_width = 50.0 * scale_x
     
-    print(f"\n[АНАЛИЗАТОР] Чистая зона игры: {clean_rect['width']}x{clean_rect['height']}")
-    print(f"[АНАЛИЗАТОР] Масштаб: {scale_x:.3f}x | Эталон полоски: {max_bar_width:.2f}px")
-    
+    if not quiet:
+        print(f"\n[АНАЛИЗАТОР] Чистая зона игры: {clean_rect['width']}x{clean_rect['height']}")
+        print(f"[АНАЛИЗАТОР] Масштаб: {scale_x:.3f}x | Эталон полоски: {max_bar_width:.2f}px")
+
     for titan in current_pack:
         template = _result_template(titan)
         if template is None:
@@ -191,16 +211,13 @@ def scan_team_health(window_rect, sct, current_pack, found=None, frames=None):
                 found[titan] = (max_loc[0], max_loc[1], icon_w, icon_h)
             hp_perc, ep_perc = _result_bars(masks, max_loc[0], max_loc[1], icon_w, icon_h, scale_x)
             team_status[titan] = _result_entry(hp_perc, ep_perc, max_val)
-            if hp_perc == 0:
-                print(f" ---> {titan.upper()}: [МЕРТВ] (ХП = 0%, сходство иконки {max_val:.2f})")
-            else:
-                print(f" ---> {titan.upper()}: ХП {hp_perc}%, Энергия {ep_perc}%")
-                
         else:
             team_status[titan] = {"hp": 0, "energy": 0, "status": "ОТСУТСТВУЕТ", "score": float(max_val)}
-            print(f" ---> {titan.upper()}: [ОТСУТСТВУЕТ] (иконка не найдена: сходство {max_val:.2f}, порог 0.62)")
-            
-    print("[АНАЛИЗАТОР] Сканирование завершено.\n")
+
+    if not quiet:
+        for line in team_status_lines(current_pack, team_status):
+            print(line)
+        print("[АНАЛИЗАТОР] Сканирование завершено.\n")
     return team_status
 
 

@@ -54,6 +54,10 @@ STILL_INTERVAL_S = 0.3
 # Дольше не ждём: берём последний снимок
 STILL_TIMEOUT_S = 2.0
 
+# Кнопка пропала после нажатия — проверяем ещё раз через столько секунд (задача 11): частые снимки ловят мгновенное
+# «мигание» кнопки, и бот считал окно закрытым раньше времени («ОК» «пропадала» через 0,7 с вместо обычных ~2,6 с)
+GONE_CONFIRM_S = 0.25
+
 # Ответы RetryPolicy.observe
 WAIT, RETRY, DONE = "WAIT", "RETRY", "DONE"
 
@@ -236,12 +240,13 @@ class TapPacer:
 
 
 def wait_until_still(read, same, first=None, clock=time.monotonic, sleep=time.sleep,
-                     interval=STILL_INTERVAL_S, timeout=STILL_TIMEOUT_S):
+                     interval=STILL_INTERVAL_S, timeout=STILL_TIMEOUT_S, pairs=1):
     """«Экран замер» (задача 10): читает снимки, пока два подряд не покажут одно и то же.
 
     read() — новый снимок: то, что сравниваем (например, ХП титанов на окне результата);
     same(a, b) — одинаковы ли два снимка;
     first — (когда сделан, снимок), если первый снимок уже есть.
+    pairs — сколько раз подряд снимок должен совпасть с предыдущим (2 — три одинаковых снимка подряд).
     Между снимками не меньше interval секунд (если снимок делается дольше, бот не ждёт). Дольше timeout не ждёт.
     Возвращает (последний снимок, замер ли экран, сколько новых снимков сделано)."""
     started = clock()
@@ -250,6 +255,7 @@ def wait_until_still(read, same, first=None, clock=time.monotonic, sleep=time.sl
         first = (clock(), read())
         shots = 1
     prev_t, prev = first
+    same_in_row = 0
     while True:
         rest = interval - (clock() - prev_t)
         if rest > 0:
@@ -257,7 +263,8 @@ def wait_until_still(read, same, first=None, clock=time.monotonic, sleep=time.sl
         now_t = clock()
         now = read()
         shots += 1
-        if same(prev, now):
+        same_in_row = same_in_row + 1 if same(prev, now) else 0
+        if same_in_row >= pairs:
             return now, True, shots
         if clock() - started >= timeout:
             return now, False, shots

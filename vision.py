@@ -557,6 +557,7 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
     start_time = time.time()
     policy = None
     retried_at = None  # когда было повторное нажатие (для диагностики в логе)
+    gone_since = None  # когда кнопку впервые не нашли после нажатия
 
     while True:
         elapsed = time.time() - start_time
@@ -565,6 +566,12 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
 
         if info is None:
             if policy is not None:
+                # Задача 11: снимки теперь частые и ловят мгновенное «мигание» кнопки при нажатии. Пропала —
+                # проверяем ещё раз через GONE_CONFIRM_S: только если её нет и там, окно правда закрылось
+                if gone_since is None:
+                    gone_since = time.monotonic()
+                    time.sleep(click_logic.GONE_CONFIRM_S)
+                    continue
                 # Мы уже нажимали, а кнопка пропала — это 100% успех
                 if retried_at is not None:
                     print(f"[VISION] '{image_name}': после повтора кнопка пропала через {time.monotonic() - retried_at:.1f} с")
@@ -579,6 +586,7 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
             continue
 
         pos = (info["x"], info["y"])
+        gone_since = None  # кнопка снова видна: она только «мигнула»
         if seen_at is None:
             seen_at = shot_at
         if policy is not None:
