@@ -18,7 +18,8 @@ from rules_engine import engine
 ACTION_THRESHOLD = 0.75 
 
 # ДОБАВЛЕН ПАРАМЕТР current_state
-def find_smart_door(window_rect, sct, current_state=None):
+# door_hints — (heals, danger) для выбора двери по здоровью титанов (задача 9б, tactics.door_choice): main.py:door_hints
+def find_smart_door(window_rect, sct, current_state=None, door_hints=None):
     if current_state is None:
         current_state = {}
 
@@ -96,7 +97,9 @@ def find_smart_door(window_rect, sct, current_state=None):
     print("[НАВИГАЦИЯ] Двери (слева направо): " + ", ".join(f"{b['element'].upper()} ({b['score']:.2f})" for b in doors))
     order = tactics.door_order(engine.get_global_setting("door_order"))
     elements = [b["element"] for b in button_elements]
-    idx, allowed, skipped = tactics.pick_door(elements, order, lambda r: engine.is_room_forbidden(r, current_state))
+    heals, danger = door_hints or (None, None)
+    idx, allowed, skipped, health_note = tactics.door_choice(
+        elements, order, lambda r: engine.is_room_forbidden(r, current_state), heals=heals, danger=danger)
     best_btn = button_elements[idx]["coords"]
     room_type = elements[idx]
 
@@ -107,7 +110,10 @@ def find_smart_door(window_rect, sct, current_state=None):
         if allowed:
             for r_type in skipped:
                 print(f"[НАВИГАЦИЯ] Комната {r_type.upper()} под запретом (правило skip), пропускаю.")
-            print(f"[НАВИГАЦИЯ] Выбрана комната {room_type.upper()} (порядок: {' → '.join(order)})")
+            if health_note:
+                print(f"[НАВИГАЦИЯ] Выбрана комната {room_type.upper()} по здоровью титанов: {health_note}")
+            else:
+                print(f"[НАВИГАЦИЯ] Выбрана комната {room_type.upper()} (порядок: {' → '.join(order)})")
         else:
             print(f"[НАВИГАЦИЯ] ВНИМАНИЕ: Все доступные двери под запретом! Вынужденный вход в {room_type.upper()}")
 

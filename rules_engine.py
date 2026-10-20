@@ -168,6 +168,75 @@ class RulesEngine:
             packs.append((list(default_team), {}))
         return packs
 
+    def heal_rule_for(self, room_type, current_state, healers):
+        """Правило отхила, которое сработает за дверью этой стихии (задача 9б, выбор двери): условие по ХП
+        без привязки к врагам выполняется, а в паке есть и раненые титаны условия, и лекарь (healers).
+        Возвращает название правила или "". Правила с врагами не берутся: врагов за дверью бот ещё не видел."""
+        rules = self.rules_cache.get(room_type, {}).get("rules", []) or []
+        forbidden = self._get_forbidden_titans(rules, [], current_state)
+        for rule in rules:
+            condition = rule.get("condition") or {}
+            hp_cond = condition.get("titan_hp_below")
+            team = rule.get("team") or []
+            if rule.get("action") == "skip" or not hp_cond or "enemies_contain" in condition:
+                continue
+            if not all(t in team for t in hp_cond) or not any(t in healers for t in team):
+                continue
+            if any(t in forbidden for t in team):
+                continue
+            if self._evaluate_condition(condition, [], current_state):
+                return rule.get("name") or "правило отхила"
+        return ""
+
+    def situational_packs(self, room_type):
+        """Паки правил спасения (по ХП или энергии) и базовый пак: они ставятся по ситуации, а не против врагов,
+        поэтому «золотым правилом» не становятся."""
+        room_data = self.rules_cache.get(room_type, {})
+        packs = [sorted(room_data.get("default_team") or [])]
+        for rule in room_data.get("rules", []) or []:
+            condition = rule.get("condition") or {}
+            if "titan_hp_below" in condition or "titan_energy_below" in condition:
+                packs.append(sorted(rule.get("team") or []))
+        return packs
+
+    def add_golden_rule(self, room_type, enemies, team, wins, battles, avg_hp):
+        """«Золотое правило» (задача 9б): пак много раз побеждал этот состав врагов — ставить его против них.
+        Не добавляется, если против этих врагов уже есть правило (ваше или запомненное: его бот не трогает)
+        или пак ставится по ситуации (базовый, отхил). Возвращает правило или None."""
+        enemies = sorted(enemies)
+        if sorted(team) in self.situational_packs(room_type):
+            return None
+        rules = self.rules_cache.get(room_type, {}).get("rules", []) or []
+        if any(r.get("action") != "skip" and sorted((r.get("condition") or {}).get("enemies_contain") or []) == enemies
+               for r in rules):
+            return None
+        names = ", ".join(titan_name_ru(e) for e in enemies)
+        rule = {"name": f"Золотое правило против: {names} (побед {wins} из {battles}, ХП {avg_hp:.0f}%)",
+                "condition": {"enemies_contain": enemies}, "team": list(team), "source": "golden"}
+        if "angus" in team:
+            rule["special_ult"] = "angus"
+        self._save_rule_first(room_type, rule)
+        return rule
+
+    def _save_rule_first(self, room_type, rule):
+        """Ставит правило на 1-е место в bot_data/rules/<стихия>.yml (остальные правила не трогает)."""
+        path = data_paths.rules_path(room_type)
+        data = {"default_team": [], "rules": []}
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                loaded = yaml.safe_load(f)
+                if loaded and isinstance(loaded, dict):
+                    data = loaded
+        if not isinstance(data.get("rules"), list):
+            data["rules"] = []
+        data["rules"].insert(0, rule)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, 'w', encoding='utf-8') as f:
+            yaml.dump(data, f, allow_unicode=True, sort_keys=False)
+        os.replace(tmp, path)
+        self.rules_cache[room_type] = data
+
     def rescue_rules_fired_by_battle(self, room_type, enemies, before_state, after_state, fighters):
         """
         Правила отхила (titan_hp_below), которые сработали ИЗ-ЗА этого боя:
@@ -293,18 +362,30 @@ class RulesEngine:
         return rules[0]
 
 
-# Правила, которые старый код обучения записал с ошибкой. Удаляются один раз, по вашему решению.
-# «Авто-отхил (araji < 65%)» с Ригелем: допуск 6% взят из боя, где окно SOS было ложным (сессия 03),
-# поэтому почти любой бой с этим паком давал окно SOS. Оно закрывало правило с Сигурдом.
+# Правила, которые старый код обучения записал с ошибкой. Удаляются при запуске, по вашему решению.
+# Правило совпадает, если совпали условие и пак, а также допуск и источник, если они указаны.
 OBSOLETE_RULES = [
+    # «Авто-отхил (araji < 65%)» с Ригелем: допуск 6% взят из боя, где окно SOS было ложным (сессия 03),
+    # поэтому почти любой бой с этим паком давал окно SOS. Оно закрывало правило с Сигурдом.
     {"condition": {"titan_hp_below": {"araji": 65}},
      "team": {"araji", "hyperion", "rigel", "iyari", "lumira"}, "allowed_delta": 6},
+    # Сессия 07 (задача 9б): бот сам запомнил анти-паки огня, хотя враги были ни при чём.
+    # Комната 54: Араджи вошёл раненым, Молох и Вулкан были разовой помощью.
+    {"condition": {"enemies_contain": ["angus", "silva", "verdok"]},
+     "team": {"araji", "ignis", "acheron", "vulcan", "moloch"}, "source": "auto"},
+    # Комната 74: обычный пак «проигрывал» из-за старого отката с допуском 20% — встал пак с Алекто.
+    {"condition": {"enemies_contain": ["angus", "avalon", "eden"]},
+     "team": {"araji", "acheron", "ignis", "vulcan", "alecto"}, "source": "auto"},
 ]
 
 
 def is_obsolete_rule(rule):
-    return any(rule.get("condition") == bad["condition"] and set(rule.get("team") or []) == bad["team"]
-               and rule.get("allowed_delta") == bad["allowed_delta"] for bad in OBSOLETE_RULES)
+    for bad in OBSOLETE_RULES:
+        if not same_condition(rule.get("condition"), bad["condition"]) or set(rule.get("team") or []) != bad["team"]:
+            continue
+        if all(rule.get(key) == bad[key] for key in ("allowed_delta", "source") if key in bad):
+            return True
+    return False
 
 
 def drop_obsolete_rules(path, data):
@@ -317,8 +398,8 @@ def drop_obsolete_rules(path, data):
         return
     for r in rules:
         if isinstance(r, dict) and is_obsolete_rule(r):
-            print(f"[ПРАВИЛА] Удаляю устаревшее правило '{r.get('name')}' (пак {r.get('team')}, "
-                  f"допуск {r.get('allowed_delta')}%) из {path}.")
+            delta = f", допуск {r['allowed_delta']}%" if r.get("allowed_delta") is not None else ""
+            print(f"[ПРАВИЛА] Удаляю устаревшее правило '{r.get('name')}' (пак {r.get('team')}{delta}) из {path}.")
     data["rules"] = keep
     tmp = f"{path}.tmp"
     with open(tmp, 'w', encoding='utf-8') as f:

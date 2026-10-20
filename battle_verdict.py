@@ -92,3 +92,36 @@ def group_loss_reason(losses, group_loss):
     details = ", ".join(f"{t.upper()} {lost}%" for t, lost in hurt)
     return (f"Большие потери пака! По {percent}% ХП и больше потеряли: {details} "
             f"(порог: {titans_needed} и больше титанов)")
+
+
+def battle_losses(pack, team_status, hp_before):
+    """Сколько ХП потерял за бой каждый титан пака: {титан: %}. hp_before — {титан: ХП до боя};
+    кого там нет, считаем вошедшим со 100%. Титаны, которых не нашли на окне результата, пропускаются."""
+    losses = {}
+    for titan in pack:
+        stats = (team_status or {}).get(titan)
+        if not isinstance(stats, dict) or stats.get("status") == "ОТСУТСТВУЕТ":
+            continue
+        after = 0 if stats.get("status") == "МЕРТВ" else stats.get("hp", 0)
+        before = (hp_before or {}).get(titan)
+        losses[titan] = max(0, (100 if before is None else before) - after)
+    return losses
+
+
+def full_hp_reason(pack, team_status, hp_before, critical_hp, allowed_delta, group_loss=None, titan_critical_hp=None):
+    """
+    Виноваты ли враги (задача 9б): был бы бой плохим, если бы все титаны пака вошли в него со 100% ХП?
+    Берётся потеря каждого титана за бой, и с ней проверяются те же пороги, что после боя: порог паники
+    (100% − потеря), допуск потерь, общие потери пака. Возвращает причину или пустую строку.
+    Пустая строка — враги ни при чём: бой стал плохим, потому что кто-то вошёл в него раненым
+    (сессия 07, комната 54: Араджи вошёл в огонь с 36% и упал до 9%, а со 100% осталось бы 73%).
+    """
+    titan_critical_hp = titan_critical_hp or {}
+    losses = battle_losses(pack, team_status, hp_before)
+    for titan, lost in losses.items():
+        panic = titan_critical_hp.get(titan, critical_hp)
+        if 100 - lost < max(1, panic):
+            return f"{titan.upper()} потерял {lost}% ХП: даже со 100% осталось бы {100 - lost}% (порог {panic}%)"
+        if lost > allowed_delta:
+            return f"{titan.upper()} потерял {lost}% ХП (допуск: {allowed_delta}%)"
+    return group_loss_reason(losses, group_loss)

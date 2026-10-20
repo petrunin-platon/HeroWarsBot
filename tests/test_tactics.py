@@ -20,7 +20,9 @@ def settings(**values):
     return tactics.Settings(lambda key, default=None: values.get(key, default))
 
 
-def battle(team, action="SUCCESS", enemies=E, room="mix", hp=100):
+def battle(team, action="SUCCESS", enemies=E, room="mix", hp=None):
+    # Откат по умолчанию — вина врагов: титаны вошли со 100% и упали до 10% (с задачи 9б это важно, см. test_tactics_9b.py)
+    hp = (10 if action == "ROLLBACK" else 100) if hp is None else hp
     return {"room": room, "enemies": list(enemies), "team": list(team), "action": action,
             "hp_status": {t: {"hp": hp, "energy": 50, "status": "ЖИВ"} for t in team}}
 
@@ -273,7 +275,7 @@ def test_read_and_write_tactics_keep_other_profile_keys():
     values = tactics.read_tactics(profile)
     assert values == {"auto_rollback": False, "auto_rollback_tries": 2, "group_loss_titans": 3,
                       "group_loss_percent": 40, "titan_critical_hp": {}, "backup_teams": {},
-                      "door_order": ["water", "mix", "earth", "fire"]}
+                      "door_order": ["water", "mix", "earth", "fire"], "sos_timeout_minutes": 10}
     values.update(auto_rollback=True, auto_rollback_tries=3, titan_critical_hp={"rigel": 25},
                   backup_teams={"mix": [SIGURD_HEAL]}, door_order=["mix", "water", "earth", "fire"])
     tactics.write_tactics(profile, values)
