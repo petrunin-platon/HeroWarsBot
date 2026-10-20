@@ -252,7 +252,9 @@ class DashboardFrame(ctk.CTkFrame):
                     self.after(0, lambda: self.btn_launch_scrcpy.configure(state="normal"))
                     
             except Exception as e:
-                self.after(0, lambda: self.append_log(f"[ОШИБКА] Не удалось запустить scrcpy: {e}\n"))
+                # Текст собираем сразу: после блока except имя e удаляется, а лямбда выполнится позже
+                msg = f"[ОШИБКА] Не удалось запустить scrcpy: {e}\n"
+                self.after(0, lambda msg=msg: self.append_log(msg))
                 self.after(0, lambda: self.btn_launch_scrcpy.configure(state="normal"))
 
         threading.Thread(target=task, daemon=True).start()
