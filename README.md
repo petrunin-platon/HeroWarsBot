@@ -153,7 +153,7 @@ All settings are changed in the program window; you never need to edit `profile.
 
 ## 🚀 Running the code (for study)
 
-This repository is source code to read and learn from. It is **not** distributed as a ready-made program, and no compiled `.exe` is published here.
+This repository is source code to read and learn from.
 
 1. Install Python 3.11 or newer (tick "Add python.exe to PATH") and [scrcpy](https://github.com/Genymobile/scrcpy) (it includes `adb`). Check in `cmd`: `adb devices` must show your phone as `device`.
 2. On the phone enable **USB debugging** and **USB debugging (Security settings)** (see the troubleshooting section below).
