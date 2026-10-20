@@ -10,7 +10,7 @@ EN_TO_RU = {
     "angus": "Ангус", "avalon": "Авалон", "eden": "Эдем", "silva": "Сильва", "verdok": "Вердок", "pallant": "Паллант",
     "araji": "Араджи", "ignis": "Игнис", "acheron": "Ашерон", "vulcan": "Вулкан", "moloch": "Молох", "alecto": "Алекто",
     "rigel": "Ригель", "iyari": "Ияри", "lumira": "Люмира", "solaris": "Солярис", "amon": "Амон",
-    "mor": "Мор", "tenebris": "Тенебрис", "brustar": "Брустар", "umbra": "Умбра", "keros": "Керос"
+    "mor": "Мор", "tenebris": "Тенебрис", "brustar": "Брустар", "umbra": "Умбра", "keros": "Керос", "metida": "Метида"
 }
 
 class AnalyticsFrame(ctk.CTkFrame):

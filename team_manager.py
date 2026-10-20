@@ -17,7 +17,7 @@ GAME_ORDER = [
     "eden", "angus", "avalon", "silva", "verdok", "pallant",
     "araji", "moloch", "vulcan", "ignis", "acheron", "alecto",
     "solaris", "rigel", "iyari", "amon", "lumira",
-    "tenebris", "brustar", "keros", "mor", "umbra"
+    "tenebris", "brustar", "keros", "mor", "umbra", "metida"
 ]
 
 def open_grid_if_needed(window_rect, sct):
