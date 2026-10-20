@@ -122,3 +122,49 @@ def test_session_b_replay(engine):
     # Запасной пак — правило, запомненное в комнате 112 (против этих врагов, пак с Сигурдом)
     assert sorted(room_129["backup"]) == sorted(SIGURD_HEAL)
     assert room_129["source"] == tactics.SOURCE_RULES
+
+
+def replay_heal(engine):
+    """Задача 9в: перед каждой комнатой — как main.py в SET_TEAM: ваше правило или пак отхила, который бот
+    собирает сам вместо базового пака. Бои берутся из истории как были. Возвращает {номер комнаты: (пак, кого лечим)}."""
+    s = tactics.Settings(engine.get_global_setting)
+    history = tactics.BattleHistory(settings=s)
+    state, rooms, testing, heals, rules = {}, 0, False, {}, {}
+    for entry in load_session():
+        room_no, room, enemies = rooms + 1, entry["room"], entry["enemies"]
+        if not testing:
+            choice = engine.battle_decision(room, enemies, state)
+            if choice["condition"]:
+                rules[room_no] = choice["team"]
+            else:
+                heal = tactics.heal_plan(room, choice["team"], state, s, history, engine.base_packs(),
+                                         forbidden=engine.forbidden_titans(room, enemies, state), enemies=enemies,
+                                         special_ult=engine.special_ult_for)
+                if heal:
+                    heals[room_no] = heal[:2]
+        verdict = evaluate_battle(entry["team"], entry["hp_status"], state, s.critical_hp, s.max_hp_delta,
+                                  group_loss=s.group_loss)
+        before = {t: state[t]["hp"] for t in entry["team"] if t in state}
+        history.add(dict(entry, hp_before=before))
+        if entry["action"] == "ROLLBACK":
+            testing = True
+            continue
+        testing = False
+        state.update(verdict["after_state"])
+        rooms += 1
+    return heals, rules
+
+
+def test_session_b_heal_packs(engine):
+    heals, rules = replay_heal(engine)
+    # Араджи 59% с комнаты 70: ваше правило лечит его только ниже 50%, и в сессии B его вылечили лишь в комнате 112.
+    # Бот сам ставит его в первую же смешанную (71) вместо Амона — это ваш же пак правила «Араджи < 50%»
+    first = min(heals)
+    assert first == 71
+    assert all(titan == "araji" and pack == ["hyperion", "rigel", "iyari", "lumira", "araji"]
+               for pack, titan in heals.values())
+    assert sorted(heals[71][0]) == sorted(MIX["rules"][3]["team"])
+    # Ригель 55% (комната 56) и четверо раненых в комнате 130 стоят в обычном паке смешанной и лечатся им —
+    # пак не меняется. Комнаты 55 и 112 — ваше правило отхила Араджи, бот его не трогает
+    assert 56 not in heals and 130 not in heals
+    assert 55 in rules and 112 in rules and 55 not in heals and 112 not in heals

@@ -1,8 +1,9 @@
 # tactics.py
-# Самостоятельные решения бота (задачи 9 и 9б): настройки тактики из profile.yml, история боёв против этих врагов,
-# выбор запасного пака, можно ли откатить бой без вас, прогноз потерь раненых титанов, выбор двери по здоровью,
-# решение, если вы не ответили на окно SOS, и «золотые правила».
-# Без OpenCV и игры, поэтому проверяется тестами (tests/test_tactics.py, tests/test_tactics_9b.py,
+# Самостоятельные решения бота (задачи 9, 9б и 9в): настройки тактики из profile.yml, история боёв против этих врагов,
+# выбор запасного пака, можно ли откатить бой без вас, прогноз потерь раненых титанов (с учётом энергии),
+# выбор двери по здоровью, решение, если вы не ответили на окно SOS, «золотые правила»
+# и пак отхила, который бот собирает сам.
+# Без OpenCV и игры, поэтому проверяется тестами (tests/test_tactics.py, tests/test_tactics_9b.py, tests/test_tactics_9v.py,
 # tests/test_replay_session_b.py, tests/test_replay_session_07.py).
 import glob
 import json
@@ -29,6 +30,17 @@ GOLDEN_MIN_WINRATE = 80
 # в сессии 07 Люмира один раз потеряла 45% против сильных врагов, а в следующий раз — ничего)
 LOSS_SAMPLES = 5
 LOSS_MIN_SAMPLES = 2
+# Энергия при входе в бой (задача 9в, ваш ответ на вопрос 22): Араджи с 60–80% энергии в огне теряет мало,
+# с меньшей — много. Поэтому прогноз берётся из боёв, где энергия титана была похожей (отличалась не больше чем на 25%)
+ENERGY_NEAR = 25
+
+# Пак отхила, который бот собирает сам (задача 9в, ваш ответ на вопрос 23)
+HEAL_ROOM = "mix"        # лечат в смешанной: туда можно ставить кого угодно
+DEFAULT_HEAL_HP = 60     # лечить ниже 60% ХП: «пробить полосу здоровья у Ригеля выше 60% — и он ещё 50 комнат ходит»
+MAX_HEAL_REMOVE = 3      # сколько титанов можно перечислить в «кого убирать из пака ради раненого»
+STUCK_BATTLES = 2        # раненый в паке «не поднимается»: столько последних боёв в смешанной подряд ниже порога
+HELPER_MIN_HP = 80       # помощник-лекарь (как Сигурд для Ригеля) здоров: «даже если Сигурд просядет на 60%»
+HELPER_MIN_ENERGY = 60   # и заряжен: «если у него при входе будет более 60% энергии... ульту использует» (вопрос 22)
 
 # Откуда взят запасной пак (для строк лога)
 SOURCE_USER = "ваш список запасных паков"
@@ -56,6 +68,11 @@ class Settings:
         self.sos_timeout_minutes = max(0, min(MAX_SOS_TIMEOUT, _number(get("sos_timeout_minutes", DEFAULT_SOS_TIMEOUT),
                                                                        DEFAULT_SOS_TIMEOUT)))
         self.reset_hour = _number(get("reset_hour", 5), 5)
+        # Пак отхила (задача 9в): лечить ниже heal_hp% ХП (0 — не собирать), кого убирать из пака ради раненого
+        self.heal_hp = max(0, min(100, _number(get("heal_below_hp", DEFAULT_HEAL_HP), DEFAULT_HEAL_HP)))
+        order = get("heal_remove_order", [])
+        order = [str(t) for t in order] if isinstance(order, list) else []
+        self.heal_remove_order = [t for i, t in enumerate(order) if t not in order[:i]][:MAX_HEAL_REMOVE]
 
     def panic_hp(self, titan):
         """Порог паники титана: личный, если задан, иначе общий."""
@@ -83,6 +100,11 @@ class Settings:
             lines.append("[ТАКТИКА] Окно SOS: бот ждёт вашего ответа сколько угодно.")
         if self.door_order != DEFAULT_DOOR_ORDER:
             lines.append(f"[ТАКТИКА] Порядок дверей: {' → '.join(self.door_order)}")
+        if self.auto_rollback and self.heal_hp:
+            remove = " → ".join(self.heal_remove_order) if self.heal_remove_order else \
+                "сам: с конца базового пака, кроме лекарей"
+            lines.append(f"[ТАКТИКА] Отхил в смешанной без вашего правила: бот лечит титанов ниже {self.heal_hp}% ХП "
+                         f"по одному. Кого убирать из пака: {remove}.")
         return lines
 
     def full_hp_reason(self, pack, team_status, hp_before, allowed_delta=None):
@@ -106,7 +128,8 @@ def profile_getter(profile):
 
 # Где в profile.yml лежит каждая настройка тактики (окно программы пишет туда же)
 THRESHOLD_KEYS = ("group_loss_titans", "group_loss_percent", "titan_critical_hp")
-SETTINGS_KEYS = ("auto_rollback", "auto_rollback_tries", "backup_teams", "door_order", "sos_timeout_minutes")
+SETTINGS_KEYS = ("auto_rollback", "auto_rollback_tries", "backup_teams", "door_order", "sos_timeout_minutes",
+                 "heal_below_hp", "heal_remove_order")
 
 
 def read_tactics(profile):
@@ -121,6 +144,8 @@ def read_tactics(profile):
         "backup_teams": {room: [list(p) for p in packs] for room, packs in s.backup_teams.items() if packs},
         "door_order": list(s.door_order),
         "sos_timeout_minutes": s.sos_timeout_minutes,
+        "heal_below_hp": s.heal_hp,
+        "heal_remove_order": list(s.heal_remove_order),
     }
 
 
@@ -174,13 +199,16 @@ class BattleHistory:
     Откат из-за того, что титан вошёл в бой раненым, пак не портит (сессия 07: из-за такого отката в комнате 74
     бот поставил пак с Алекто вместо обычного).
     ХП до боя: из записи (hp_before, пишется с задачи 9б). В старых записях — ХП титана после его последней удачной
-    битвы в тот же игровой день (откат бой отменяет, поэтому откаты ХП не меняют). Неизвестно — считается 100%."""
+    битвы в тот же игровой день (откат бой отменяет, поэтому откаты ХП не меняют). Неизвестно — считается 100%.
+    Энергия до боя (задача 9в) — так же: из записи (energy_before) или после последней удачной битвы этого дня."""
 
     def __init__(self, entries=None, settings=None):
         self.settings = settings or Settings(lambda key, default=None: default)
         self.entries = []
         self.before = []      # ХП до боя для каждой записи: {титан: ХП}; кого нет — неизвестно
+        self.energy = []      # энергия до боя для каждой записи: {титан: %}; кого нет — неизвестно
         self._last_hp = {}    # ХП титанов после последней удачной битвы в этот игровой день
+        self._last_energy = {}
         self._day = None
         for entry in entries or []:
             self.add(entry)
@@ -208,18 +236,18 @@ class BattleHistory:
             return
         day = _game_day(entry.get("timestamp"), self.settings.reset_hour)
         if day != self._day:
-            self._day, self._last_hp = day, {}
-        stored = entry.get("hp_before")
-        if isinstance(stored, dict):
-            before = {t: v for t, v in stored.items() if isinstance(v, (int, float))}
-        else:
-            before = {t: self._last_hp[t] for t in entry.get("team") or [] if t in self._last_hp}
+            self._day, self._last_hp, self._last_energy = day, {}, {}
+        before = _known(entry, "hp_before", self._last_hp)
+        energy = _known(entry, "energy_before", self._last_energy)
         if entry.get("action") == "SUCCESS":
             for titan, st in (entry.get("hp_status") or {}).items():
                 if isinstance(st, dict) and st.get("status") != "ОТСУТСТВУЕТ":
                     self._last_hp[titan] = st.get("hp", 0)
+                    if isinstance(st.get("energy"), (int, float)):
+                        self._last_energy[titan] = st["energy"]
         self.entries.append(entry)
         self.before.append(before)
+        self.energy.append(energy)
 
     def enemies_to_blame(self, index):
         """Откат номер index — вина врагов (бой был бы плохим и со 100% ХП)? Причина или ""."""
@@ -280,10 +308,11 @@ class BattleHistory:
         result.sort(key=lambda x: (-x[1]["avg_hp"], -x[1]["wins"]))
         return result
 
-    def expected_loss(self, room, team, titan, enemies=None):
+    def expected_loss(self, room, team, titan, enemies=None, energy=None):
         """Сколько ХП обычно теряет титан с этим паком в этой стихии: среднее за последние бои (LOSS_SAMPLES).
         Если против этих врагов боёв хотя бы LOSS_MIN_SAMPLES — только они. Бои, где ХП до боя неизвестно, не берутся.
-        None — боёв меньше LOSS_MIN_SAMPLES."""
+        energy — энергия титана сейчас (задача 9в): если боёв с похожей энергией (±ENERGY_NEAR) хотя бы
+        LOSS_MIN_SAMPLES — берутся только они. None — боёв меньше LOSS_MIN_SAMPLES."""
         samples = []
         for i in self._battles(room, None, team):
             e = self.entries[i]
@@ -292,11 +321,43 @@ class BattleHistory:
             if before is None or not isinstance(st, dict) or st.get("status") == "ОТСУТСТВУЕТ":
                 continue
             same = enemies is not None and set(e.get("enemies") or []) == set(enemies)
-            samples.append((same, max(0, before - st.get("hp", 0))))
-        same = [loss for is_same, loss in samples if is_same]
-        losses = same if len(same) >= LOSS_MIN_SAMPLES else [loss for _, loss in samples]
-        losses = losses[-LOSS_SAMPLES:]
+            samples.append((same, self.energy[i].get(titan), max(0, before - st.get("hp", 0))))
+        pool = [s for s in samples if s[0]]
+        if len(pool) < LOSS_MIN_SAMPLES:
+            pool = samples
+        if energy is not None:
+            near = [s for s in pool if s[1] is not None and abs(s[1] - energy) <= ENERGY_NEAR]
+            if len(near) >= LOSS_MIN_SAMPLES:
+                pool = near
+        losses = [loss for _, _, loss in pool][-LOSS_SAMPLES:]
         return sum(losses) / len(losses) if len(losses) >= LOSS_MIN_SAMPLES else None
+
+    def not_healing(self, room, titan, below, battles=STUCK_BATTLES):
+        """Раненый «не поднимается» (задача 9в): в последних battles удачных боях в этой стихии с ним, в этот игровой
+        день, его ХП и до боя, и после было ниже below (ваш пример: Ригель 2–3 боя в смешанной держится на 30–60%)."""
+        count = 0
+        for i in range(len(self.entries) - 1, -1, -1):
+            e = self.entries[i]
+            if _game_day(e.get("timestamp"), self.settings.reset_hour) != self._day:
+                break
+            if e.get("room") != room or e.get("action") != "SUCCESS" or titan not in (e.get("team") or []):
+                continue
+            st = (e.get("hp_status") or {}).get(titan)
+            before = self.before[i].get(titan)
+            if not isinstance(st, dict) or before is None or before >= below or st.get("hp", 100) >= below:
+                return False
+            count += 1
+            if count >= battles:
+                return True
+        return False
+
+
+def _known(entry, key, last):
+    """ХП или энергия до боя: из записи (key), а в старых записях — после последней удачной битвы этого дня (last)."""
+    stored = entry.get(key)
+    if isinstance(stored, dict):
+        return {t: v for t, v in stored.items() if isinstance(v, (int, float))}
+    return {t: last[t] for t in entry.get("team") or [] if t in last}
 
 
 def _game_day(timestamp, reset_hour):
@@ -320,13 +381,14 @@ def _avg_hp(entry, team):
 def wounded_at_risk(room, enemies, pack, state, settings, history):
     """Кто из пака, судя по прошлым боям, упадёт ниже порога паники: [(титан, ХП сейчас, обычная потеря)].
     Смотрим только раненых (ХП известно и меньше 100%). Здоровым этот пак не опасен: если бы он проигрывал
-    этим врагам, его отсеяла бы история (lost_to). Обычная потеря — BattleHistory.expected_loss."""
+    этим врагам, его отсеяла бы история (lost_to). Обычная потеря — BattleHistory.expected_loss,
+    с задачи 9в — по боям с похожей энергией титана, если она известна."""
     risks = []
     for titan in pack:
         hp = state.get(titan, {}).get("hp")
         if hp is None or hp >= 100:
             continue
-        loss = history.expected_loss(room, pack, titan, enemies)
+        loss = history.expected_loss(room, pack, titan, enemies, energy=state.get(titan, {}).get("energy"))
         if loss and hp - loss < max(1, settings.panic_hp(titan)):
             risks.append((titan, hp, round(loss)))
     return risks
@@ -337,9 +399,123 @@ def is_rescue_condition(condition):
     return "titan_hp_below" in (condition or {}) or "titan_energy_below" in (condition or {})
 
 
-def describe_risks(risks):
-    """Строка для лога: «ARAJI: 36% ХП, обычно теряет ~29%»."""
-    return "; ".join(f"{t.upper()}: {hp}% ХП, обычно теряет ~{loss}%" for t, hp, loss in risks)
+def describe_risks(risks, state=None):
+    """Строка для лога: «ARAJI: 36% ХП, обычно теряет ~29%» (со state — и энергия: «ARAJI: 36% ХП, ⚡47%, ...»)."""
+    def energy(titan):
+        value = (state or {}).get(titan, {}).get("energy")
+        return f", ⚡{value}%" if value is not None else ""
+    return "; ".join(f"{t.upper()}: {hp}% ХП{energy(t)}, обычно теряет ~{loss}%" for t, hp, loss in risks)
+
+
+# ---------------------------------------------------------------------------
+# Пак отхила, который бот собирает сам (задача 9в)
+# ---------------------------------------------------------------------------
+def heals_at_home(titan, base_packs, room=HEAL_ROOM):
+    """Лечится ли титан в своей комнате: он в базовом паке другой стихии, где есть лекарь (вода — Гиперион и Сигурд,
+    земля — Авалон). Огненных лечить негде: в огне лекарей нет (ваш ответ на вопрос 23). base_packs — {стихия: пак}."""
+    return any(titan in pack and any(t in HEALERS for t in pack)
+               for r, pack in base_packs.items() if r != room and pack)
+
+
+def removal_order(pack, settings, keep=()):
+    """Кого убирать из пака ради раненого, по порядку: сначала ваш список (окно «⚙️ Тактика»), потом сам —
+    с конца пака, кроме лекарей. Для пака «Гиперион, Ригель, Ияри, Люмира, Амон» это Амон, потом Люмира —
+    как вы ответили на вопрос 23. keep — кого не убирать (самого раненого)."""
+    order = [t for t in settings.heal_remove_order if t in pack]
+    order += [t for t in reversed(pack) if t not in HEALERS and t not in order]
+    return [t for t in order if t not in keep]
+
+
+def _helper(pack, state, forbidden):
+    """Помощник-лекарь (как Сигурд вместо Амона для Ригеля): лекарь не из пака, здоров (HELPER_MIN_HP) и заряжен
+    (HELPER_MIN_ENERGY), чтобы сразу сделать ультимейт. Из подходящих — самый заряженный. (титан, ХП, энергия) или None."""
+    best = None
+    for titan in HEALERS:
+        st = state.get(titan) or {}
+        hp, energy = st.get("hp"), st.get("energy")
+        if titan in pack or titan in forbidden or hp is None or energy is None:
+            continue
+        if hp >= HELPER_MIN_HP and energy >= HELPER_MIN_ENERGY and (best is None or energy > best[2]):
+            best = (titan, hp, energy)
+    return best
+
+
+def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), enemies=None, special_ult=None,
+              notes=None):
+    """
+    Пак отхила, который бот собирает сам (задача 9в, ваш ответ на вопрос 23), когда ваше правило отхила
+    не сработало. Только в смешанной (туда можно ставить кого угодно), pack — пак, который поставил бы движок правил.
+    Лечим по одному — того, кто ближе всех к своему порогу паники. Кого лечим:
+      - ХП ниже settings.heal_hp, но не ниже порога паники (ниже в смешанной уже не вылечить — вопрос 1),
+        и титан не под запретом правил skip;
+      - его нет в паке, и в своей комнате его не лечат (heals_at_home: огненных лечить негде) —
+        он встаёт вместо первого из removal_order;
+      - или он в паке, но STUCK_BATTLES боя подряд не поднимается выше порога (BattleHistory.not_healing) —
+        тогда вместо первого из removal_order встаёт помощник-лекарь (_helper).
+    Пак не берётся, если в нём не осталось лекаря, он проигрывает этим врагам (history.lost_to), опасен для раненых
+    по прогнозу (wounded_at_risk) или требует ручного боя (special_ult(пак) не "auto", например Ангус).
+    Возвращает (пак, кого лечим, пояснение) или None. notes — куда писать, почему раненого не лечим (для лога).
+    """
+    if room != HEAL_ROOM or not settings.heal_hp or not pack or pack == ["STOP"]:
+        return None
+
+    def note(text):
+        if notes is not None:
+            notes.append(text)
+
+    wounded = []
+    for titan, st in state.items():
+        hp = st.get("hp") if isinstance(st, dict) else None
+        if hp is None or hp <= 0 or hp >= settings.heal_hp:
+            continue  # здоров, неизвестно или погиб (погибшие до конца дня не воюют)
+        panic = max(1, settings.panic_hp(titan))
+        if hp < panic:
+            note(f"{titan.upper()} {hp}%: ниже порога паники ({panic}%), в смешанной его уже не вылечить")
+        elif titan in forbidden:
+            note(f"{titan.upper()} {hp}%: под запретом правил skip")
+        else:
+            wounded.append((hp - panic, titan, hp))
+
+    for _, titan, hp in sorted(wounded):
+        out = removal_order(pack, settings, keep={titan})
+        if titan in pack:
+            if not history.not_healing(room, titan, settings.heal_hp):
+                continue  # лечится обычным паком смешанной
+            helper = _helper(pack, state, forbidden)
+            if not helper:
+                note(f"{titan.upper()} {hp}%: не поднимается, но нет здорового заряженного лекаря "
+                     f"(ХП от {HELPER_MIN_HP}%, энергия от {HELPER_MIN_ENERGY}%)")
+                continue
+            if not out:
+                note(f"{titan.upper()} {hp}%: некого убрать из пака ради лекаря")
+                continue
+            new_pack = [helper[0] if t == out[0] else t for t in pack]
+            why = (f"{titan.upper()} {hp}% ХП {STUCK_BATTLES} боя подряд не поднимается выше {settings.heal_hp}% — "
+                   f"лекарь {helper[0].upper()} ({helper[1]}% ХП, ⚡{helper[2]}%) вместо {out[0].upper()}")
+        else:
+            if heals_at_home(titan, base_packs, room):
+                continue  # его лечат в своей комнате (вода, земля)
+            if len(pack) < 5:
+                new_pack, why = list(pack) + [titan], f"{titan.upper()} {hp}% ХП: в своей комнате его не лечат"
+            elif out:
+                new_pack = [titan if t == out[0] else t for t in pack]
+                why = f"{titan.upper()} {hp}% ХП: в своей комнате его не лечат — ставлю вместо {out[0].upper()}"
+            else:
+                note(f"{titan.upper()} {hp}%: некого убрать из пака")
+                continue
+
+        risks = wounded_at_risk(room, enemies, new_pack, state, settings, history)
+        if not any(t in HEALERS for t in new_pack):
+            note(f"{new_pack}: в паке не осталось лекаря")
+        elif history.lost_to(room, enemies, new_pack):
+            note(f"{new_pack}: проигрывает этим врагам")
+        elif risks:
+            note(f"{new_pack}: опасен для раненых ({describe_risks(risks, state)})")
+        elif special_ult and special_ult(new_pack) != "auto":
+            note(f"{new_pack}: нужен ручной бой ({special_ult(new_pack)}), его нельзя откатить")
+        else:
+            return new_pack, titan, why
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -502,12 +678,15 @@ def golden_packs(history, settings=None):
     """Паки, которые много раз побеждали этот состав врагов: не меньше GOLDEN_MIN_BATTLES боёв против него
     и не меньше GOLDEN_MIN_WINRATE% побед — как кнопка во вкладке «Аналитика».
     Ваши запасные паки (settings.backup_teams) не берутся: они для помощи, а не на каждый бой (сессия 07, пак с Молохом).
+    Бои паков отхила, которые бот собрал сам (heal_for, задача 9в), тоже: такой пак нужен, только пока титан ранен.
     Возвращает [{"room", "enemies", "team", "wins", "battles", "avg_hp"}]."""
     backups = {room: [sorted(p) for p in packs] for room, packs in (settings.backup_teams if settings else {}).items()}
     groups = {}
     for e in history.entries:
         room, enemies, team = e.get("room"), e.get("enemies") or [], e.get("team") or []
         if not room or room == "unknown" or not enemies or not team or e.get("action") not in ("SUCCESS", "ROLLBACK"):
+            continue
+        if e.get("heal_for"):
             continue
         g = groups.setdefault((room, tuple(sorted(enemies)), tuple(sorted(team))), {"wins": 0, "battles": 0, "hp": []})
         g["battles"] += 1

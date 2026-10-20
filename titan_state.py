@@ -71,3 +71,37 @@ class TitanMemory(dict):
             return ""
         hurt = [f"{t} {s.get('hp')}%" for t, s in sorted(self.items()) if s.get("hp", 100) < 100]
         return ", ".join(hurt) if hurt else "все здоровы (100%)"
+
+
+# Насколько ХП с экрана должно отличаться от памяти, чтобы считать, что память была неверной (полоски читаются ±2%)
+SCREEN_HP_TOLERANCE = 5
+
+
+def screen_reading(memory, bars):
+    """ХП и энергия с экрана выбора команды (задача 9в) против того, что бот помнит.
+    memory — {титан: {"hp", "energy"}}; bars — {титан: {"hp": %, "energy": %}}, None — не прочиталось.
+    Возвращает (обновления для памяти, строка для лога, кого память не знала или знала неверно).
+    Не прочиталось ХП — титана не трогаем. Не прочиталась энергия — оставляем ту, что помним."""
+    updates, parts, fixed = {}, [], []
+    for titan in sorted(bars):
+        hp, energy = bars[titan].get("hp"), bars[titan].get("energy")
+        old = memory.get(titan) or {}
+        if hp is None:
+            parts.append(f"{titan.upper()} не прочиталось")
+            continue
+        state = {"hp": hp}
+        if energy is None:
+            energy = old.get("energy")
+        if energy is not None:
+            state["energy"] = energy
+        updates[titan] = state
+
+        text = f"{titan.upper()} {hp}%" + (f" ⚡{energy}%" if energy is not None else "")
+        if "hp" not in old:
+            text += " (бот не знал)"
+            fixed.append(titan)
+        elif abs(old["hp"] - hp) >= SCREEN_HP_TOLERANCE:
+            text += f" (бот помнил {old['hp']}%)"
+            fixed.append(titan)
+        parts.append(text)
+    return updates, ", ".join(parts), fixed

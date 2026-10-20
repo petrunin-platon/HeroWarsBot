@@ -1,5 +1,5 @@
 # ui/tactics_dialog.py
-# Окно «Тактика» (задача 9): настройки, с которыми бот решает сам. Всё задаётся мышкой, файлы руками править не нужно.
+# Окно «Тактика» (задачи 9, 9б, 9в): настройки, с которыми бот решает сам. Всё задаётся мышкой, файлы руками править не нужно.
 # Кнопка «Применить» сразу пишет настройки в profile.yml (остальные настройки профиля не трогает).
 # Переключатель «Бот решает сам» — на вкладке настроек (ui/rules_tab.py), здесь его нет.
 import os
@@ -127,6 +127,27 @@ class TacticsDialog(ctk.CTkToplevel):
             entry.grid(row=r, column=c * 2 + 1, pady=2, sticky="w")
             self.personal_entries[titan] = entry
 
+        # 6. Пак отхила в смешанной (задача 9в): с какого ХП лечить и кого убирать из пака ради раненого
+        ctk.CTkLabel(body, text=get_text(lang, "tac_heal_title"), font=bold).pack(anchor="w", pady=(14, 4))
+        row = ctk.CTkFrame(body, fg_color="transparent")
+        row.pack(anchor="w", pady=4)
+        ctk.CTkLabel(row, text=get_text(lang, "tac_heal_hp")).pack(side="left", padx=(0, 10))
+        self.entry_heal_hp = self._number_entry(row, self.values["heal_below_hp"], 100)
+        self.entry_heal_hp.pack(side="left")
+        ctk.CTkLabel(body, text=get_text(lang, "tac_heal_remove")).pack(anchor="w", pady=(4, 0))
+        row = ctk.CTkFrame(body, fg_color="transparent")
+        row.pack(anchor="w", pady=4)
+        auto = get_text(lang, "tac_heal_auto")
+        self.titan_by_text = {get_text(lang, f"titan_{t}"): t for t in titans}
+        order = self.values["heal_remove_order"]
+        self.remove_menus = []
+        for i in range(tactics.MAX_HEAL_REMOVE):
+            ctk.CTkLabel(row, text=f"{i + 1}.").pack(side="left", padx=(8 if i else 0, 4))
+            menu = ctk.CTkOptionMenu(row, values=[auto] + list(self.titan_by_text), width=130)
+            menu.set(get_text(lang, f"titan_{order[i]}") if i < len(order) else auto)
+            menu.pack(side="left")
+            self.remove_menus.append(menu)
+
         # Кнопки
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(pady=12)
@@ -218,7 +239,18 @@ class TacticsDialog(ctk.CTkToplevel):
             "titan_critical_hp": personal,
             "backup_teams": {room: packs for room, packs in self.values["backup_teams"].items() if packs},
             "door_order": tactics.door_order(self.door_order),
+            "heal_below_hp": number(self.entry_heal_hp, self.values["heal_below_hp"]),
+            "heal_remove_order": self._heal_remove_order(),
         }
+
+    def _heal_remove_order(self):
+        """Кого убирать из пака ради раненого: выбранные титаны по порядку, без повторов («— сам —» пропускается)."""
+        order = []
+        for menu in self.remove_menus:
+            titan = self.titan_by_text.get(menu.get())
+            if titan and titan not in order:
+                order.append(titan)
+        return order
 
     def on_apply(self):
         dash = self.controller.frames.get("dash") if hasattr(self.controller, "frames") else None
