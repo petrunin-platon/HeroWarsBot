@@ -67,7 +67,7 @@ def add_golden_rules():
     Условия — как у кнопки во вкладке «Аналитика». Только если бот решает сам (auto_rollback)."""
     if not TACTICS.auto_rollback:
         return
-    for gold in tactics.golden_packs(HISTORY, TACTICS):
+    for gold in tactics.golden_packs(HISTORY, TACTICS, roster=tactics.own_titans(engine.all_packs(), TACTICS)):
         rule = engine.add_golden_rule(gold["room"], gold["enemies"], gold["team"], gold["wins"], gold["battles"],
                                       gold["avg_hp"])
         if rule:
@@ -238,6 +238,7 @@ CURRENT_SPECIAL_ULT = "auto"
 CURRENT_ALLOWED_DELTA = None
 CURRENT_CONDITION = {}  # условие правила, которое дало текущий пак ({} — базовый пак). Нужно для обучения
 CURRENT_HEAL = None  # кого лечит текущий пак, если пак отхила бот собрал сам (задача 9в); иначе None
+HEAL_NOT_PLACED = set()  # кого бот не смог поставить в пак отхила: до конца запуска их паком отхила не лечит (сессия 08)
 ROOM_AUTO_ROLLBACKS = 0  # сколько раз бот сам откатил бой в этой комнате
 START_FAILS = 0  # сколько раз подряд не удалось начать бой («Авто» не сработала)
 TEAM_SEEN = None  # когда появился экран выбора команды: от этого момента пауза реакции перед «Авто» (задача 10)
@@ -417,7 +418,8 @@ def plan_heal(room, enemies, pack, notes=None):
         return None
     return tactics.heal_plan(room, pack, GLOBAL_TITAN_STATE, TACTICS, HISTORY, engine.base_packs(),
                              forbidden=engine.forbidden_titans(room, enemies, GLOBAL_TITAN_STATE), enemies=enemies,
-                             special_ult=engine.special_ult_for, notes=notes)
+                             special_ult=engine.special_ult_for, notes=notes, not_placed=HEAL_NOT_PLACED,
+                             reserve=tactics.own_titans(engine.all_packs(), TACTICS))
 
 def door_hints():
     """Подсказки для выбора двери по здоровью (задача 9б, tactics.door_choice):
@@ -450,7 +452,8 @@ def find_backup(tried, allow_risky=True):
     backup, source = tactics.choose_backup(
         current_room, CURRENT_ENEMIES, tried, GLOBAL_TITAN_STATE, TACTICS, engine.room_packs(current_room), HISTORY,
         forbidden=engine.forbidden_titans(current_room, CURRENT_ENEMIES, GLOBAL_TITAN_STATE),
-        risky=pack_danger(current_room, CURRENT_ENEMIES), allow_risky=allow_risky, notes=notes)
+        risky=pack_danger(current_room, CURRENT_ENEMIES), allow_risky=allow_risky, notes=notes,
+        roster=tactics.own_titans(engine.all_packs(), TACTICS))
     for note in notes:
         print(f"[ТАКТИКА] Не беру запасной пак {note}")
     return backup, source
@@ -1189,6 +1192,16 @@ with mss.MSS() as sct:
                     # ХП и энергия тех, кого бот только что поставил: до сборки их в слотах не было (задача 9в)
                     apply_screen_bars({t: b for t, b in placed.items() if t not in slots_read}, game_window, sct)
                 
+                if not team_ready and CURRENT_HEAL:
+                    # Пак отхила бот придумал сам — из-за него останавливаться нельзя (сессия 08: Алекто не встала
+                    # в слот). Больше этого титана паком отхила не лечим и снова выбираем пак, уже без него
+                    print(f"[ТАКТИКА] Пак отхила для {CURRENT_HEAL.upper()} собрать не удалось. Ставлю обычный пак, "
+                          f"{CURRENT_HEAL.upper()} паком отхила до конца запуска не лечу.")
+                    HEAL_NOT_PLACED.add(CURRENT_HEAL)
+                    LAST_USED_TEAMS.pop(current_room, None)
+                    STATE_CLOCK.reset()  # попытки сборки — не зависание
+                    continue
+
                 if not team_ready:
                     print(f"\n[ОШИБКА] Ошибка расстановки титанов.")
                     SESSION_LOG.set_stop_reason("Ошибка расстановки титанов")

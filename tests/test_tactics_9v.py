@@ -13,6 +13,7 @@ import titan_state
 
 MIX_BASE = ["hyperion", "rigel", "iyari", "lumira", "amon"]
 MIX_ARAJI = ["hyperion", "rigel", "iyari", "lumira", "araji"]
+MIX_ACHERON = ["hyperion", "rigel", "iyari", "lumira", "acheron"]
 MIX_ALECTO = ["hyperion", "rigel", "iyari", "lumira", "alecto"]
 MIX_SIGURD = ["hyperion", "rigel", "iyari", "lumira", "sigurd"]
 FIRE_BASE = ["araji", "ignis", "acheron"]
@@ -150,10 +151,44 @@ def test_log_battle_writes_energy_and_heal_mark(tmp_path, monkeypatch):
 
 # --- Пак отхила по правилам игры ---
 def test_fire_titan_is_healed_in_mix_instead_of_amon():
-    """Сессия 07, комната 75: Алекто ушла из огня с 44%. В огне лекарей нет — в смешанной она встаёт вместо Амона."""
-    result, notes = plan(state(alecto=44, rigel=100))
+    """Ахерон из базового пака огня ранен. В огне лекарей нет — в смешанной он встаёт вместо Амона."""
+    result, notes = plan(state(acheron=44, rigel=100))
     pack, titan, why = result
-    assert pack == MIX_ALECTO and titan == "alecto" and "вместо AMON" in why and notes == []
+    assert pack == MIX_ACHERON and titan == "acheron" and "вместо AMON" in why and notes == []
+
+
+def test_titan_outside_your_packs_is_not_healed():
+    """Сессия 08: Алекто утром сходила в бой и ушла с 44%, но её нет ни в ваших паках, ни в правилах, ни в запасных
+    паках — бот её не лечит (раньше весь игровой день ставил её в смешанную вместо Амона)."""
+    assert plan(state(alecto=44, rigel=100)) == (None, [])
+    assert plan(state(alecto=44, rigel=100), reserve={"rigel", "amon", "araji"}) == (None, [])
+    assert tactics.regulars(BASE_PACKS) >= {"araji", "amon", "tidus", "eden"}
+    assert "alecto" not in tactics.regulars(BASE_PACKS)
+
+
+def test_reserve_titan_is_healed_after_main_ones():
+    """Ваш ответ после сессии 08: запасных тоже надо поддерживать, но основные (базовые паки) в приоритете.
+    Алекто в запасном паке: Араджи ранен — сначала он, даже если Алекто ближе к порогу паники; Араджи здоров — Алекто."""
+    reserve = tactics.own_titans(list(BASE_PACKS.values()) + [MIX_ALECTO], settings())
+    (pack, titan, _), _ = plan(state(alecto=31, araji=50), reserve=reserve)
+    assert titan == "araji" and pack == MIX_ARAJI
+    (pack, titan, why), _ = plan(state(alecto=44, araji=85), reserve=reserve)
+    assert titan == "alecto" and pack == MIX_ALECTO and "запасной" in why and "вместо AMON" in why
+
+
+def test_helper_only_from_base_packs():
+    """Помощник-лекарь тоже только из базовых паков: Солярис нигде не стоит — его бот не ставит, Сигурд стоит в воде."""
+    h = rigel_stuck()
+    result, notes = plan(state(rigel=40, solaris=(100, 100)), history=h)
+    assert result is None and "нет здорового заряженного лекаря" in notes[0]
+    (pack, titan, _), _ = plan(state(rigel=40, solaris=(100, 100), sigurd=(90, 70)), history=h)
+    assert titan == "rigel" and pack == MIX_SIGURD
+
+
+def test_not_placed_titan_is_not_healed_again():
+    """Пак отхила не собрался (титан не встал в слот) — до конца запуска этого титана паком отхила не лечим."""
+    result, notes = plan(state(araji=45), not_placed={"araji"})
+    assert result is None and "не собрался" in notes[0]
 
 
 def test_water_and_earth_titans_heal_at_home():
@@ -338,8 +373,8 @@ def test_your_heal_rule_comes_first(engine):
 
 
 def test_door_prefers_mix_when_bot_will_heal(engine):
-    """Дверь по здоровью (задача 9б) теперь видит и пак отхила, который соберёт бот: раненая Алекто — в смешанную."""
-    st, s, h = state(alecto=44), settings(), tactics.BattleHistory()
+    """Дверь по здоровью (задача 9б) теперь видит и пак отхила, который соберёт бот: раненый Ахерон — в смешанную."""
+    st, s, h = state(acheron=44), settings(), tactics.BattleHistory()
 
     def heals(room):
         rule = engine.heal_rule_for(room, st, tactics.HEALERS)
@@ -348,8 +383,18 @@ def test_door_prefers_mix_when_bot_will_heal(engine):
         return rule or (f"бот соберёт пак отхила: {heal[2]}" if heal else "")
 
     index, allowed, _, note = tactics.door_choice(["water", "mix"], tactics.DEFAULT_DOOR_ORDER, lambda r: False, heals)
-    assert index == 1 and allowed and "ALECTO" in note
+    assert index == 1 and allowed and "ACHERON" in note
     # Все здоровы — обычный порядок дверей
     index, _, _, note = tactics.door_choice(["water", "mix"], tactics.DEFAULT_DOOR_ORDER, lambda r: False,
                                             lambda r: "")
     assert index == 0 and note == ""
+
+
+def test_session_08_start_no_alecto():
+    """Сессия 08, оба запуска: в памяти с утра Ахерон 86%, Алекто 44%, Араджи 85%, Молох 81%. Смешанная —
+    обычный пак с Амоном: Алекто нигде нет (вы её убрали), Молох в запасных, но выше 60%, остальные тоже."""
+    st = state(acheron=(86, 50), alecto=(44, 87), araji=(85, 50), moloch=(81, 50),
+               amon=(100, 79), hyperion=(100, 39), iyari=(100, 18), lumira=(100, 58), rigel=(100, 28))
+    reserve = tactics.own_titans(list(BASE_PACKS.values()) + [["araji", "ignis", "acheron", "vulcan", "moloch"]],
+                                 settings())
+    assert plan(st, settings(heal_remove_order=["amon", "lumira"]), reserve=reserve) == (None, [])

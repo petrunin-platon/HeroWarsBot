@@ -196,6 +196,23 @@ def test_backup_notes_for_wounded_and_forbidden():
     assert any("под запретом правил skip: alecto" in n for n in notes)
 
 
+def test_history_backup_only_with_your_titans():
+    """Сессия 08: пак с Алекто остался только в истории боёв (правило удалено, из запасных паков вы её убрали).
+    Из истории бот берёт только паки, где все титаны есть в ваших правилах, базовых или запасных паках."""
+    won = hp(araji=90, ignis=100, acheron=100, vulcan=100, alecto=90)
+    h = tactics.BattleHistory([battle(FIRE_ALECTO, "SUCCESS", won, enemies=E74)], settings())
+    s = settings()
+    roster = tactics.own_titans([FIRE_BASE, MIX_BASE, FIRE_MOLOCH], s)
+    assert "alecto" not in roster and {"vulcan", "moloch", "amon"} <= roster
+    assert tactics.choose_backup("fire", E74, [FIRE_BASE], {}, s, [], h, roster=roster) == (None, None)
+    assert tactics.choose_backup("fire", E74, [FIRE_BASE], {}, s, [], h)[0] == FIRE_ALECTO   # без списка — как раньше
+    # Алекто в ваших запасных паках — её паки из истории снова можно брать
+    s = settings(backup_teams={"water": [["hyperion", "alecto"]]})
+    roster = tactics.own_titans([FIRE_BASE, FIRE_MOLOCH], s)
+    assert tactics.choose_backup("fire", E74, [FIRE_BASE], {}, s, [], h, roster=roster) == (FIRE_ALECTO,
+                                                                                               tactics.SOURCE_HISTORY)
+
+
 # --- Двери ---
 def test_door_choice_prefers_heal_door_and_avoids_danger():
     order = ["water", "mix", "earth", "fire"]
@@ -297,6 +314,10 @@ def test_golden_rules(engine, tmp_path):
     # Ваш запасной пак «золотым» не становится: он для помощи, а не на каждый бой
     with_backup = tactics.golden_packs(tactics.BattleHistory(entries), settings(backup_teams={"fire": [FIRE_MOLOCH]}))
     assert not any("moloch" in g["team"] for g in with_backup)
+    # Пак с титаном, которого нет в ваших правилах и паках (сессия 08: Алекто), «золотым» не становится
+    roster = tactics.own_titans([FIRE_BASE, MIX_HEAL], settings())
+    mine = tactics.golden_packs(tactics.BattleHistory(entries), settings(), roster=roster)
+    assert {tuple(g["team"]) for g in mine} == {tuple(sorted(FIRE_BASE)), tuple(sorted(MIX_HEAL))}
 
     added = [engine.add_golden_rule(g["room"], g["enemies"], g["team"], g["wins"], g["battles"], g["avg_hp"])
              for g in golden]
@@ -348,3 +369,10 @@ def test_wrong_session_07_rules_are_removed(tmp_path, monkeypatch):
         assert engine.get_battle_decision("fire", ["angus", "silva", "verdok"], {})[0] == FIRE_BASE
     finally:
         sys.modules.pop("rules_engine", None)
+
+
+def test_all_packs_for_own_titans(engine):
+    """Ваши титаны (сессия 08) — из базовых паков и паков правил всех стихий; правила skip и [STOP] не в счёт."""
+    roster = tactics.own_titans(engine.all_packs(), settings())
+    assert {"araji", "amon", "rigel", "lumira"} <= roster and "STOP" not in roster
+    assert "alecto" not in roster

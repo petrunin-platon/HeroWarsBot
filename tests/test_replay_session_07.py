@@ -25,7 +25,7 @@ FIRE_MOLOCH = ["araji", "ignis", "acheron", "vulcan", "moloch"]
 FIRE_ALECTO = ["araji", "acheron", "ignis", "vulcan", "alecto"]
 MIX_BASE = ["hyperion", "rigel", "iyari", "lumira", "amon"]
 MIX_HEAL = ["araji", "hyperion", "rigel", "iyari", "lumira"]
-MIX_ALECTO = ["hyperion", "rigel", "iyari", "lumira", "alecto"]  # пак отхила, который бот собирает сам (задача 9в)
+MIX_ALECTO = ["hyperion", "rigel", "iyari", "lumira", "alecto"]  # Алекто — запасная (в ваших запасных паках огня)
 
 # Настройки из начала лога сессии 07 (запасные паки огня — в том порядке, в каком бот их брал)
 PROFILE = {
@@ -118,7 +118,8 @@ def replay(engine):
     def heal_for(room, enemies, pack):
         return tactics.heal_plan(room, pack, state, s, history, engine.base_packs(),
                                  forbidden=engine.forbidden_titans(room, enemies, state), enemies=enemies,
-                                 special_ult=engine.special_ult_for)
+                                 special_ult=engine.special_ult_for,
+                                 reserve=tactics.own_titans(engine.all_packs(), s))
 
     for b in parse_log(LOG):
         room_no, room, enemies = rooms + 1, b["room"], b["enemies"]
@@ -188,14 +189,16 @@ def test_session_07_replay(engine):
     # Комната 104 — обычный пак
     assert decisions[104]["pack"] == FIRE_BASE
 
-    # Задача 9в: в комнате 74 по-настоящему стоял пак с Алекто, она ушла с 44% ХП. В огне лекарей нет, поэтому
-    # в следующей смешанной (75) бот сам ставит её вместо Амона. В повторе бои берутся из лога, где её не лечили, —
-    # поэтому так в каждой смешанной до конца сессии. В комнатах 40 и 55 Араджи лечит ваше правило, бот его не трогает
+    # Задача 9в и сессия 08: в комнате 74 по-настоящему стоял пак с Алекто, она ушла с 44% ХП. Тогда Алекто была
+    # в ваших запасных паках огня — запасная. Основным (базовые паки) лечение не нужно, поэтому в следующей смешанной
+    # (75) бот ставит её вместо Амона. В повторе бои берутся из лога, где её не лечили, — поэтому так в каждой
+    # смешанной до конца сессии. В комнатах 40 и 55 Араджи лечит ваше правило, бот его не трогает
     actual = {b["room_no"]: b["team"] for b in parse_log(LOG) if b["action"] == "SUCCESS"}
     rooms_07 = {b["room_no"]: b["room"] for b in parse_log(LOG) if b["action"] == "SUCCESS"}
     healed = {n: d for n, d in decisions.items() if d["heal"]}
     assert sorted(healed) == [n for n, room in sorted(rooms_07.items()) if room == "mix" and n > 74]
-    assert all(d["pack"] == MIX_ALECTO and d["heal"][1] == "alecto" and "AMON" in d["heal"][2] for d in healed.values())
+    assert all(d["pack"] == MIX_ALECTO and d["heal"][1] == "alecto" and "запасной" in d["heal"][2]
+               and "AMON" in d["heal"][2] for d in healed.values())
     assert sorted(decisions[40]["pack"]) == sorted(decisions[55]["pack"]) == sorted(MIX_HEAL)
 
     # Во всех остальных комнатах пак тот же, что ставил бот в сессии 07
