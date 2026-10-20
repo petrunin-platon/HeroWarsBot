@@ -41,6 +41,7 @@ from stats_manager import add_metric, add_metrics_bulk, get_game_date
 import data_paths
 import result_scan
 import stuck_guard
+import session_limits
 import tactics
 import titan_state
 
@@ -165,7 +166,7 @@ def send_session_report():
     REPORT_SENT = True
     try:
         rooms = SESSION_STATS["rooms_cleared"]
-        data = SESSION_LOG.report_data(rooms, SESSION_STATS["titanite_gathered"], rooms // 5)
+        data = SESSION_LOG.report_data(rooms, SESSION_STATS["titanite_gathered"], SESSION_STATS["floors_cleared"])
         sent, note = send_alert(telegram_report.session_report(data, TG_LANG), html=True)
         print(f"[TELEGRAM] Итог сессии: {note}")
     except Exception as e:
@@ -269,8 +270,10 @@ LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
 SESSION_STATS = {
     "start_time": time.time(),
     "rooms_cleared": 0,
+    "floors_cleared": 0,  # этажи по точке сохранения (задача 14), а не «комнаты ÷ 5»
     "titanite_gathered": 0
 }
+FLOOR_FINISH = session_limits.FloorFinish()  # лимит достигнут → дойти до точки сохранения (вопрос 18)
 
 # Итог сессии при любой остановке: лимит, Ctrl+Q, STOP, ошибка Python.
 # atexit вызывает функции в обратном порядке: сначала итог в лог, потом итог в Telegram
@@ -301,17 +304,14 @@ def get_stop_reason():
     target_titanite = engine.get_global_setting("target_titanite", LIMITS["target_titanite"])
 
     elapsed_minutes = (time.time() - SESSION_STATS["start_time"]) / 60
-    if max_time > 0 and elapsed_minutes >= max_time:
-        return f"Превышен лимит времени ({max_time} мин)"
-    if target_titanite > 0 and SESSION_STATS["titanite_gathered"] >= target_titanite:
-        return f"Цель по титаниту достигнута ({SESSION_STATS['titanite_gathered']}/{target_titanite})"
-    if max_floors > 0:
-        floors_done = SESSION_STATS["rooms_cleared"] // 5
-        if floors_done >= max_floors and SESSION_STATS["rooms_cleared"] % 5 == 0:
-            return f"Пройдено {max_floors} этажей."
-    if max_rooms > 0 and SESSION_STATS["rooms_cleared"] >= max_rooms:
-        return f"Пройдено {max_rooms} комнат."
-    return None
+    found = session_limits.limit_reason(max_time, max_rooms, max_floors, target_titanite, elapsed_minutes,
+                                        SESSION_STATS["rooms_cleared"], SESSION_STATS["floors_cleared"],
+                                        SESSION_STATS["titanite_gathered"])
+    reason, first = FLOOR_FINISH.check(found, SESSION_STATS["rooms_cleared"], SESSION_STATS["floors_cleared"])
+    if first:
+        print(f"[ЛИМИТ] {FLOOR_FINISH.reason} Дохожу до точки сохранения и останавливаюсь.")
+    return reason
+
 
 def handle_rollback_failure(result, game_window, sct):
     """Откат не удался: пишем причину, шлём в Telegram текст и скриншот, ставим мягкую паузу.
@@ -349,6 +349,14 @@ def run_rollback(game_window, sct, press_retry=True):
     handle_rollback_failure(result, game_window, sct)
     return False
 
+def count_cleared_floors():
+    """Этаж пройден, когда бот активировал точку сохранения и увидел окно награды (задача 14)."""
+    floors = session_limits.FLOORS.take()
+    if floors:
+        SESSION_STATS["floors_cleared"] += floors
+        add_metrics_bulk({"floors": floors}, is_bot=True)
+        print(f"[СТАТИСТИКА] Этажей: {SESSION_STATS['floors_cleared']}")
+
 def count_cleared_room(x2):
     """Комната пройдена: статистика сессии и дня, строка [СТАТИСТИКА]. Возвращает номер комнаты."""
     global ROOM_AUTO_ROLLBACKS
@@ -357,9 +365,6 @@ def count_cleared_room(x2):
     WATCHDOG.progress()
 
     bulk_updates = {"rooms": 1}
-
-    if SESSION_STATS["rooms_cleared"] % 5 == 0:
-        bulk_updates["floors"] = 1
 
     if x2:
         SESSION_STATS["titanite_gathered"] += 12
@@ -1047,6 +1052,7 @@ with mss.MSS() as sct:
             CURRENT_ENEMIES = []
             
             STATE = smart_navigate_hallway(game_window, sct)
+            count_cleared_floors()
             continue
                 
         elif STATE == "ROOM_SELECTION":

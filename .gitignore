@@ -1,4 +1,4 @@
-# === Python & Environment ===
+# === Python ===
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,20 +6,28 @@ __pycache__/
 venv/
 ENV/
 
-# === Секреты и локальные профили ===
+# === Секреты и личные настройки ===
 .env
 profile.yml
+profile.yml.bak
 
-# === Логи, Метрики и Машинное обучение ===
-# logs/
-# *.log
-# *.jsonl
-# *.csv
-# stats.json
-
-# === Флаги состояний и Дампы памяти (Computer Vision) ===
+# === Всё, что бот и окно программы пишут на ПК ===
+bot_data/
 pause.flag
+stats.json
 temp_sos.png
+temp_test.png
+
+# === Ваши логи, замечания и скриншоты сессий (разбор сессий — не в репозитории) ===
+logs/
+
+# === Картинки-шаблоны и служебные скрипты ===
+# Картинки, которые уже лежат в репозитории, git продолжает отслеживать.
+# Новую картинку в репозиторий добавлять так: git add -f assets/имя.png
+assets/
+assets_db.py
+pack_assets.py
+make_backup.py
 
 # === Бинарники и сторонние утилиты ===
 *.exe
@@ -27,34 +35,13 @@ temp_sos.png
 scrcpy-server
 scrcpy-noconsole.vbs
 
-# === ЗАЩИТА ИС (Скрываем визуальные шаблоны, если нужно) ===
-assets/
-# Картинки, которые уже лежат в репозитории, git продолжает отслеживать.
-# Новую картинку в репозиторий добавлять так: git add -f assets/имя.png
+# === Сборка PyInstaller ===
+build/
+dist/
+*.spec
 
 # === OS & IDE ===
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-
-# Сборка PyInstaller
-build/
-dist/
-*.spec
-
-# Кэш Python
-__pycache__/
-*.pyc
-*.pyo
-
-# Логи и локальная база бота
-# Всё, что бот пишет на ПК (лог, замеры), лежит здесь
-bot_data/
-
-pause.flag
-temp_sos.png
-# profile.yml
-pack_assets.py
-make_backup.py
-assets_db.py

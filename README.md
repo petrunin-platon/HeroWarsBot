@@ -1,12 +1,22 @@
 # Hero Wars: Knowledge Engine Bot 🤖⚔️
 
-![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
+![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-red)
 ![UI](https://img.shields.io/badge/UI-CustomTkinter-green)
 
 Game: [Nexters](https://www.nexters.com/en/hero-wars)
 
-Imagine a player who never gets tired, never loses focus, instantly reacts when an ally's health drops, and remembers the exact stats of every single battle. That's the **Knowledge Engine Bot** — an autonomous RPA (Robotic Process Automation) agent built for *Hero Wars*.
+The **Knowledge Engine Bot** is a learning project: an RPA (Robotic Process Automation) agent that watches the screen of a *Hero Wars* session mirrored from a phone, reads Titan health and energy, keeps a history of every battle and chooses a team by rules. It was written to study computer vision, state machines and rule engines.
+
+> ### ⚠️ Educational project / Учебный проект
+> This project was created **solely for learning and for testing code** (computer vision, state machines, automation of a
+> mobile game through a screen mirror). It is not a product and it is not meant for gaining an unfair advantage.
+> The rules of *Hero Wars* may restrict or forbid third-party automation programs; I have not checked what the game's
+> terms say. Using anything from this repository in the real game is **at your own risk** — the author takes no
+> responsibility for blocked accounts or any other consequences.
+>
+> Проект сделан **исключительно в учебных целях — чтобы учиться и проверять код**. Правила игры могут ограничивать
+> или запрещать сторонние программы; автор их не проверял. Использование в настоящей игре — на ваш страх и риск.
 
 ![Dashboard](docs/screenshots/undergraund_1.jpg)
 ![Dashboard](docs/screenshots/undergraund_2.jpg)
@@ -15,7 +25,7 @@ Unlike basic auto-clickers that blindly tap the same spots on the screen and bre
 
 *   **It sees (Computer Vision):** The bot literally watches your PC screen using OpenCV algorithms. It detects enemy icons and calculates Titan health (HP) and energy levels on the fly using HSV color masks. Since it relies on relative math (percentages) rather than hardcoded pixels, it doesn't care what your monitor's resolution is — it just adapts.
 *   **It thinks (State Machine):** The core of the bot runs on a "State Machine" architecture. The software always knows exactly what's happening right now (whether it's standing in the hallway, picking a team, or fighting). This means game animations or emulator lags won't cause it to freeze or glitch out.
-*   **It plays fair:** The bot **does not** mess with the game files, it doesn't inject code into RAM, and it doesn't hook into private APIs. It controls the game strictly by looking at your phone's screen mirror (`scrcpy`) and imitating real mouse movements and clicks. To any anti-cheat system out there, it just looks like a highly focused, very methodical human sitting at the keyboard.
+*   **It stays outside the game:** The bot **does not** touch the game files, it doesn't inject code into RAM, and it doesn't hook into private APIs. It only looks at your phone's screen mirror (`scrcpy`) and sends taps and swipes through ADB. Its actions are deliberately human-paced: random tap points inside a button, a reaction pause before every tap, no more than two taps per second. This is a design choice for a learning project, not a guarantee that a game would not notice it (see the note above).
 
 ---
 
@@ -60,7 +70,10 @@ The project relies on a modular architecture where every piece has its own stric
     *   Implements the Singleton pattern to cache loaded images directly in RAM (`TEMPLATE_CACHE`). It also includes a custom `imread_cyrillic` wrapper for safe file reading on Windows.
     *   Analyzes Titan HP and Energy by applying color HSV masks (isolating green and yellow-white pixels) and calculating their width relative to the base screen resolution.
 *   **Rules Engine (`rules_engine.py`):** The decision-making core. It parses your `profile.yml` and room configs. It strictly follows priorities: first, it checks "rescue" rules (critical HP/Energy drops), and only then applies tactical rules (counter-packs against specific enemies).
-*   **Machine Learning & Analytics (`analytics_parser.py`):** Every battle is logged into a `.jsonl` file. The analytics module calculates the winrate of each team. If a combo hits a Winrate >= 80% over several fights, the algorithm suggests embedding it into the bot's Knowledge Base as a "Golden Rule".
+*   **Analytics (`analytics.py`, `ui/analytics_tab.py`):** Every battle is logged into a `.jsonl` file. The analytics tab calculates the winrate of each team. If a combo hits a Winrate >= 80% over several fights, it can be added to the bot's Knowledge Base as a "Golden Rule" (the bot can also add such rules by itself).
+*   **Own decisions (`tactics.py`, `battle_verdict.py`):** After each fight the bot judges whether it went badly (a Titan died, HP below the panic threshold, too much HP lost). With the "Bot decides itself" switch it rolls the fight back and replays with a backup pack, picks the door by Titans' health, builds a healing pack on its own, and decides alone if you do not answer the SOS window in time.
+*   **Stuck protection (`stuck_guard.py`):** Time limits for every state and a watchdog (5 minutes without a cleared room → screenshot, Telegram alert, smart restart). A locked PC (Win+L) no longer crashes the bot — it waits for the screen to come back.
+*   **Session report (`session_log.py`, `session_limits.py`):** Timings of every stage of every room, a summary block at the end of a session and the same summary in Telegram. Floors are counted by the save point, and when a session limit (time, rooms, Titanite) is reached the bot finishes the current floor first.
 
 ---
 
@@ -75,7 +88,7 @@ This is the heart of the bot. Everything you need to control the farming process
 *   **Simple 2-Click Launch:** First, link your phone (`1. Connect phone`), then fire up the bot (`2. Start farming`). No need to type any console commands.
 *   **Direct Device Control:** The `Wake`, `Sleep`, and `Restart` buttons let you manage your phone's screen directly from your PC. You can actually turn the physical screen off to save battery and prevent burn-in while the bot keeps playing in the background.
 *   **Safety & Control:** The `Soft pause` button tells the bot to finish the current battle, walk out to the hallway, and wait for you. `Emergency STOP` instantly kills the bot process if something goes wrong.
-*   **Live Terminal:** The black console window shows exactly what the bot is thinking and doing in real-time (which room it found, what team it picked, HP stats). You can quickly save these logs or send them to the developer with a single click.
+*   **Live Terminal:** The black console window shows exactly what the bot is thinking and doing in real-time (which room it found, what team it picked, HP stats). The log is also saved by the bot itself into `bot_data/logs/` (see below), so the "Save log" button is optional.
 
 ### ⚙️ Smart Rule Builder & Session Master:
 A visual constructor that lets you create dynamic, custom tactics. You can command the bot to soft-pause or swap the team if a specific Titan's HP drops below a critical threshold, or if it encounters specific dangerous enemies.
@@ -104,7 +117,7 @@ The bot doesn't just blindly farm the Dungeon; it actively learns from every bat
 ![Statistics](docs/screenshots/statistics.png)
 
 To keep track of your daily progress, the bot features a comprehensive, built-in analytics dashboard.
-*   **Smart Counters:** It tracks everything: total titanite, floors cleared, and Titan Potions earned. Large numbers are automatically formatted for a cleaner look (e.g., 16.4K instead of 16400).
+*   **Smart Counters:** It tracks everything: total titanite, floors cleared (counted by the save point, not guessed from the room count), and Titan Potions earned. Large numbers are automatically formatted for a cleaner look (e.g., 16.4K instead of 16400).
 *   **Lightweight Native Chart:** The daily titanite activity bar chart is drawn entirely from scratch using the native `Canvas` widget. This keeps the app extremely lightweight because we didn't have to pack heavy data science libraries into the executable.
 *   **Game-Day Logic:** Hero Wars resets the daily cap at 5:00 AM. The bot accounts for this by applying a time-shift to all its logs, ensuring that a late-night farming session is correctly assigned to the previous game-day.
 *   **Foolproof Synchronization:** If you play a few runs manually on your phone, you can just type your current titanite into the `Sync` field. The algorithm calculates the delta and updates your rooms and potions accordingly. It even has a built-in safeguard: the bot strictly remembers how much it farmed autonomously and will reject any manual input lower than its own baseline.
@@ -121,24 +134,40 @@ The bot keeps you in the loop, even when you're miles away from your PC.
 
 ---
 
-## 🚀 Installation & Launch (Standalone Release)
+## 🗂 Where the bot keeps its data
 
-For ease of use, the project has been compiled into a standalone `.exe` version for personal use. Download it and enjoy farming to your health!
-1. Download the latest release archive from the repository.
-2. Extract the archive into any folder on your PC.
-3. Run the executable file to launch the Control Dashboard.
+Everything the bot and the window write by themselves goes into one folder, `bot_data/` (it is not part of the repository):
 
-**🛑 CRITICAL NOTE ON ASSETS (Anti-Theft Protection)**
-The bot's interface will launch successfully, but **it will NOT be able to play** out of the box. 
-To protect this project from unfair commercial copying and resale, the `assets/` directory (which contains the OpenCV image templates for game UI, buttons, and Titan avatars) has been **deliberately excluded** from the public release. 
-Because the bot relies heavily on Computer Vision, it will be "blind" without these files. You will need to manually capture screenshots of the game elements and place them in your local `assets/` folder, or contact the developer for the resource pack.
+| What | Where |
+|---|---|
+| Statistics | `bot_data/stats.json` |
+| Working rules (copied from the default `rules/` on first start) | `bot_data/rules/*.yml` |
+| Battle history, bot log, stage timings | `bot_data/logs/` — the newest 20 files of each kind are kept, older ones are deleted automatically |
+| Screenshots for troubleshooting (SOS window, stuck bot) | `bot_data/debug/` — the newest 50 are kept |
+| Titans' HP and energy after the last fight (same game day) | `bot_data/titan_state.json` |
+| Copy of the profile (contains the Telegram token — keep it private) | `bot_data/profile.yml.bak` |
+
+All settings are changed in the program window; you never need to edit `profile.yml` by hand. Your own `profile.yml` is kept out of git.
+
+---
+
+## 🚀 Running the code (for study)
+
+This repository is source code to read and learn from. It is **not** distributed as a ready-made program, and no compiled `.exe` is published here.
+
+1. Install Python 3.11 or newer (tick "Add python.exe to PATH") and [scrcpy](https://github.com/Genymobile/scrcpy) (it includes `adb`). Check in `cmd`: `adb devices` must show your phone as `device`.
+2. On the phone enable **USB debugging** and **USB debugging (Security settings)** (see the troubleshooting section below).
+3. Run `start.bat` from the project folder. The first start creates a `venv` and installs `requirements.txt`, then opens the program window.
+4. In the window: `1. Connect phone` → open the game → `2. Start farming`.
+
+**About the image templates.** The bot recognizes the game screen by comparing it with small template pictures (buttons, Titan icons). These pictures are game artwork and are **not** included in this repository (`assets/` is in `.gitignore`). Without them the program window opens, but the bot cannot recognize anything; you would have to make your own screenshots of the game elements.
 
 ---
 
 ## ⚠️ Important Notes & Troubleshooting
 
 ### 🛡️ Antivirus False Positives (Windows Defender)
-Because this bot utilizes low-level Windows API calls (`ctypes`), screen capturing, and ADB (Android Debug Bridge) to automate processes, **Windows Defender or other antivirus software may occasionally flag the compiled `.exe` file as a threat**. 
+If you compile the program into an `.exe` yourself (PyInstaller): because it uses low-level Windows API calls (`ctypes`), screen capturing, and ADB (Android Debug Bridge), **Windows Defender or other antivirus software may occasionally flag the compiled `.exe` file as a threat**. 
 * This is a very common **false positive** for compiled Python RPA (Robotic Process Automation) tools.
 * If the bot gets blocked from launching or is automatically removed by the system, please **add the bot's executable or folder to your antivirus exceptions/exclusions list**.
 
@@ -160,4 +189,5 @@ This project is licensed under the **PolyForm Noncommercial 1.0.0** License.
 The software is provided free of charge strictly for **personal use**. Commercial redistribution, selling of this bot, embedding it into paid services, or claiming it as your own commercial product is **strictly prohibited**.
 
 ---
-**Developed with ❤️ by Platon Petrunin. Created using 🤖 AI Gemini** 
+**Developed by Platon Petrunin with the help of AI: 🤖 Google Gemini and 🤖 Anthropic Claude.**
+Made for learning and for testing code. / Сделано в учебных целях и для проверки кода.

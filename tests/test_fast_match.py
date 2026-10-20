@@ -1,5 +1,5 @@
 # Тесты задачи 11: быстрый поиск картинок находит то же самое, что и раньше, и в 2+ раза быстрее.
-# Скриншоты пользователя: окна результата (54.png, 111.png — сессия 01-02; 01.png — сессия 06),
+# Скриншоты пользователя: окна результата (tests/data/screens: result_54, result_111, s06_01),
 # экраны выбора команды (pered_boem.png, сессия 04, сессия 09), коридор (сессия 04).
 # «Раньше» — обычный cv2.matchTemplate по всему снимку, как бот искал до задачи 11.
 import os
@@ -16,12 +16,12 @@ np = pytest.importorskip("numpy")
 
 import vision  # noqa: E402
 
-LOGS = os.path.join(os.path.dirname(__file__), "..", "logs")
+SCREENS = os.path.join(os.path.dirname(__file__), "data", "screens")
 RESULT_PACK = ["araji", "hyperion", "rigel", "iyari", "lumira"]
 
 
 def shot(path):
-    return cv2.imread(os.path.join(LOGS, path))
+    return cv2.imread(os.path.join(SCREENS, path))
 
 
 def calibrated(img):
@@ -46,7 +46,7 @@ def geometry(monkeypatch):
 
 def result_game(name):
     """Окно игры 1590x704 из скриншотов сессии 01-02 (как в tests/test_result_scan.py)."""
-    return shot(os.path.join("session_01-02", "screens", name))[78:78 + 704, 58:58 + 1590]
+    return shot(name)[78:78 + 704, 58:58 + 1590]
 
 
 def use_result_geometry(monkeypatch):
@@ -82,7 +82,7 @@ def assert_same_as_plain(game, name, threshold):
 def test_fast_scores_equal_plain_on_whole_screen(monkeypatch):
     """match_scores: везде, где совпадение не ниже порога, — те же числа, что у cv2.matchTemplate."""
     use_result_geometry(monkeypatch)
-    game = result_game("54.png")
+    game = result_game("result_54.webp")
     for name, threshold in [("res_araji.png", 0.62), ("res_rigel.png", 0.62), ("res_moloch.png", 0.62),
                             ("btn_ok.png", 0.8), ("badge_x2.png", 0.75), ("araji.png", 0.88)]:
         template = vision.imread_cyrillic(name)
@@ -95,8 +95,8 @@ def test_fast_scores_equal_plain_on_whole_screen(monkeypatch):
 
 
 @pytest.mark.parametrize("name, present", [
-    ("54.png", ["btn_ok.png", "badge_x2.png"]),
-    ("111.png", ["btn_ok.png"]),
+    ("result_54.webp", ["btn_ok.png", "badge_x2.png"]),
+    ("result_111.webp", ["btn_ok.png"]),
 ])
 def test_result_buttons_found_in_their_area(monkeypatch, name, present):
     use_result_geometry(monkeypatch)
@@ -108,12 +108,12 @@ def test_result_buttons_found_in_their_area(monkeypatch, name, present):
 
 def test_result_window_session06_buttons(geometry):
     """Окно результата сессии 06 (01.png): «Ещё раз», «ОК» и значок «x2» — внизу, в своих частях экрана."""
-    game = geometry(shot(os.path.join("session_06", "screens", "01.png"))[:745, :1597])
+    game = geometry(shot("s06_01.webp")[:745, :1597])
     for n, thr in [("btn_ok.png", 0.8), ("btn_retry.png", 0.75), ("badge_x2.png", 0.75)]:
         assert assert_same_as_plain(game, n, thr), n
 
 
-@pytest.mark.parametrize("name", ["54.png", "111.png"])
+@pytest.mark.parametrize("name", ["result_54.webp", "result_111.webp"])
 def test_result_icons_in_band_same_as_whole_screen(monkeypatch, name):
     """Иконки на окне результата ищутся только в их полосе — места и совпадения те же, что по всему снимку."""
     import analyzer
@@ -170,9 +170,9 @@ def test_result_window_reads_same_as_before(geometry, name, expected):
 
 
 TEAM_SCREENS = [
-    os.path.join("session_01-02", "screens", "pered_boem.png"),
-    os.path.join("session_09", "screens", "araji_i_vulkan_v_slotah.png"),
-    os.path.join("session_09", "screens", "umbra_v_slote.png"),
+    "pered_boem.webp",
+    "s09_araji_i_vulkan_v_slotah.webp",
+    "s09_umbra_v_slote.webp",
 ]
 
 
@@ -201,9 +201,9 @@ def test_team_screen_same_as_before(geometry, path):
 
 
 @pytest.mark.parametrize("path", [
-    os.path.join("session_04", "screens", "sleva_napravo_ostanovka_dveri.jpg"),
-    os.path.join("session_04", "screens", "spravo_nalevo_ostanovka_dveri.jpg"),
-    os.path.join("session_04", "screens", "spravo_nalevo_dver_v_puti.jpg"),
+    "s04_sleva_napravo_ostanovka_dveri.jpg",
+    "s04_spravo_nalevo_ostanovka_dveri.jpg",
+    "s04_spravo_nalevo_dver_v_puti.jpg",
 ])
 def test_hallway_flag_same_as_before(geometry, path):
     game = geometry(shot(path))
@@ -259,7 +259,7 @@ def test_steps_at_least_twice_faster(monkeypatch, geometry, one_thread, capsys):
 
     # 1. Окно результата: 5 иконок титанов + полоски (раньше — каждая иконка по всему снимку)
     use_result_geometry(monkeypatch)
-    game = result_game("54.png")
+    game = result_game("result_54.webp")
     rect = {"top": 0, "left": 0, "width": 1590, "height": 704}
     sct = GameSct(game)
 
@@ -302,7 +302,7 @@ def test_steps_at_least_twice_faster(monkeypatch, geometry, one_thread, capsys):
                  best_time(lambda: tm.read_slots(names, team_rect, team_sct))))
 
     # 4. Коридор, один шаг: «Атаковать», флажок, «Активировать» (раньше — три снимка, каждый по всему окну)
-    hall = geometry(shot(os.path.join("session_04", "screens", "sleva_napravo_ostanovka_dveri.jpg")))
+    hall = geometry(shot("s04_sleva_napravo_ostanovka_dveri.jpg"))
     hh, hw = hall.shape[:2]
     hall_rect = {"top": 0, "left": 0, "width": hw, "height": hh}
     hall_sct = GameSct(hall)

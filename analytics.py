@@ -8,15 +8,23 @@ import data_paths
 # 1. История боёв лежит в bot_data/logs/ (создаём папку и один раз копируем туда старые файлы из logs/)
 LOG_DIR = data_paths.logs_dir()
 
-# 2. РОТАЦИЯ ЛОГОВ (Оставляем не более 20 файлов каждого типа). Только в bot_data/logs/, ваша папка logs/ не трогается
+# 2. РОТАЦИЯ ЛОГОВ. Только в bot_data/, ваша папка logs/ не трогается.
+# История боёв, лог бота и замеры сессий — не более 20 файлов каждого типа; скриншоты для разбора — не более 50 (задача 14).
+# battle_log.csv и stats.json не ротируются: они растут на пару строк за бой и за день.
+DEBUG_KEEP = 50
+
+def _rotate(pattern, keep):
+    files = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+    for old_file in files[keep:]:
+        try:
+            os.remove(old_file)
+        except Exception as e:
+            print(f"[АНАЛИТИКА] Ошибка при удалении старого файла '{old_file}': {e}")
+
 def rotate_logs():
-    for ext in ["*.jsonl", "*.txt"]:
-        files = sorted(glob.glob(f"{LOG_DIR}/{ext}"), key=os.path.getmtime, reverse=True)
-        for old_file in files[20:]:
-            try: 
-                os.remove(old_file)
-            except Exception as e: 
-                print(f"[АНАЛИТИКА] Ошибка при удалении старого лога '{old_file}': {e}")
+    for pattern in ["*.jsonl", "*.txt", "timings_*.csv"]:
+        _rotate(f"{LOG_DIR}/{pattern}", 20)
+    _rotate(f"{data_paths.DEBUG_DIR}/*.png", DEBUG_KEEP)
 
 rotate_logs()
 

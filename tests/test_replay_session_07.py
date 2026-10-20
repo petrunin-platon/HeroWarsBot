@@ -1,5 +1,5 @@
-# Задачи 9б и 9в: «повтор» сессии 07 (20.10.2026, 105 комнат) по логу бота logs/session_07/bot_log_2026-10-20_10-25-12.txt.
-# Ваше замечание (logs/session_07/observations.txt):
+# Задачи 9б и 9в: «повтор» сессии 07 (20.10.2026, 105 комнат) по логу бота tests/data/session_07_bot_log.txt (копия из logs/session_07).
+# Ваше замечание (замечания сессии 07):
 #  - комната 54: Араджи вошёл в огонь раненым (36%) — правильно поставить Молоха и Вулкана, но не запоминать анти-пак;
 #  - комната 74: все здоровы — обычный пак огня, а не пак с Алекто;
 #  - комната 104: обычный пак.
@@ -18,7 +18,7 @@ import tactics
 from battle_verdict import evaluate_battle
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG = os.path.join(ROOT, "logs", "session_07", "bot_log_2026-10-20_10-25-12.txt")
+LOG = os.path.join(ROOT, "tests", "data", "session_07_bot_log.txt")
 
 FIRE_BASE = ["araji", "ignis", "acheron"]
 FIRE_MOLOCH = ["araji", "ignis", "acheron", "vulcan", "moloch"]

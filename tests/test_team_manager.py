@@ -1,5 +1,5 @@
 # Тесты задачи 7: проверка состава одним снимком экрана.
-# Распознавание проверяем на настоящем скриншоте пользователя (logs/session_01-02/screens/pered_boem.png):
+# Распознавание проверяем на настоящем скриншоте пользователя (tests/data/screens/pered_boem.webp):
 # окно scrcpy 1592x741, сверху рамка окна 28 px, внизу в слотах стоят amon, hyperion, iyari, lumira, rigel.
 import os
 import sys
@@ -14,7 +14,7 @@ np = pytest.importorskip("numpy")
 
 import team_manager as tm  # noqa: E402
 
-SCREEN = os.path.join(os.path.dirname(__file__), "..", "logs", "session_01-02", "screens", "pered_boem.png")
+SCREEN = os.path.join(os.path.dirname(__file__), "data", "screens", "pered_boem.webp")
 IN_SLOTS = {"amon", "hyperion", "iyari", "lumira", "rigel"}
 IN_GRID_ONLY = {"angus", "araji", "mairi", "moloch", "nova", "sigurd", "solaris", "tidus", "verdok"}
 
@@ -124,9 +124,9 @@ def test_slot_names_include_target_pack_extras(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Задача 11: слоты и сетка на скриншотах сессии 09 (logs/session_09/screens/, окно 1592x741, рамка 28 px)
+# Задача 11: слоты и сетка на скриншотах сессии 09 (tests/data/screens/s09_*.webp, окно 1592x741, рамка 28 px)
 # ---------------------------------------------------------------------------
-SESSION09 = os.path.join(os.path.dirname(__file__), "..", "logs", "session_09", "screens")
+SESSION09 = os.path.join(os.path.dirname(__file__), "data", "screens")
 
 
 def load09(name):
@@ -155,10 +155,10 @@ def game09(screen):
 
 
 @pytest.mark.parametrize("name, expected", [
-    ("araji_i_vulkan_v_slotah.png", ["araji", "vulcan"]),
-    ("alecto_i_umbra_v_slotah.png", ["umbra", "alecto"]),
-    ("alecto_v_slote.png", ["alecto"]),
-    ("umbra_v_slote.png", ["umbra"]),
+    ("s09_araji_i_vulkan_v_slotah.webp", ["araji", "vulcan"]),
+    ("s09_alecto_i_umbra_v_slotah.webp", ["umbra", "alecto"]),
+    ("s09_alecto_v_slote.webp", ["alecto"]),
+    ("s09_umbra_v_slote.webp", ["umbra"]),
 ])
 def test_session09_slots(game09, name, expected):
     sct = FakeSct(load09(name))
@@ -172,8 +172,8 @@ def test_slots_are_right_aligned(game09, screen):
     full_sct, _ = screen
     _, full = tm.read_slots(tm.slot_titan_names(), game09, full_sct)
     xs = sorted(full.values())
-    _, one = tm.read_slots(tm.slot_titan_names(), game09, FakeSct(load09("alecto_v_slote.png")))
-    _, two = tm.read_slots(tm.slot_titan_names(), game09, FakeSct(load09("araji_i_vulkan_v_slotah.png")))
+    _, one = tm.read_slots(tm.slot_titan_names(), game09, FakeSct(load09("s09_alecto_v_slote.webp")))
+    _, two = tm.read_slots(tm.slot_titan_names(), game09, FakeSct(load09("s09_araji_i_vulkan_v_slotah.webp")))
     assert abs(one["alecto"] - xs[4]) <= 5
     assert abs(two["araji"] - xs[3]) <= 5 and abs(two["vulcan"] - xs[4]) <= 5
 
@@ -182,7 +182,7 @@ def test_alecto_in_grid_is_where_alecto_is_not_on_umbra(game09):
     """Сессии 08 и 09: бот «ставил Алекто», а в слот вставала Умбра — она в том же столбце сетки, на ряд ниже.
     На скриншоте Алекто находится на своём месте, лучше всех совпадает именно там, а Умбра — на своём."""
     import vision
-    sct = FakeSct(load09("umbra_v_slote.png"))  # Умбра в слоте, Алекто в сетке без галочки
+    sct = FakeSct(load09("s09_umbra_v_slote.webp"))  # Умбра в слоте, Алекто в сетке без галочки
     frame = vision.game_frame(game09, sct)
     names = tm.slot_titan_names()
     in_grid = tm.best_per_spot(tm.match_many_on_frame(names, game09, sct, tm.TITAN_THRESHOLD, tm.GRID_AREA, frame=frame))
@@ -191,7 +191,7 @@ def test_alecto_in_grid_is_where_alecto_is_not_on_umbra(game09):
     assert umbra["y"] - alecto["y"] > alecto["h"]             # Алекто на ряд выше Умбры
     assert tm.better_titan_here("alecto", alecto, frame, names) is None
     # Алекто в слоте — в сетке у неё галочка, и бот её там не находит (ставить её не нужно)
-    assert "alecto" not in tm.match_many_on_frame(["alecto"], game09, FakeSct(load09("alecto_v_slote.png")),
+    assert "alecto" not in tm.match_many_on_frame(["alecto"], game09, FakeSct(load09("s09_alecto_v_slote.webp")),
                                                   tm.TITAN_THRESHOLD, tm.GRID_AREA)
 
 
@@ -241,11 +241,11 @@ def test_settled_needs_two_same_shots(game09, monkeypatch):
     """Сессия 09: на снимке посреди анимации «видно» нужный состав, а на следующем — уже другой.
     Раньше бот принимал первый снимок; теперь нужно два одинаковых подряд."""
     monkeypatch.setattr(tm, "SLOTS_SETTLE_TIMEOUT", 0.8)
-    sct = SequenceSct([load09("araji_i_vulkan_v_slotah.png"), load09("alecto_v_slote.png")])
+    sct = SequenceSct([load09("s09_araji_i_vulkan_v_slotah.webp"), load09("s09_alecto_v_slote.webp")])
     settled, slots = tm.wait_slots_settled(["araji", "vulcan"], tm.slot_titan_names(), game09, sct)
     assert not settled and set(slots) == {"alecto"}
 
-    sct = SequenceSct([load09("alecto_v_slote.png"), load09("araji_i_vulkan_v_slotah.png")])
+    sct = SequenceSct([load09("s09_alecto_v_slote.webp"), load09("s09_araji_i_vulkan_v_slotah.webp")])
     settled, slots = tm.wait_slots_settled(["araji", "vulcan"], tm.slot_titan_names(), game09, sct)
     assert settled and set(slots) == {"araji", "vulcan"} and sct.grabs == 3
 
@@ -268,7 +268,7 @@ def test_settled_looks_only_after_tap_reached_phone(game09):
             events.append("grab")
             return super().grab(rect)
 
-    sct = Recording(load09("araji_i_vulkan_v_slotah.png"))
+    sct = Recording(load09("s09_araji_i_vulkan_v_slotah.webp"))
     settled, _ = tm.wait_slots_settled(["araji", "vulcan"], tm.slot_titan_names(), game09, sct, last_tap=SlowTap())
     assert settled
     assert events.index("grab") > events.index("poll") and events[:3] == ["poll"] * 3
@@ -276,7 +276,7 @@ def test_settled_looks_only_after_tap_reached_phone(game09):
 
 def test_swipe_waits_until_grid_stops(game09, monkeypatch):
     """После свайпа сетка едет по инерции (40 → 12 → 3 пикселя за снимок) — титанов ищем, только когда она встала."""
-    base = load09("umbra_v_slote.png")
+    base = load09("s09_umbra_v_slote.webp")
 
     def scrolled(d):
         img = base.copy()
