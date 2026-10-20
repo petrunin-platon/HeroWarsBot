@@ -6,7 +6,7 @@
 
 Game: [Nexters](https://www.nexters.com/en/hero-wars)
 
-Imagine a player who never gets tired, never loses focus, instantly reacts when an ally's health drops, and remembers the exact stats of every single battle. That's the **Knowledge Engine Bot** — an autonomous RPA (Robotic Process Automation) agent built for *Hero Wars*.
+The **Knowledge Engine Bot** is a learning project: an RPA (Robotic Process Automation) agent that watches the screen of a *Hero Wars* session mirrored from a phone, reads Titan health and energy, keeps a history of every battle and chooses a team by rules. It was written to study computer vision, state machines and rule engines.
 
 > ### ⚠️ Educational project / Учебный проект
 > This project was created **solely for learning and for testing code** (computer vision, state machines, automation of a
@@ -151,24 +151,23 @@ All settings are changed in the program window; you never need to edit `profile.
 
 ---
 
-## 🚀 Installation & Launch (Standalone Release)
+## 🚀 Running the code (for study)
 
-For ease of use, the project has been compiled into a standalone `.exe` version for personal use. Download it and enjoy farming to your health!
-1. Download the latest release archive from the repository.
-2. Extract the archive into any folder on your PC.
-3. Run the executable file to launch the Control Dashboard.
+This repository is source code to read and learn from. It is **not** distributed as a ready-made program, and no compiled `.exe` is published here.
 
-**🛑 CRITICAL NOTE ON ASSETS (Anti-Theft Protection)**
-The bot's interface will launch successfully, but **it will NOT be able to play** out of the box. 
-To protect this project from unfair commercial copying and resale, the `assets/` directory (which contains the OpenCV image templates for game UI, buttons, and Titan avatars) has been **deliberately excluded** from the public release. 
-Because the bot relies heavily on Computer Vision, it will be "blind" without these files. You will need to manually capture screenshots of the game elements and place them in your local `assets/` folder, or contact the developer for the resource pack.
+1. Install Python 3.11 or newer (tick "Add python.exe to PATH") and [scrcpy](https://github.com/Genymobile/scrcpy) (it includes `adb`). Check in `cmd`: `adb devices` must show your phone as `device`.
+2. On the phone enable **USB debugging** and **USB debugging (Security settings)** (see the troubleshooting section below).
+3. Run `start.bat` from the project folder. The first start creates a `venv` and installs `requirements.txt`, then opens the program window.
+4. In the window: `1. Connect phone` → open the game → `2. Start farming`.
+
+**About the image templates.** The bot recognizes the game screen by comparing it with small template pictures (buttons, Titan icons). These pictures are game artwork and are **not** included in this repository (`assets/` is in `.gitignore`). Without them the program window opens, but the bot cannot recognize anything; you would have to make your own screenshots of the game elements.
 
 ---
 
 ## ⚠️ Important Notes & Troubleshooting
 
 ### 🛡️ Antivirus False Positives (Windows Defender)
-Because this bot utilizes low-level Windows API calls (`ctypes`), screen capturing, and ADB (Android Debug Bridge) to automate processes, **Windows Defender or other antivirus software may occasionally flag the compiled `.exe` file as a threat**. 
+If you compile the program into an `.exe` yourself (PyInstaller): because it uses low-level Windows API calls (`ctypes`), screen capturing, and ADB (Android Debug Bridge), **Windows Defender or other antivirus software may occasionally flag the compiled `.exe` file as a threat**. 
 * This is a very common **false positive** for compiled Python RPA (Robotic Process Automation) tools.
 * If the bot gets blocked from launching or is automatically removed by the system, please **add the bot's executable or folder to your antivirus exceptions/exclusions list**.
 
