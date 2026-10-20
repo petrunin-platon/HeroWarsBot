@@ -11,7 +11,7 @@ global_thresholds:
   group_loss_titans: 3
   group_loss_percent: 40
 settings:
-  angus_manual_control: true
+  angus_manual_control: false
   auto_rollback: false
   auto_rollback_tries: 2
   telegram:

@@ -223,8 +223,6 @@ class RulesEngine:
         names = ", ".join(titan_name_ru(e) for e in enemies)
         rule = {"name": f"Золотое правило против: {names} (побед {wins} из {battles}, ХП {avg_hp:.0f}%)",
                 "condition": {"enemies_contain": enemies}, "team": list(team), "source": "golden"}
-        if "angus" in team:
-            rule["special_ult"] = "angus"
         self._save_rule_first(room_type, rule)
         return rule
 
@@ -272,18 +270,28 @@ class RulesEngine:
                 fired.append(rule.get("name", "правило отхила"))
         return ", ".join(fired)
 
+    def angus_line(self):
+        """Строка лога при запуске: как бот играет пак с Ангусом (задача 12)."""
+        if self.get_global_setting("angus_manual_control", False):
+            return ("[ТАКТИКА] Ангус: ручная ульта включена (переключатель во вкладке «Мастер правил»). "
+                    "Такой бой бот сам не откатывает.")
+        return "[ТАКТИКА] Ангус: бой автобоем, как в остальных комнатах."
+
     def special_ult_for(self, team):
         """Стратегия ульты для пака без правила: "angus", если Ангус в паке и включён его ручной контроль."""
         return self._resolve_special_ult(team, {})
 
     def _resolve_special_ult(self, team, rule):
+        """Ручная ульта Ангуса — только при включённом переключателе «Ручной контроль ульты Ангуса»
+        (задача 12). Пометка special_ult: angus в правиле без переключателя не действует: раньше бот
+        дописывал её к каждому запомненному правилу с Ангусом, и земля шла вручную (~40 с вместо ~27)."""
+        manual_angus = self.get_global_setting("angus_manual_control", False)
+        if not manual_angus:
+            return "auto"
         if rule.get("special_ult"):
             return rule.get("special_ult")
-        
-        manual_angus = self.get_global_setting("angus_manual_control", False)
-        if manual_angus and "angus" in team:
+        if "angus" in team:
             return "angus"
-            
         return "auto"
 
     def _evaluate_condition(self, condition, enemies, current_state):
@@ -333,8 +341,6 @@ class RulesEngine:
         global_delta = self.get_global_setting("max_hp_delta", 30)
         if success_loss is not None and success_loss > global_delta:
             new_rule["allowed_delta"] = int(success_loss)
-        if "angus" in team:
-            new_rule["special_ult"] = "angus"
 
         path = data_paths.rules_path(room_type)
         data = {"default_team": [], "rules": []}
