@@ -362,6 +362,27 @@ class SessionLog:
         lines.append("[ИТОГ] ==================================")
         return lines
 
+    def report_data(self, rooms, titanite, floors, now=None):
+        """Итог сессии для Telegram (задача 13, telegram_report.session_report): те же числа, что в [ИТОГ]."""
+        recs = self.records
+        by_room = {}
+        for r in recs:
+            by_room[r["room_type"]] = by_room.get(r["room_type"], 0) + 1
+        longest = sorted(recs, key=lambda r: r["total"], reverse=True)[:3]
+        return {
+            "reason": self.stop_reason,
+            "started": f"{self.started_at:%H:%M}",
+            "finished": f"{now or datetime.now():%H:%M}",
+            "seconds": self._clock() - self.started,
+            "rooms": rooms,
+            "floors": floors,
+            "titanite": titanite,
+            "by_room": by_room,
+            "counts": dict(self.totals),
+            "longest": [(r["room_no"], r["room_type"], r["total"]) for r in longest] if len(recs) > 1 else [],
+            "avg_room": sum(r["total"] for r in recs) / len(recs) if recs else None,
+        }
+
     def _adb_parts(self, shell_taps):
         """Строка [ИТОГ]: из чего складывается задержка нажатия (задача 11). Пустой список — замера нет."""
         check = self.adb_check or {}

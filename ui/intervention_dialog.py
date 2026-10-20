@@ -5,6 +5,7 @@ import yaml
 import threading
 from i18n import get_text
 from telegram_agent import TelegramAgent
+import telegram_report
 import data_paths
 
 class InterventionDialog(ctk.CTkToplevel):
@@ -81,15 +82,10 @@ class InterventionDialog(ctk.CTkToplevel):
                 print(f"[GUI] Ошибка чтения profile.yml для Telegram: {e}")
                 
         if token and chat_id:
-            self.tg_agent = TelegramAgent(token, chat_id)
-            msg = get_text(lang, "sos_title") + "\n\n"
-            
-            if not self.can_rollback and not self.is_manual:
-                msg += "⚠️ Нет правил для смены пака!\n\n"
-                
-            for titan, hp in titan_data.items():
-                titan_name = get_text(lang, f"titan_{titan}")
-                msg += f"➤ {titan_name.upper()}: {hp}% HP\n"
+            self.tg_agent = TelegramAgent(token, chat_id, lang)
+            # Подпись в Telegram (задача 13): комната, враги, причина и пак берутся из sos_info.json от бота
+            msg = telegram_report.sos_report(titan_data, telegram_report.read_sos_info(data_paths.sos_info_file()),
+                                             is_manual=self.is_manual, can_rollback=self.can_rollback, lang=lang)
                 
             msg_id = self.tg_agent.send_sos(data_paths.temp_sos_file(), msg, is_manual=self.is_manual, can_rollback=self.can_rollback)
             
