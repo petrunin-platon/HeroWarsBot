@@ -23,6 +23,10 @@ class DashboardFrame(ctk.CTkFrame):
         self.bot_process = None
         self.action_state = "start"
         self.scrcpy_process = None 
+        # Окна SOS и опросы Telegram, которые надо закрыть, если бот решил сам (строка [SOS_CLOSE], задача 9б).
+        # sos_epoch растёт при каждом таком решении: ответы из старых окон боту уже не отправляются
+        self.sos_windows = []
+        self.sos_epoch = 0
 
         self.grid_columnconfigure((0, 1), weight=1)
         self.grid_rowconfigure(3, weight=1)
@@ -340,6 +344,10 @@ class DashboardFrame(ctk.CTkFrame):
             if not line:
                 break
                 
+            if "[SOS_CLOSE]" in line:
+                # Вы не ответили, бот решил сам: закрываем его окна SOS (строка остаётся в логе)
+                self.after(0, self.close_sos_windows)
+
             if "[SOS_TRIGGER]" in line:
                 if "TEST_SUCCESS:" in line:
                     json_str = line.split("TEST_SUCCESS:")[1].strip()
@@ -385,25 +393,60 @@ class DashboardFrame(ctk.CTkFrame):
         self.after(0, lambda: self.append_log("\n[СИСТЕМА] Процесс бота завершен.\n"))
         self.after(0, self.reset_buttons)
 
+    def _track_sos(self, window):
+        """Запоминает окно (или опрос Telegram), которое закроется, если бот решит сам."""
+        self.sos_windows.append(window)
+        return window
+
+    def _answer_is_stale(self, epoch, command):
+        """Бот уже решил сам, пока окно было открыто: ответ из этого окна не отправляем."""
+        if epoch == self.sos_epoch:
+            return False
+        self.append_log(f"[GUI] Ответ «{command}» не отправлен: бот уже решил сам.\n")
+        return True
+
+    def _send_answer(self, command, epoch):
+        """Ответ боту на окно SOS (одна строка в stdin), если окно ещё не устарело."""
+        if self._answer_is_stale(epoch, command):
+            return
+        if self.bot_process and self.bot_process.poll() is None:
+            self.bot_process.stdin.write(command + "\n")
+            self.bot_process.stdin.flush()
+
+    def close_sos_windows(self):
+        """Бот решил сам ([SOS_CLOSE]): закрываем окна SOS, проверки пака и выбора пака, останавливаем опрос Telegram."""
+        self.sos_epoch += 1
+        for window in self.sos_windows:
+            try:
+                if not hasattr(window, "winfo_exists"):
+                    window.stop()  # опрос Telegram
+                elif window.winfo_exists():
+                    window.grab_release()
+                    window.destroy()
+            except Exception:
+                pass
+        self.sos_windows = []
+
     def trigger_sos_dialog(self, sos_data):
         from ui.intervention_dialog import InterventionDialog
+        epoch = self.sos_epoch
         def on_decision(command):
             if command == "stop":
+                if self._answer_is_stale(epoch, "STOP"):
+                    return
                 self.append_log(f"\n[СИСТЕМА] Выбрано: {command.upper()}. Мгновенная остановка!\n")
                 self.stop_bot()
             elif command == "manual":
                 # Бот не выключается: ждёт, пока вы пройдёте комнату руками и вернётесь в коридор
-                if self.bot_process and self.bot_process.poll() is None:
-                    self.bot_process.stdin.write("MANUAL\n")
-                    self.bot_process.stdin.flush()
+                self._send_answer("MANUAL", epoch)
             else:
-                if self.bot_process and self.bot_process.poll() is None:
-                    self.bot_process.stdin.write(command + "\n")
-                    self.bot_process.stdin.flush()
-        InterventionDialog(self.controller, titan_data={}, callback=on_decision, is_manual=False, can_rollback=False)
+                self._send_answer(command, epoch)
+        self._track_sos(InterventionDialog(self.controller, titan_data={}, callback=on_decision, is_manual=False,
+                                           can_rollback=False))
 
     def trigger_test_validation(self, titan_data, source="gui"):
         lang = getattr(self.controller, 'current_lang', 'RU')
+        epoch = self.sos_epoch
         if source == "telegram":
             import yaml
             from telegram_agent import TelegramAgent
@@ -424,14 +467,10 @@ class DashboardFrame(ctk.CTkFrame):
                 
                 def on_tg_decision(decision_text):
                     if decision_text == "CONFIRM":
-                        if self.bot_process and self.bot_process.poll() is None:
-                            self.bot_process.stdin.write("CONFIRM\n")
-                            self.bot_process.stdin.flush()
+                        self._send_answer("CONFIRM", epoch)
                     elif decision_text.startswith("rb_custom:"):
                         team_str = decision_text.split(":")[1]
-                        if self.bot_process and self.bot_process.poll() is None:
-                            self.bot_process.stdin.write(f"ROLLBACK_TG:{team_str}\n")
-                            self.bot_process.stdin.flush()
+                        self._send_answer(f"ROLLBACK_TG:{team_str}", epoch)
                             
                 msg = get_text(lang, "test_success") + "\n\n"
                 for titan, stats in titan_data.items():
@@ -441,11 +480,12 @@ class DashboardFrame(ctk.CTkFrame):
                     
                 msg_id = agent.send_test_result(data_paths.temp_test_file(), msg)
                 if msg_id:
+                    self._track_sos(agent)
                     agent.start_polling(msg_id, on_tg_decision)
                 return 
 
         from ui.team_selector import TeamSelectorDialog
-        dialog = ctk.CTkToplevel(self)
+        dialog = self._track_sos(ctk.CTkToplevel(self))
         dialog.title(get_text(lang, "test_title"))
         dialog.geometry("450x300")
         dialog.transient(self.controller)
@@ -462,9 +502,7 @@ class DashboardFrame(ctk.CTkFrame):
         ctk.CTkLabel(dialog, text=f"{get_text(lang, 'test_remains')}\n{stats_text}", font=ctk.CTkFont(size=14)).pack(pady=10)
         
         def on_confirm():
-            if self.bot_process and self.bot_process.poll() is None:
-                self.bot_process.stdin.write("CONFIRM\n")
-                self.bot_process.stdin.flush()
+            self._send_answer("CONFIRM", epoch)
             dialog.grab_release()
             dialog.destroy()
             
@@ -474,15 +512,14 @@ class DashboardFrame(ctk.CTkFrame):
             
             def on_team_selected(new_team):
                 if new_team == ["STOP_BOT"]:
-                    self.stop_bot()
+                    if not self._answer_is_stale(epoch, "STOP"):
+                        self.stop_bot()
                     return
                 if not new_team: return
                 team_str = ",".join(new_team)
-                if self.bot_process and self.bot_process.poll() is None:
-                    self.bot_process.stdin.write(f"ROLLBACK:{team_str}\n")
-                    self.bot_process.stdin.flush()
+                self._send_answer(f"ROLLBACK:{team_str}", epoch)
                     
-            TeamSelectorDialog(self.controller, on_team_selected, room_type="all", context="rollback")
+            self._track_sos(TeamSelectorDialog(self.controller, on_team_selected, room_type="all", context="rollback"))
             
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(pady=15)
@@ -493,42 +530,39 @@ class DashboardFrame(ctk.CTkFrame):
     def trigger_intervention(self, titan_data, is_manual=False):
         from ui.intervention_dialog import InterventionDialog
         from ui.team_selector import TeamSelectorDialog
+        epoch = self.sos_epoch
         
         def on_decision(decision_text):
             if decision_text == "rollback":
                 def on_team_selected(new_team):
                     if new_team == ["STOP_BOT"]:
-                        self.stop_bot()
+                        if not self._answer_is_stale(epoch, "STOP"):
+                            self.stop_bot()
                         return
                     if not new_team: return
                     team_str = ",".join(new_team)
-                    if self.bot_process and self.bot_process.poll() is None:
-                        self.bot_process.stdin.write(f"ROLLBACK:{team_str}\n")
-                        self.bot_process.stdin.flush()
-                TeamSelectorDialog(self.controller, on_team_selected, room_type="all", context="rollback")
+                    self._send_answer(f"ROLLBACK:{team_str}", epoch)
+                self._track_sos(TeamSelectorDialog(self.controller, on_team_selected, room_type="all", context="rollback"))
                 
             elif decision_text.startswith("rb_custom:"):
                 team_str = decision_text.split(":")[1]
-                if self.bot_process and self.bot_process.poll() is None:
-                    self.bot_process.stdin.write(f"ROLLBACK_TG:{team_str}\n")
-                    self.bot_process.stdin.flush()
+                self._send_answer(f"ROLLBACK_TG:{team_str}", epoch)
                     
             elif decision_text == "stop":
+                if self._answer_is_stale(epoch, "STOP"):
+                    return
                 self.append_log(f"\n[СИСТЕМА] Выбран {decision_text.upper()}. Мгновенная остановка бота для ручного вмешательства!\n")
                 self.stop_bot()
 
             elif decision_text == "manual":
                 # Бот не выключается: ждёт, пока вы пройдёте комнату руками и вернётесь в коридор
-                if self.bot_process and self.bot_process.poll() is None:
-                    self.bot_process.stdin.write("MANUAL\n")
-                    self.bot_process.stdin.flush()
+                self._send_answer("MANUAL", epoch)
                 
             else:
-                if self.bot_process and self.bot_process.poll() is None:
-                    self.bot_process.stdin.write(f"{decision_text.upper()}\n")
-                    self.bot_process.stdin.flush()
+                self._send_answer(decision_text.upper(), epoch)
                     
-        InterventionDialog(self.controller, titan_data=titan_data, callback=on_decision, is_manual=is_manual)
+        self._track_sos(InterventionDialog(self.controller, titan_data=titan_data, callback=on_decision,
+                                           is_manual=is_manual))
 
     def toggle_pause(self):
         lang = getattr(self.controller, 'current_lang', 'RU')

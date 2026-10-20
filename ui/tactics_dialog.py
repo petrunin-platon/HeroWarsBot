@@ -74,6 +74,13 @@ class TacticsDialog(ctk.CTkToplevel):
         self.opt_tries.set(str(self.values["auto_rollback_tries"]))
         self.opt_tries.pack(side="left")
 
+        # 1а. Через сколько минут без ответа на окно SOS бот решает сам (задача 9б)
+        row = ctk.CTkFrame(body, fg_color="transparent")
+        row.pack(anchor="w", pady=4)
+        ctk.CTkLabel(row, text=get_text(lang, "tac_sos_timeout")).pack(side="left", padx=(0, 10))
+        self.entry_sos_timeout = self._number_entry(row, self.values["sos_timeout_minutes"], tactics.MAX_SOS_TIMEOUT)
+        self.entry_sos_timeout.pack(side="left")
+
         # 2. Общие потери пака
         ctk.CTkLabel(body, text=get_text(lang, "tac_group_title"), font=bold).pack(anchor="w", pady=(14, 4))
         row = ctk.CTkFrame(body, fg_color="transparent")
@@ -205,6 +212,7 @@ class TacticsDialog(ctk.CTkToplevel):
                 personal[titan] = int(text)
         return {
             "auto_rollback_tries": int(self.opt_tries.get()),
+            "sos_timeout_minutes": number(self.entry_sos_timeout, self.values["sos_timeout_minutes"]),
             "group_loss_titans": number(self.entry_group_titans, self.values["group_loss_titans"]),
             "group_loss_percent": number(self.entry_group_percent, self.values["group_loss_percent"]),
             "titan_critical_hp": personal,
