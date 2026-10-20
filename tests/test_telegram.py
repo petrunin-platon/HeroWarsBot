@@ -153,23 +153,24 @@ def test_report_data_from_session_log():
 # ---------------------------------------------------------------------------
 # SOS и проверка пака
 # ---------------------------------------------------------------------------
-def test_sos_report_has_room_enemies_reason_and_bars():
-    info = {"room": "fire", "room_no": 54, "enemies": ["angus", "silva"],
+def test_sos_report_enemies_first():
+    # Замечание к задаче 13: главное в SOS — на кого шли. Враги сразу под заголовком, ХП пака — одной строкой ниже
+    info = {"room": "fire", "room_no": 54, "enemies": ["angus", "silva", "verdok"],
             "reason": "ARAJI: потерял 45% ХП (допуск 30%)",
             "team": {"araji": {"hp": 55, "energy": 47}, "ignis": {"hp": 0}, "acheron": {"hp": 0, "status": "ОТСУТСТВУЕТ"}},
             "hp_before": {"araji": 100}}
     text = tr.sos_report({"araji": 55}, info)
-    assert text.startswith("🆘 <b>Нужна ваша помощь</b>\nкомната 54 · 🔥 Огонь")
-    assert "⚔️ <b>Враги:</b> Ангус, Сильва" in text
-    assert "ARAJI: потерял 45% ХП" in text
-    assert "🟡 <b>Араджи</b>  <code>▰▰▰▰▰▰▱▱▱▱</code> 55% <i>(−45)</i> · ⚡47%" in text
-    assert "💀 <b>Игнис</b>" in text and "❔ <b>Ашерон</b> — не прочитано" in text
+    assert text.startswith("🆘 <b>Нужна ваша помощь</b>\nкомната 54 · 🔥 Огонь\n\n⚔️ <b>Враги — на кого шли:</b>\n"
+                           "   • <b>Ангус</b>\n   • <b>Сильва</b>\n   • <b>Вердок</b>")
+    assert text.index("Вердок") < text.index("Араджи: потерял 45% ХП") < text.index("🛡 Наш пак")
+    assert "ARAJI" not in text  # причина не как в логе
+    assert "🛡 Наш пак: 🟡 Араджи 55%  💀 Игнис 0%  ❔ Ашерон" in text
     assert len(text) <= tr.CAPTION_LIMIT
 
 
 def test_sos_report_without_info_and_no_team():
     text = tr.sos_report({"hyperion": 80}, {})
-    assert "🟢 <b>Гиперион</b>" in text and "Враги" not in text
+    assert "🟢 Гиперион 80%" in text and "Враги" not in text
     text = tr.sos_report({}, {"type": "NO_VALID_TEAM", "room": "earth", "enemies": [], "reason": "Нет пака"},
                          can_rollback=False)
     assert "Нет подходящего пака" in text and "не распознаны" in text and "🌿 Земля" in text
@@ -202,7 +203,8 @@ def test_test_report():
 def test_alert_escapes_and_shows_room():
     text = tr.alert("⚠️", "Откат боя не удался", ["пауза <нет>"], room="water", enemies=["tidus"], footer="Бот на паузе")
     assert text.startswith("⚠️ <b>Откат боя не удался</b>")
-    assert "пауза &lt;нет&gt;" in text and "💧 Вода" in text and "Тидус" in text and "<i>Бот на паузе</i>" in text
+    assert "пауза &lt;нет&gt;" in text and "💧 Вода" in text and "<i>Бот на паузе</i>" in text
+    assert text.index("⚔️ <b>Враги:</b> Тидус") < text.index("пауза")  # враги выше пояснения
 
 
 # ---------------------------------------------------------------------------
@@ -312,3 +314,8 @@ def test_no_telegram_token_in_repository():
 def test_unknown_room_is_not_shown():
     assert "Комната" not in tr.alert("🧊", "Бот завис", ["x"], room="unknown")
     assert tr.sos_report({"araji": 50}, {"room": "unknown", "room_no": 1}).startswith("🆘 <b>Нужна ваша помощь</b>\nкомната 1\n")
+
+
+def test_humanize_reason():
+    assert tr.humanize("ARAJI: ХП 12% ниже порога, SOS и ОК") == "Араджи: ХП 12% ниже порога, SOS и ОК"
+    assert tr.humanize("RIGEL 30%", "EN").startswith("Rigel")

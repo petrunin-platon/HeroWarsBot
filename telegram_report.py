@@ -6,6 +6,7 @@
 # Модуль без сети и без OpenCV: только собирает текст и кнопки, проверяется тестами (tests/test_telegram.py).
 import html
 import json
+import re
 import os
 import time
 
@@ -110,6 +111,27 @@ def team_lines(titans, before=None, lang="RU"):
     return lines
 
 
+def team_short(titans, lang="RU"):
+    """Пак коротко: «🔴 Араджи 12%» на титана. titans — {титан: ХП} или {титан: {"hp": ..}}."""
+    items = []
+    for titan, value in (titans or {}).items():
+        hp = value.get("hp") if isinstance(value, dict) and value.get("status") != "ОТСУТСТВУЕТ" else \
+            (None if isinstance(value, dict) else value)
+        hp = _number(hp)
+        name = esc(titan_name(titan, lang))
+        items.append(f"❔ {name}" if hp is None else f"{hp_icon(hp)} {name} {hp}%")
+    return items
+
+
+def humanize(text, lang="RU"):
+    """Причина из лога по-человечески: «ARAJI: ХП 12%» → «Араджи: ХП 12%» (имена титанов на языке программы)."""
+    def name(match):
+        word = match.group(0)
+        known = get_text(lang, f"titan_{word.lower()}") != f"titan_{word.lower()}"
+        return titan_name(word.lower(), lang) if known else word
+    return re.sub(r"\b[A-Z]{3,}\b", name, str(text))
+
+
 def enemies_text(enemies, lang="RU"):
     return ", ".join(esc(titan_name(e, lang)) for e in enemies) if enemies else "не распознаны"
 
@@ -131,20 +153,17 @@ def fit(text, limit):
 # Тревоги бота (send_alert): откат не удался, завис, ПК заблокирован, бот решил сам
 # ---------------------------------------------------------------------------
 def alert(icon, title, lines=(), room=None, enemies=None, footer=None, lang="RU"):
-    """Короткое сообщение: заголовок жирным, пояснение, комната и враги, внизу курсивом — что делать."""
+    """Короткое сообщение: заголовок жирным, сразу под ним комната и враги (на кого шли — это главное),
+    потом пояснение, внизу курсивом — что делать."""
     parts = [f"{icon} <b>{esc(title)}</b>"]
-    body = [esc(line) for line in lines if line]
+    if room_title(room):
+        parts.append(f"🚪 Комната: {room_title(room)}")
+    if enemies:
+        parts += ["", f"⚔️ <b>Враги:</b> {enemies_text(enemies, lang)}"]
+    body = [esc(humanize(line, lang)) for line in lines if line]
     if body:
         parts.append("")
         parts.extend(body)
-    info = []
-    if room_title(room):
-        info.append(f"🚪 Комната: {room_title(room)}")
-    if enemies:
-        info.append(f"⚔️ Враги: {enemies_text(enemies, lang)}")
-    if info:
-        parts.append("")
-        parts.extend(info)
     if footer:
         parts.append("")
         parts.append(f"<i>{esc(footer)}</i>")
@@ -168,18 +187,23 @@ def sos_report(titans, info=None, is_manual=False, can_rollback=True, lang="RU")
         where.append(room_title(info["room"]))
     parts = [head + (f"\n{' · '.join(where)}" if where else "")]
 
+    # Главное — на кого шли (ваше замечание к задаче 13): враги сразу под заголовком, каждый на своей строке
+    if "enemies" in info:
+        parts += ["", "⚔️ <b>Враги — на кого шли:</b>"]
+        if info.get("enemies"):
+            parts += [f"   • <b>{esc(titan_name(e, lang))}</b>" for e in info["enemies"]]
+        else:
+            parts.append("   <i>не распознаны — смотрите скриншот</i>")
+
     if info.get("reason"):
-        parts += ["", f"❗ <i>{esc(info['reason'])}</i>"]
+        parts += ["", f"❗ <i>{esc(humanize(info['reason'], lang))}</i>"]
     elif not can_rollback and not is_manual:
         parts += ["", "❗ <i>Нет правил для смены пака</i>"]
 
-    if "enemies" in info:
-        parts += ["", f"⚔️ <b>Враги:</b> {enemies_text(info.get('enemies'), lang)}"]
-
+    # ХП пака — коротко, одной строкой: подробности на скриншоте
     team = info.get("team") or titans
     if team:
-        parts += ["", "🛡 <b>Наш пак после боя:</b>"]
-        parts += team_lines(team, info.get("hp_before"), lang)
+        parts += ["", "🛡 Наш пак: " + "  ".join(team_short(team, lang))]
 
     parts += [LINE]
     if is_manual:
