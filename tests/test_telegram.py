@@ -320,3 +320,45 @@ def test_unknown_room_is_not_shown():
 def test_humanize_reason():
     assert tr.humanize("ARAJI: ХП 12% ниже порога, SOS и ОК") == "Араджи: ХП 12% ниже порога, SOS и ОК"
     assert tr.humanize("RIGEL 30%", "EN").startswith("Rigel")
+
+
+# ---------------------------------------------------------------------------
+# Язык сообщений = язык окна программы
+# ---------------------------------------------------------------------------
+import string
+
+from i18n import TRANSLATIONS
+from telegram_i18n import TG_TEXTS, tg_text
+
+
+def placeholders(text):
+    return {name for _, name, _, _ in string.Formatter().parse(text) if name}
+
+
+def test_every_language_has_all_telegram_texts():
+    assert set(TG_TEXTS) == set(TRANSLATIONS)  # те же 13 языков, что в окне программы
+    for lang, texts in TG_TEXTS.items():
+        assert set(texts) == set(TG_TEXTS["RU"]), lang
+        for key, text in texts.items():
+            assert text.strip(), (lang, key)
+            assert placeholders(text) == placeholders(TG_TEXTS["RU"][key]), (lang, key)
+        for room in ("water", "mix", "earth", "fire"):
+            assert f"elem_{room}" in TRANSLATIONS[lang], (lang, room)
+
+
+def test_messages_in_english():
+    text = report(reason="Пройдено 10 этажей.")
+    en = tr.session_report({"reason": "Пройдено 10 этажей.", "seconds": 3720, "rooms": 50, "floors": 10,
+                            "titanite": 600, "counts": {"sos": 1}, "longest": [(3, "fire", 90)]}, "EN")
+    assert en.startswith("✅ <b>Farming finished</b>") and "Rooms: <b>50</b>" in en and "1 h 02 min" in en
+    assert "№3 🔥 Fire — 1 min 30 s" in en and "Комнат" not in en and "Комнат" in text
+    sos = tr.sos_report({}, {"room": "water", "room_no": 7, "enemies": ["tidus"], "reason": "x",
+                             "team": {"nova": {"hp": 50}}}, lang="EN")
+    assert "room 7 · 💧 Water" in sos and "Enemies — who we attacked:" in sos and "Our pack after the battle:" in sos
+    assert "Roll back" in sos
+    assert tr.alert("🧊", tg_text("DE", "al_stuck_title"), room="earth", lang="DE").endswith("🚪 Raum: 🌿 Erde")
+
+
+def test_unknown_language_falls_back_to_russian():
+    assert tg_text("XX", "sos_title") == "Нужна ваша помощь"
+    assert tg_text("EN", "rep_sos", n=2) == "“Intervention required” windows: 2"

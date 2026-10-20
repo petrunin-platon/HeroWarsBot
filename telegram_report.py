@@ -3,6 +3,7 @@
 # Текст — HTML (parse_mode="HTML"): <b>жирный</b>, <i>курсив</i>, <code>моноширинный</code>.
 # Кнопки можно красить (поле style у InlineKeyboardButton): "success" — зелёная, "primary" — синяя, "danger" — красная.
 # Старые приложения Telegram цвет не показывают, но кнопки работают.
+# Язык — тот же, что в окне программы: слова из telegram_i18n.py, имена титанов и стихий и кнопки — из i18n.py.
 # Модуль без сети и без OpenCV: только собирает текст и кнопки, проверяется тестами (tests/test_telegram.py).
 import html
 import json
@@ -11,6 +12,7 @@ import os
 import time
 
 from i18n import get_text
+from telegram_i18n import tg_text
 
 # Цвета кнопок
 GREEN, BLUE, RED = "success", "primary", "danger"
@@ -20,7 +22,6 @@ CAPTION_LIMIT = 1024
 MESSAGE_LIMIT = 4096
 
 ROOM_ICONS = {"water": "💧", "mix": "🌀", "earth": "🌿", "fire": "🔥"}
-ROOM_NAMES = {"water": "Вода", "mix": "Смешанная", "earth": "Земля", "fire": "Огонь"}
 LINE = "━━━━━━━━━━━━━━━━"
 BAR_CELLS = 10
 
@@ -53,10 +54,15 @@ def titan_name(titan, lang="RU"):
     return name if name != f"titan_{titan}" else str(titan).capitalize()
 
 
-def room_title(room):
+def room_name(room, lang="RU"):
+    """Стихия словом на языке программы (из i18n.py: «🔥 Огонь» → «Огонь»)."""
+    return get_text(lang, f"elem_{room}").split(" ", 1)[-1]
+
+
+def room_title(room, lang="RU"):
     """«🔥 Огонь» по стихии комнаты; неизвестная стихия — пустая строка."""
-    if room in ROOM_NAMES:
-        return f"{ROOM_ICONS[room]} {ROOM_NAMES[room]}"
+    if room in ROOM_ICONS:
+        return f"{ROOM_ICONS[room]} {room_name(room, lang)}"
     return ""  # "unknown" — бот ещё не входил в комнату
 
 
@@ -87,7 +93,7 @@ def titan_line(titan, hp, energy=None, before=None, lang="RU"):
     """Строка титана: значок, имя, полоска, ХП, сколько потерял за бой и энергия."""
     hp = _number(hp)
     if hp is None:
-        return f"❔ <b>{esc(titan_name(titan, lang))}</b> — не прочитано"
+        return f"❔ <b>{esc(titan_name(titan, lang))}</b> — {tg_text(lang, 'not_read')}"
     line = f"{hp_icon(hp)} <b>{esc(titan_name(titan, lang))}</b>  <code>{hp_bar(hp)}</code> {hp}%"
     before = _number(before)
     if before is not None and before > hp:
@@ -121,7 +127,7 @@ def humanize(text, lang="RU"):
 
 
 def enemies_text(enemies, lang="RU"):
-    return ", ".join(esc(titan_name(e, lang)) for e in enemies) if enemies else "не распознаны"
+    return ", ".join(esc(titan_name(e, lang)) for e in enemies) if enemies else tg_text(lang, "enemies_unknown")
 
 
 def fit(text, limit):
@@ -142,12 +148,12 @@ def fit(text, limit):
 # ---------------------------------------------------------------------------
 def alert(icon, title, lines=(), room=None, enemies=None, footer=None, lang="RU"):
     """Короткое сообщение: заголовок жирным, сразу под ним комната и враги (на кого шли — это главное),
-    потом пояснение, внизу курсивом — что делать."""
+    потом пояснение, внизу курсивом — что делать. Заголовок, строки и footer — уже на нужном языке (tg_text)."""
     parts = [f"{icon} <b>{esc(title)}</b>"]
-    if room_title(room):
-        parts.append(f"🚪 Комната: {room_title(room)}")
+    if room_title(room, lang):
+        parts.append(f"🚪 {tg_text(lang, 'room')}: {room_title(room, lang)}")
     if enemies:
-        parts += ["", f"⚔️ <b>Враги:</b> {enemies_text(enemies, lang)}"]
+        parts += ["", f"⚔️ <b>{tg_text(lang, 'enemies')}:</b> {enemies_text(enemies, lang)}"]
     body = [esc(humanize(line, lang)) for line in lines if line]
     if body:
         parts.append("")
@@ -166,41 +172,41 @@ def sos_report(titans, info=None, is_manual=False, can_rollback=True, lang="RU")
     (комната, номер, враги, причина, пак с ХП и энергией, ХП до боя). Без info — только титаны, как раньше."""
     info = info or {}
     no_team = info.get("type") == "NO_VALID_TEAM"
-    title = "Нет подходящего пака" if no_team else "Нужна ваша помощь"
+    title = tg_text(lang, "sos_no_team" if no_team else "sos_title")
     head = f"🆘 <b>{title}</b>"
     where = []
     if info.get("room_no"):
-        where.append(f"комната {info['room_no']}")
-    if room_title(info.get("room")):
-        where.append(room_title(info["room"]))
+        where.append(tg_text(lang, "sos_room_no", no=info["room_no"]))
+    if room_title(info.get("room"), lang):
+        where.append(room_title(info["room"], lang))
     parts = [head + (f"\n{' · '.join(where)}" if where else "")]
 
     # Главное — на кого шли (ваше замечание к задаче 13): враги сразу под заголовком, каждый на своей строке
     if "enemies" in info:
-        parts += ["", "⚔️ <b>Враги — на кого шли:</b>"]
+        parts += ["", f"⚔️ <b>{tg_text(lang, 'sos_enemies')}</b>"]
         if info.get("enemies"):
             parts += [f"   • <b>{esc(titan_name(e, lang))}</b>" for e in info["enemies"]]
         else:
-            parts.append("   <i>не распознаны — смотрите скриншот</i>")
+            parts.append(f"   <i>{tg_text(lang, 'sos_enemies_unknown')}</i>")
 
     if info.get("reason"):
         parts += ["", f"❗ <i>{esc(humanize(info['reason'], lang))}</i>"]
     elif not can_rollback and not is_manual:
-        parts += ["", "❗ <i>Нет правил для смены пака</i>"]
+        parts += ["", f"❗ <i>{tg_text(lang, 'sos_no_rules')}</i>"]
 
     # Наш пак — списком, как враги: полоска ХП, сколько потерял за бой, энергия
     team = info.get("team") or titans
     if team:
-        parts += ["", "🛡 <b>Наш пак после боя:</b>"]
+        parts += ["", f"🛡 <b>{tg_text(lang, 'sos_team')}</b>"]
         parts += team_lines(team, info.get("hp_before"), lang)
 
     parts += [LINE]
     if is_manual:
-        parts.append("<i>Бой шёл вручную (Ангус): откатить его бот не может.</i>")
+        parts.append(f"<i>{tg_text(lang, 'sos_manual')}</i>")
     elif no_team:
-        parts.append("<i>Пройдите комнату руками или остановите бота.</i>")
+        parts.append(f"<i>{tg_text(lang, 'sos_no_team_hint')}</i>")
     else:
-        parts.append("<i>Откатить бой и собрать другой пак, пройти руками или продолжить?</i>")
+        parts.append(f"<i>{tg_text(lang, 'sos_question')}</i>")
     return fit("\n".join(parts), CAPTION_LIMIT)
 
 
@@ -219,9 +225,9 @@ def sos_keyboard(is_manual=False, can_rollback=True, lang="RU"):
 
 def test_report(titans, lang="RU"):
     """Подпись к скриншоту: проверяемый пак выиграл, нужно подтверждение."""
-    parts = [f"🧪 <b>{esc(get_text(lang, 'test_success'))}</b>", "", "🛡 <b>Пак после боя:</b>"]
+    parts = [f"🧪 <b>{esc(get_text(lang, 'test_success'))}</b>", "", f"🛡 <b>{tg_text(lang, 'test_team')}</b>"]
     parts += team_lines(titans, None, lang)
-    parts += [LINE, "<i>Сохранить пак правилом против этих врагов или попробовать другой?</i>"]
+    parts += [LINE, f"<i>{tg_text(lang, 'test_question')}</i>"]
     return fit("\n".join(parts), CAPTION_LIMIT)
 
 
@@ -275,71 +281,73 @@ LIMIT_REASONS = ("Превышен лимит", "Цель по титаниту"
 USER_REASONS = ("Ручная остановка", "Экстренная остановка", "Команда STOP")
 
 
-def session_status(reason):
-    """(значок, заголовок, удачно ли) по причине остановки."""
+def session_status(reason, lang="RU"):
+    """(значок, заголовок, удачно ли) по причине остановки. Причину бот пишет по-русски (как в логе)."""
     reason = reason or ""
     if reason.startswith("Ошибка"):
-        return "⛔", "Бот упал с ошибкой", False
+        return "⛔", tg_text(lang, "st_error"), False
     if reason.startswith(LIMIT_REASONS):
-        return "✅", "Фарм завершён", True
+        return "✅", tg_text(lang, "st_done"), True
     if reason.startswith(USER_REASONS):
-        return "⏹", "Бот остановлен вами", True
+        return "⏹", tg_text(lang, "st_user"), True
     if not reason:
-        return "⏹", "Бот остановлен", True
-    return "⚠️", "Бот остановился: нужна проверка", False
+        return "⏹", tg_text(lang, "st_stopped"), True
+    return "⚠️", tg_text(lang, "st_check"), False
 
 
-def duration_text(seconds):
+def duration_text(seconds, lang="RU"):
     minutes = int(seconds // 60)
     hours, minutes = divmod(minutes, 60)
     if hours:
-        return f"{hours} ч {minutes:02d} мин"
+        return tg_text(lang, "dur_h", h=hours, m=f"{minutes:02d}")
     if minutes:
-        return f"{minutes} мин {int(seconds % 60):02d} с"
-    return f"{int(seconds)} с"
+        return tg_text(lang, "dur_m", m=minutes, s=f"{int(seconds % 60):02d}")
+    return tg_text(lang, "dur_s", s=int(seconds))
 
 
-def session_report(data):
-    """Итог сессии. data — SessionLog.report_data(): reason, started, finished (ЧЧ:ММ), seconds, rooms, floors,
-    titanite, by_room {стихия: комнат}, counts {sos, rollbacks, auto_rollbacks, stuck, heal_packs, door_misses},
-    longest [(номер, стихия, секунд)], avg_room (секунд или None)."""
-    icon, title, _ = session_status(data.get("reason"))
+def session_report(data, lang="RU"):
+    """Итог сессии на языке программы. data — SessionLog.report_data(): reason, started, finished (ЧЧ:ММ), seconds,
+    rooms, floors, titanite, by_room {стихия: комнат}, counts {sos, rollbacks, auto_rollbacks, stuck, heal_packs,
+    door_misses}, longest [(номер, стихия, секунд)], avg_room (секунд или None)."""
+    icon, title, _ = session_status(data.get("reason"), lang)
     parts = [f"{icon} <b>{title}</b>"]
     if data.get("reason"):
         parts.append(f"<i>{esc(data['reason'])}</i>")
 
     when = f"🕐 {data.get('started', '?')} → {data.get('finished', '?')}"
-    parts += ["", f"{when}  ·  ⏱ {duration_text(data.get('seconds', 0))}"]
+    parts += ["", f"{when}  ·  ⏱ {duration_text(data.get('seconds', 0), lang)}"]
     parts += [LINE,
-              f"🚪 Комнат: <b>{data.get('rooms', 0)}</b>   🏰 Этажей: <b>{data.get('floors', 0)}</b>",
-              f"💎 Титанит: <b>{data.get('titanite', 0)}</b>"]
+              f"🚪 {tg_text(lang, 'rep_rooms')}: <b>{data.get('rooms', 0)}</b>   "
+              f"🏰 {tg_text(lang, 'rep_floors')}: <b>{data.get('floors', 0)}</b>",
+              f"💎 {tg_text(lang, 'rep_titanite')}: <b>{data.get('titanite', 0)}</b>"]
     by_room = data.get("by_room") or {}
     if by_room:
         parts.append("   ".join(f"{ROOM_ICONS.get(r, '🚪')} {n}" for r, n in sorted(by_room.items(),
                                                                                 key=lambda x: -x[1])))
     if data.get("avg_room"):
-        parts.append(f"⏳ Комната в среднем: {duration_text(data['avg_room'])}")
+        parts.append(f"⏳ {tg_text(lang, 'rep_avg', t=duration_text(data['avg_room'], lang))}")
 
     counts = data.get("counts") or {}
     problems = []
     if counts.get("sos"):
-        problems.append(f"🆘 Окон «Требуется вмешательство»: {counts['sos']}")
+        problems.append(f"🆘 {esc(tg_text(lang, 'rep_sos', n=counts['sos']))}")
     if counts.get("rollbacks"):
         own = counts.get("auto_rollbacks", 0)
-        problems.append(f"🔄 Откатов: {counts['rollbacks']}" + (f" (бот сам: {own})" if own else ""))
+        problems.append(f"🔄 {tg_text(lang, 'rep_rollbacks', n=counts['rollbacks'])}"
+                        + (f" ({tg_text(lang, 'rep_rollbacks_own', n=own)})" if own else ""))
     if counts.get("heal_packs"):
-        problems.append(f"🩹 Паков отхила собрал сам: {counts['heal_packs']}")
+        problems.append(f"🩹 {tg_text(lang, 'rep_heal', n=counts['heal_packs'])}")
     if counts.get("stuck"):
-        problems.append(f"🧊 Зависаний: {counts['stuck']}")
+        problems.append(f"🧊 {tg_text(lang, 'rep_stuck', n=counts['stuck'])}")
     if counts.get("door_misses"):
-        problems.append(f"🎯 Промахов по двери: {counts['door_misses']}")
+        problems.append(f"🎯 {tg_text(lang, 'rep_door', n=counts['door_misses'])}")
     parts.append(LINE)
-    parts += problems or ["👌 Без происшествий"]
+    parts += problems or [f"👌 {tg_text(lang, 'rep_clean')}"]
 
     longest = data.get("longest") or []
     if longest:
-        parts += ["", "🐢 <b>Самые долгие комнаты:</b>"]
+        parts += ["", f"🐢 <b>{tg_text(lang, 'rep_longest')}</b>"]
         for no, room, seconds in longest:
-            parts.append(f"   №{no} {ROOM_ICONS.get(room, '')} {esc(ROOM_NAMES.get(room, room))} — "
-                         f"{duration_text(seconds)}")
+            parts.append(f"   №{no} {ROOM_ICONS.get(room, '')} {esc(room_name(room, lang) if room in ROOM_ICONS else room)} — "
+                         f"{duration_text(seconds, lang)}")
     return fit("\n".join(parts), MESSAGE_LIMIT)

@@ -31,6 +31,7 @@ from click_logic import after_failed_battle_start, START_BATTLE_ATTEMPTS
 import rollback_logic
 from telegram_agent import send_alert
 import telegram_report
+from telegram_i18n import tg_text
 from team_manager import verify_and_set_team, scan_slots, slot_titan_names, recheck_bars
 from analyzer import scan_team_health, reread_team_health, team_status_lines
 from analytics import log_battle
@@ -44,6 +45,8 @@ import tactics
 import titan_state
 
 WINDOW_TITLE = "HeroWarsBot_Arena"
+# Язык окна программы (HEROWARS_LANG): на нём сообщения в Telegram. Лог и терминал бота — по-русски, как раньше
+TG_LANG = CONFIG["game_language"]
 GRACEFUL_STOP = False
 
 # Один снимок на шаг (задача 11): какие кнопки ищутся вместе с флажком коридора в этих состояниях
@@ -99,8 +102,8 @@ def user_waited():
 def alert_screen_locked(seconds):
     """ПК заблокирован (Win+L) больше минуты: бот не может делать снимки и ждёт. Сообщаем один раз."""
     sent, note = send_alert(telegram_report.alert(
-        "🔒", "Экран ПК заблокирован", [f"Уже {seconds:.0f} с бот не видит игру и ждёт."],
-        footer="Разблокируйте ПК — бот продолжит сам."), html=True)
+        "🔒", tg_text(TG_LANG, "al_lock_title"), [tg_text(TG_LANG, "al_lock_text", s=f"{seconds:.0f}")],
+        footer=tg_text(TG_LANG, "al_lock_footer"), lang=TG_LANG), html=True)
     print(f"[ЭКРАН] Сообщение в Telegram: {note}")
 
 # Снимок экрана не получается (ПК заблокирован): vision.grab_frame ждёт и зовёт эти функции
@@ -163,7 +166,7 @@ def send_session_report():
     try:
         rooms = SESSION_STATS["rooms_cleared"]
         data = SESSION_LOG.report_data(rooms, SESSION_STATS["titanite_gathered"], rooms // 5)
-        sent, note = send_alert(telegram_report.session_report(data), html=True)
+        sent, note = send_alert(telegram_report.session_report(data, TG_LANG), html=True)
         print(f"[TELEGRAM] Итог сессии: {note}")
     except Exception as e:
         print(f"[TELEGRAM] Итог сессии не отправлен: {e}")
@@ -326,11 +329,11 @@ def handle_rollback_failure(result, game_window, sct):
         print(f"[СИСТЕМА] Ошибка сохранения скриншота: {e}")
 
     if result.code == rollback_logic.BATTLE_ENDED:
-        todo = "Окно результата осталось на экране: посмотрите, кто выжил. После снятия паузы бот нажмёт «ОК»."
+        todo = tg_text(TG_LANG, "al_rb_ended")
     else:
-        todo = "Посмотрите, что на экране телефона, и верните бота в коридор."
-    text = telegram_report.alert("⚠️", "Откат боя не удался", [result.text, todo], room=current_room,
-                                 enemies=CURRENT_ENEMIES, footer="⏸ Бот на мягкой паузе. Снимите её в окне программы.")
+        todo = tg_text(TG_LANG, "al_rb_check")
+    text = telegram_report.alert("⚠️", tg_text(TG_LANG, "al_rb_title"), [result.text, todo], room=current_room,
+                                 enemies=CURRENT_ENEMIES, footer=tg_text(TG_LANG, "al_rb_footer"), lang=TG_LANG)
     sent, note = send_alert(text, screenshot, html=True)
     print(f"[ОТКАТ] Сообщение в Telegram: {note}")
 
@@ -508,8 +511,8 @@ def close_sos_window(text):
     """Бот решил сам: окно программы закрывает окно SOS (строка [SOS_CLOSE]), а вам уходит сообщение в Telegram."""
     print(f"[SOS_CLOSE] {text}")
     sys.stdout.flush()
-    message = telegram_report.alert("🤖", "Вы не ответили — бот решил сам", [text], room=current_room,
-                                    enemies=CURRENT_ENEMIES)
+    message = telegram_report.alert("🤖", tg_text(TG_LANG, "al_auto_title"), [text], room=current_room,
+                                    enemies=CURRENT_ENEMIES, lang=TG_LANG)
     image = data_paths.temp_sos_file() if os.path.exists(data_paths.temp_sos_file()) else None
 
     def send():
@@ -556,13 +559,12 @@ def raise_watchdog_alarm(game_window, sct):
     SESSION_LOG.count("stuck")
     screenshot = save_debug_shot("stuck", game_window, sct)
 
-    if pause:
-        footer = ("⏸ Умный старт не помог. Бот на мягкой паузе: верните игру в коридор подземелья "
-                  "и снимите паузу в окне программы.")
-    else:
-        footer = "Пробую умный старт."
-    message = telegram_report.alert("🧊", "Бот, похоже, завис", [text, f"Пройдено комнат: {SESSION_STATS['rooms_cleared']}"],
-                                    room=current_room, footer=footer)
+    footer = tg_text(TG_LANG, "al_stuck_pause" if pause else "al_stuck_retry")
+    message = telegram_report.alert(
+        "🧊", tg_text(TG_LANG, "al_stuck_title"),
+        [tg_text(TG_LANG, "al_stuck_text", m=f"{minutes:.0f}"),
+         tg_text(TG_LANG, "al_stuck_rooms", n=SESSION_STATS["rooms_cleared"])],
+        room=current_room, footer=footer, lang=TG_LANG)
     sent, note = send_alert(message, screenshot, html=True)
     print(f"[СТОРОЖ] Сообщение в Telegram: {note}")
 
