@@ -141,6 +141,34 @@ def test_result_icons_in_band_same_as_whole_screen(monkeypatch, name):
 
 # Полные слоты (свет), огонь (Араджи и Вулкан), смешанная с прокрученной сеткой (Алекто и Умбра).
 # Сравнение со старым поиском долгое (~8 с на экран), поэтому экранов три
+# Скриншоты окна результата, которые вы прислали к задаче 11 (окно scrcpy 1592x741): пак из 5 и из 3 титанов.
+# Числа — как их читал бот до задачи 11 (тот же код полосок; проверено запуском старого analyzer.py)
+DATA = os.path.join(os.path.dirname(__file__), "data")
+RESULT_WINDOWS = [
+    ("result_window_5_titans.webp", {"araji": (100, 79), "hyperion": (100, 70), "rigel": (100, 69),
+                                     "iyari": (100, 100), "lumira": (100, 100)}),
+    ("result_window_3_titans.webp", {"araji": (67, 47), "ignis": (100, 14), "acheron": (86, 90)}),
+]
+
+
+@pytest.mark.parametrize("name, expected", RESULT_WINDOWS)
+def test_result_window_reads_same_as_before(geometry, name, expected):
+    """Иконки ищутся в своей полосе и быстрым поиском — места те же, что по всему снимку, ХП и энергия те же, что
+    читал старый код (полоски читаются тем же кодом, его настройку задача 11 не трогала)."""
+    import analyzer
+    game = geometry(cv2.imread(os.path.join(DATA, name)))
+    h, w = game.shape[:2]
+    found = {}
+    status = analyzer.scan_team_health({"top": 0, "left": 0, "width": w, "height": h}, GameSct(game), list(expected),
+                                       found=found)
+    for titan, (hp, energy) in expected.items():
+        assert (status[titan]["hp"], status[titan]["energy"]) == (hp, energy), titan
+        _, _, _, old_loc = cv2.minMaxLoc(cv2.matchTemplate(game, analyzer._result_template(titan), cv2.TM_CCOEFF_NORMED))
+        assert found[titan][:2] == tuple(old_loc), titan
+    assert vision.find_on_frame((game, 0, 0), "btn_ok.png", 0.8) is not None
+    assert vision.find_on_frame((game, 0, 0), "badge_x2.png", 0.75) is not None
+
+
 TEAM_SCREENS = [
     os.path.join("session_01-02", "screens", "pered_boem.png"),
     os.path.join("session_09", "screens", "araji_i_vulkan_v_slotah.png"),

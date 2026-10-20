@@ -246,37 +246,14 @@ def test_result_window_still_at_once_is_quick(analyzer, clock, capsys):
     assert "второй снимок такой же" in capsys.readouterr().out
 
 
-def test_result_taken_after_window_animation(analyzer, clock, capsys):
-    """Задача 11: чтение теперь быстрое и успевает, пока окно ещё проявляется (~1,5 с, замечание к сессии 09).
-    Полоска Ригеля «доезжает» медленно: два снимка подряд одинаковые, но рано. Итог — со снимка не раньше
-    RESULT_ANIMATION_S после появления окна, и там уже 55%."""
-    img = game_area("54.png")
-    found = {}
-    analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK, found=found)
-    slow = bar_cut(img, found, "rigel", keep=20)
-    sct = SeqSct([slow, slow, slow, img, img])
-    seen = clock.now  # «ОК» появилась
-    first = analyzer.scan_team_health(GAME_RECT, sct, PACK, found=found)
-    reads = []
-
-    def reread():
-        reads.append(clock.now)
-        return analyzer.reread_team_health(GAME_RECT, sct, found)
-
-    final = rs.wait_bars_still(first, PACK, reread, clock.now, clock=clock.monotonic, sleep=clock.sleep,
-                               not_before=seen + rs.RESULT_ANIMATION_S)
-    assert abs(final["rigel"]["hp"] - 55) <= 2
-    assert reads[-1] >= seen + rs.RESULT_ANIMATION_S
-
-
-def test_still_not_before(clock):
-    """Экран не меняется, но принимать снимок можно только с момента not_before."""
-    read, times = frames(clock, [56])
-    start = clock.now
-    value, still, shots = wait_until_still(read, lambda a, b: a == b, first=(start, 56), clock=clock.monotonic,
-                                           sleep=clock.sleep, not_before=start + 1.5)
-    assert (value, still) == (56, True)
-    assert times[-1] >= start + 1.5 and times[-1] < start + 1.5 + click_logic.STILL_INTERVAL_S + 1e-9
+def test_result_window_read_after_animation(clock):
+    """Задача 11 (ваш совет): окно появилось, когда видна «ОК»; читать титанов — через 1,2 с.
+    Если бот увидел «ОК» давно (например, долго искал), не ждёт."""
+    seen = clock.now
+    assert rs.wait_window_settled(seen, clock=clock.monotonic, sleep=clock.sleep) == pytest.approx(1.2)
+    assert clock.now == pytest.approx(seen + rs.RESULT_ANIMATION_S)
+    assert rs.wait_window_settled(clock.now - 2.0, clock=clock.monotonic, sleep=clock.sleep) == 0
+    assert clock.now == pytest.approx(seen + rs.RESULT_ANIMATION_S)
 
 
 def test_video_jitter_is_not_movement():

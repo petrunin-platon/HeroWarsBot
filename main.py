@@ -373,8 +373,8 @@ def count_cleared_room(x2):
     return SESSION_STATS["rooms_cleared"]
 
 def result_has_x2(frames, result_seen, game_window, sct):
-    """Значок «x2» на окне результата (задача 11): на последнем снимке, с которого бот читал ХП, — если окно к тому
-    времени уже проявилось (RESULT_ANIMATION_S после появления «ОК»). Иначе — на новом снимке, как раньше."""
+    """Значок «x2» на окне результата (задача 11): на последнем снимке, с которого бот читал ХП (он сделан, когда окно
+    уже проявилось: RESULT_ANIMATION_S после появления «ОК»). Если такого снимка нет — на новом снимке, как раньше."""
     if frames and frames[-1][0] >= result_seen + result_scan.RESULT_ANIMATION_S:
         _, screenshot_cv, _ = frames[-1]
         return vision.find_on_frame((screenshot_cv, 0, 0), 'badge_x2.png', 0.75) is not None
@@ -715,9 +715,9 @@ with mss.MSS() as sct:
             active_pack = CURRENT_PACK
 
             if active_pack:
-                # Паузы 1,5 с «ожидание анимаций» больше нет (задача 10): читаем сразу, потом перечитываем полоски,
-                # пока два снимка подряд не покажут одно и то же. Итог — со снимка не раньше чем через
-                # RESULT_ANIMATION_S после появления окна: первые ~1,5 с окно ещё проявляется (задача 11)
+                # Окно ещё проявляется: читаем через RESULT_ANIMATION_S (1,2 с) после появления «ОК» (задача 11, ваш совет).
+                # Потом перечитываем полоски, пока два снимка подряд не покажут одно и то же (задача 10)
+                result_scan.wait_window_settled(result_seen)
                 icons = {}  # где нашлись иконки титанов: по ним полоски перечитываются быстро
                 scanned_at = []
                 result_frames = []  # снимки окна результата: на последнем ищем значок «x2» (задача 11)
@@ -731,7 +731,7 @@ with mss.MSS() as sct:
                 if not unreadable:
                     team_status = result_scan.wait_bars_still(
                         team_status, active_pack, lambda: reread_team_health(game_window, sct, icons, result_frames),
-                        scanned_at[-1], not_before=result_seen + result_scan.RESULT_ANIMATION_S)
+                        scanned_at[-1])
                 
                 effective_delta = CURRENT_ALLOWED_DELTA if CURRENT_ALLOWED_DELTA is not None else TACTICS.max_hp_delta
 
