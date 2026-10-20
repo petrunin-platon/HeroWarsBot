@@ -14,6 +14,7 @@ import titan_state
 MIX_BASE = ["hyperion", "rigel", "iyari", "lumira", "amon"]
 MIX_ARAJI = ["hyperion", "rigel", "iyari", "lumira", "araji"]
 MIX_ACHERON = ["hyperion", "rigel", "iyari", "lumira", "acheron"]
+MIX_ALECTO = ["hyperion", "rigel", "iyari", "lumira", "alecto"]
 MIX_SIGURD = ["hyperion", "rigel", "iyari", "lumira", "sigurd"]
 FIRE_BASE = ["araji", "ignis", "acheron"]
 BASE_PACKS = {"mix": MIX_BASE, "fire": FIRE_BASE, "water": ["hyperion", "sigurd", "tidus", "nova", "mairi"],
@@ -156,15 +157,23 @@ def test_fire_titan_is_healed_in_mix_instead_of_amon():
     assert pack == MIX_ACHERON and titan == "acheron" and "вместо AMON" in why and notes == []
 
 
-def test_titan_outside_base_packs_is_not_healed():
-    """Сессия 08: Алекто один раз сходила в бой запасным паком и ушла с 44%. Её нет ни в одном базовом паке —
-    бот её не лечит (раньше весь игровой день ставил её в смешанную вместо Амона)."""
+def test_titan_outside_your_packs_is_not_healed():
+    """Сессия 08: Алекто утром сходила в бой и ушла с 44%, но её нет ни в ваших паках, ни в правилах, ни в запасных
+    паках — бот её не лечит (раньше весь игровой день ставил её в смешанную вместо Амона)."""
     assert plan(state(alecto=44, rigel=100)) == (None, [])
-    # Раненый из базового пака лечится, как раньше, даже если Алекто ранена сильнее
-    (pack, titan, _), _ = plan(state(alecto=31, araji=50))
-    assert titan == "araji" and pack == MIX_ARAJI
+    assert plan(state(alecto=44, rigel=100), reserve={"rigel", "amon", "araji"}) == (None, [])
     assert tactics.regulars(BASE_PACKS) >= {"araji", "amon", "tidus", "eden"}
     assert "alecto" not in tactics.regulars(BASE_PACKS)
+
+
+def test_reserve_titan_is_healed_after_main_ones():
+    """Ваш ответ после сессии 08: запасных тоже надо поддерживать, но основные (базовые паки) в приоритете.
+    Алекто в запасном паке: Араджи ранен — сначала он, даже если Алекто ближе к порогу паники; Араджи здоров — Алекто."""
+    reserve = tactics.own_titans(list(BASE_PACKS.values()) + [MIX_ALECTO], settings())
+    (pack, titan, _), _ = plan(state(alecto=31, araji=50), reserve=reserve)
+    assert titan == "araji" and pack == MIX_ARAJI
+    (pack, titan, why), _ = plan(state(alecto=44, araji=85), reserve=reserve)
+    assert titan == "alecto" and pack == MIX_ALECTO and "запасной" in why and "вместо AMON" in why
 
 
 def test_helper_only_from_base_packs():
@@ -383,7 +392,9 @@ def test_door_prefers_mix_when_bot_will_heal(engine):
 
 def test_session_08_start_no_alecto():
     """Сессия 08, оба запуска: в памяти с утра Ахерон 86%, Алекто 44%, Араджи 85%, Молох 81%. Смешанная —
-    обычный пак с Амоном: Алекто и Молох не из базовых паков, остальные выше 60%."""
+    обычный пак с Амоном: Алекто нигде нет (вы её убрали), Молох в запасных, но выше 60%, остальные тоже."""
     st = state(acheron=(86, 50), alecto=(44, 87), araji=(85, 50), moloch=(81, 50),
                amon=(100, 79), hyperion=(100, 39), iyari=(100, 18), lumira=(100, 58), rigel=(100, 28))
-    assert plan(st, settings(heal_remove_order=["amon", "lumira"])) == (None, [])
+    reserve = tactics.own_titans(list(BASE_PACKS.values()) + [["araji", "ignis", "acheron", "vulcan", "moloch"]],
+                                 settings())
+    assert plan(st, settings(heal_remove_order=["amon", "lumira"]), reserve=reserve) == (None, [])

@@ -139,7 +139,8 @@ def replay_heal(engine):
             else:
                 heal = tactics.heal_plan(room, choice["team"], state, s, history, engine.base_packs(),
                                          forbidden=engine.forbidden_titans(room, enemies, state), enemies=enemies,
-                                         special_ult=engine.special_ult_for)
+                                         special_ult=engine.special_ult_for,
+                                         reserve=tactics.own_titans(engine.all_packs(), s))
                 if heal:
                     heals[room_no] = heal[:2]
         verdict = evaluate_battle(entry["team"], entry["hp_status"], state, s.critical_hp, s.max_hp_delta,

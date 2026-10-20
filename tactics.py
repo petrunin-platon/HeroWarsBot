@@ -432,8 +432,8 @@ def removal_order(pack, settings, keep=()):
 
 
 def regulars(base_packs):
-    """Кто воюет каждый этаж: титаны базовых паков всех стихий. Только их бот лечит паком отхила (сессия 08:
-    Алекто один раз сходила в бой запасным паком, ушла с 44% и бот весь игровой день тянул её в смешанную)."""
+    """Кто воюет каждый этаж: титаны базовых паков всех стихий. Их бот лечит паком отхила в первую очередь,
+    запасных (reserve в heal_plan) — после них."""
     return {t for pack in base_packs.values() for t in (pack or [])}
 
 
@@ -465,13 +465,15 @@ def _helper(pack, state, forbidden, allowed=None):
 
 
 def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), enemies=None, special_ult=None,
-              notes=None, not_placed=()):
+              notes=None, not_placed=(), reserve=()):
     """
     Пак отхила, который бот собирает сам (задача 9в, ваш ответ на вопрос 23), когда ваше правило отхила
     не сработало. Только в смешанной (туда можно ставить кого угодно), pack — пак, который поставил бы движок правил.
     Лечим по одному — того, кто ближе всех к своему порогу паники. Кого лечим:
-      - только титанов базовых паков (regulars): кто сходил в бой один раз запасным паком, тот не лечится
-        (сессия 08: Алекто с 44% весь день);
+      - титанов базовых паков (regulars) — в первую очередь; запасных (reserve: ваши запасные паки и паки правил,
+        own_titans) — только когда основных лечить не нужно (ваш ответ после сессии 08: «запасных тоже надо
+        поддерживать, но приоритет у основных»). Титана не из ваших паков и правил не лечим (сессия 08: Алекто,
+        которую вы убрали отовсюду);
       - ХП ниже settings.heal_hp, но не ниже порога паники (ниже в смешанной уже не вылечить — вопрос 1),
         и титан не под запретом правил skip;
       - его нет в паке, и в своей комнате его не лечат (heals_at_home: огненных лечить негде) или отхила там
@@ -484,6 +486,7 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
     по прогнозу (wounded_at_risk) или требует ручного боя (special_ult(пак) не "auto", например Ангус).
     Возвращает (пак, кого лечим, пояснение) или None. notes — куда писать, почему раненого не лечим (для лога).
     not_placed — кого бот в этом запуске не смог вылечить: пак отхила для него не собрался (сессия 08).
+    reserve — ваши титаны (own_titans); кто из них не в базовых паках — запасной.
     """
     if room != HEAL_ROOM or not settings.heal_hp or not pack or pack == ["STOP"]:
         return None
@@ -496,8 +499,8 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
     wounded = []
     for titan, st in state.items():
         hp = st.get("hp") if isinstance(st, dict) else None
-        if titan not in team:
-            continue  # не из базовых паков: бот его сам не ставит, значит и лечить незачем
+        if titan not in team and titan not in reserve:
+            continue  # не из ваших паков и правил: бот его сам не ставит, значит и лечить незачем
         if hp is None or hp <= 0 or hp >= settings.heal_hp:
             continue  # здоров, неизвестно или погиб (погибшие до конца дня не воюют)
         panic = max(1, settings.panic_hp(titan))
@@ -508,9 +511,9 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
         elif titan in not_placed:
             note(f"{titan.upper()} {hp}%: в этом запуске пак отхила для него не собрался, не лечу")
         else:
-            wounded.append((hp - panic, titan, hp))
+            wounded.append((titan not in team, hp - panic, titan, hp))  # основные раньше запасных
 
-    for _, titan, hp in sorted(wounded):
+    for _, _, titan, hp in sorted(wounded):
         out = removal_order(pack, settings, keep={titan})
         if titan in pack:
             if not history.not_healing(room, titan, settings.heal_hp):
@@ -532,7 +535,8 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
             if homes and not stuck:
                 continue  # его лечат в своей комнате (вода, земля), и отхила там хватает
             where = (f"в своей комнате ({stuck[0]}) {STUCK_BATTLES} боя подряд не поднимается выше {settings.heal_hp}%"
-                     if stuck else "в своей комнате его не лечат")
+                     if stuck else "в своей комнате его не лечат" if titan in team
+                     else "запасной, основным лечение сейчас не нужно")
             if len(pack) < 5:
                 new_pack, why = list(pack) + [titan], f"{titan.upper()} {hp}% ХП: {where}"
             elif out:

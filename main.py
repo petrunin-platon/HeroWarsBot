@@ -418,7 +418,8 @@ def plan_heal(room, enemies, pack, notes=None):
         return None
     return tactics.heal_plan(room, pack, GLOBAL_TITAN_STATE, TACTICS, HISTORY, engine.base_packs(),
                              forbidden=engine.forbidden_titans(room, enemies, GLOBAL_TITAN_STATE), enemies=enemies,
-                             special_ult=engine.special_ult_for, notes=notes, not_placed=HEAL_NOT_PLACED)
+                             special_ult=engine.special_ult_for, notes=notes, not_placed=HEAL_NOT_PLACED,
+                             reserve=tactics.own_titans(engine.all_packs(), TACTICS))
 
 def door_hints():
     """Подсказки для выбора двери по здоровью (задача 9б, tactics.door_choice):
