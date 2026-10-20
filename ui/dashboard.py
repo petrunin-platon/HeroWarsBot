@@ -452,6 +452,7 @@ class DashboardFrame(ctk.CTkFrame):
         if source == "telegram":
             import yaml
             from telegram_agent import TelegramAgent
+            import telegram_report
             token = ""
             chat_id = ""
             if os.path.exists("profile.yml"):
@@ -465,8 +466,6 @@ class DashboardFrame(ctk.CTkFrame):
                 except Exception: pass
                 
             if token and chat_id:
-                agent = TelegramAgent(token, chat_id, lang)
-                
                 def on_tg_decision(decision_text):
                     if decision_text == "CONFIRM":
                         self._send_answer("CONFIRM", epoch)
@@ -474,16 +473,15 @@ class DashboardFrame(ctk.CTkFrame):
                         team_str = decision_text.split(":")[1]
                         self._send_answer(f"ROLLBACK_TG:{team_str}", epoch)
                             
-                msg = get_text(lang, "test_success") + "\n\n"
-                for titan, stats in titan_data.items():
-                    hp_val = stats.get('hp', 0) if isinstance(stats, dict) else stats
-                    titan_name = get_text(lang, f"titan_{titan}")
-                    msg += f"➤ {titan_name.capitalize()}: {hp_val}% HP\n"
-                    
-                msg_id = agent.send_test_result(data_paths.temp_test_file(), msg)
-                if msg_id:
-                    self._track_sos(agent)
-                    agent.start_polling(msg_id, on_tg_decision)
+                # Без интернета запросы ждут до telegram_agent.TIMEOUT: отправляем в фоне, чтобы окно не замирало
+                def send():
+                    agent = TelegramAgent(token, chat_id, lang)
+                    msg = telegram_report.test_report(titan_data, lang)
+                    msg_id = agent.send_test_result(data_paths.temp_test_file(), msg)
+                    if msg_id and epoch == self.sos_epoch:  # бот ещё не решил сам ([SOS_CLOSE])
+                        self._track_sos(agent)
+                        agent.start_polling(msg_id, on_tg_decision)
+                threading.Thread(target=send, daemon=True).start()
                 return 
 
         from ui.team_selector import TeamSelectorDialog

@@ -30,7 +30,7 @@ from navigation import smart_navigate_hallway, take_room_window
 from click_logic import after_failed_battle_start, START_BATTLE_ATTEMPTS
 import rollback_logic
 from telegram_agent import send_alert
-from i18n import get_text
+import telegram_report
 from team_manager import verify_and_set_team, scan_slots, slot_titan_names, recheck_bars
 from analyzer import scan_team_health, reread_team_health, team_status_lines
 from analytics import log_battle
@@ -98,8 +98,9 @@ def user_waited():
 
 def alert_screen_locked(seconds):
     """ПК заблокирован (Win+L) больше минуты: бот не может делать снимки и ждёт. Сообщаем один раз."""
-    sent, note = send_alert(f"🔒 Экран ПК заблокирован уже {seconds:.0f} с: бот не видит игру и ждёт. "
-                            "Разблокируйте ПК — бот продолжит сам.")
+    sent, note = send_alert(telegram_report.alert(
+        "🔒", "Экран ПК заблокирован", [f"Уже {seconds:.0f} с бот не видит игру и ждёт."],
+        footer="Разблокируйте ПК — бот продолжит сам."), html=True)
     print(f"[ЭКРАН] Сообщение в Telegram: {note}")
 
 # Снимок экрана не получается (ПК заблокирован): vision.grab_frame ждёт и зовёт эти функции
@@ -150,24 +151,29 @@ def print_session_summary():
     """Блок [ИТОГ]. Печатается один раз при любой остановке."""
     SESSION_LOG.print_summary(SESSION_STATS["rooms_cleared"], SESSION_STATS["titanite_gathered"])
 
-def alert_on_crash():
-    """Бот упал с ошибкой Python: ошибку и итог уже напечатали, сообщаем ещё и в Telegram."""
-    reason = SESSION_LOG.stop_reason or ""
-    if not reason.startswith("Ошибка"):
+REPORT_SENT = False
+
+def send_session_report():
+    """Итог сессии в Telegram при любой остановке (задача 13, ваш ответ на вопрос 17): удачно или нет и почему,
+    комнаты, этажи, титанит, проблемы. Ошибка Python — тоже сюда. Без интернета ждёт не дольше telegram_agent.TIMEOUT."""
+    global REPORT_SENT
+    if REPORT_SENT:
         return
+    REPORT_SENT = True
     try:
-        text = (f"⛔ Бот остановился из-за ошибки\n{reason}\n"
-                f"Пройдено комнат: {SESSION_STATS['rooms_cleared']}. Подробности — в логе бота.")
-        sent, note = send_alert(text)
-        print(f"[ОШИБКА] Сообщение в Telegram: {note}")
-    except Exception:
-        pass
+        rooms = SESSION_STATS["rooms_cleared"]
+        data = SESSION_LOG.report_data(rooms, SESSION_STATS["titanite_gathered"], rooms // 5)
+        sent, note = send_alert(telegram_report.session_report(data), html=True)
+        print(f"[TELEGRAM] Итог сессии: {note}")
+    except Exception as e:
+        print(f"[TELEGRAM] Итог сессии не отправлен: {e}")
 
 def trigger_emergency_stop():
     print("\n[ЭКСТРЕННАЯ ОСТАНОВКА] Принудительное завершение (Ctrl+Shift+Q)!")
     SESSION_LOG.set_stop_reason("Экстренная остановка пользователем (Ctrl+Shift+Q)")
     try:
-        print_session_summary()  # os._exit не запускает atexit, поэтому итог печатаем здесь
+        print_session_summary()  # os._exit не запускает atexit, поэтому итог печатаем и отправляем здесь
+        send_session_report()
     except Exception:
         pass
     os._exit(0)
@@ -264,8 +270,8 @@ SESSION_STATS = {
 }
 
 # Итог сессии при любой остановке: лимит, Ctrl+Q, STOP, ошибка Python.
-# atexit вызывает функции в обратном порядке: сначала итог, потом сообщение об ошибке в Telegram
-atexit.register(alert_on_crash)
+# atexit вызывает функции в обратном порядке: сначала итог в лог, потом итог в Telegram
+atexit.register(send_session_report)
 atexit.register(print_session_summary)
 
 def save_debug_shot(kind, game_window, sct):
@@ -304,8 +310,6 @@ def get_stop_reason():
         return f"Пройдено {max_rooms} комнат."
     return None
 
-ROOM_NAMES_RU = {"water": "вода", "mix": "смешанная", "earth": "земля", "fire": "огонь"}
-
 def handle_rollback_failure(result, game_window, sct):
     """Откат не удался: пишем причину, шлём в Telegram текст и скриншот, ставим мягкую паузу.
     Окно «Требуется вмешательство» не трогаем (оно в ui/), поэтому сообщаем через Telegram и лог."""
@@ -321,17 +325,13 @@ def handle_rollback_failure(result, game_window, sct):
     except Exception as e:
         print(f"[СИСТЕМА] Ошибка сохранения скриншота: {e}")
 
-    lines = ["⚠️ Откат боя не удался", result.text]
     if result.code == rollback_logic.BATTLE_ENDED:
-        lines.append("Окно результата осталось на экране: посмотрите, кто выжил. После снятия паузы бот нажмёт «ОК».")
+        todo = "Окно результата осталось на экране: посмотрите, кто выжил. После снятия паузы бот нажмёт «ОК»."
     else:
-        lines.append("Посмотрите, что на экране телефона, и верните бота в коридор.")
-    lines.append("Бот на мягкой паузе.")
-    if current_room in ROOM_NAMES_RU:
-        lines.append(f"Комната: {ROOM_NAMES_RU[current_room]}")
-    if CURRENT_ENEMIES:
-        lines.append("Враги: " + ", ".join(get_text("RU", f"titan_{e}") for e in CURRENT_ENEMIES))
-    sent, note = send_alert("\n".join(lines), screenshot)
+        todo = "Посмотрите, что на экране телефона, и верните бота в коридор."
+    text = telegram_report.alert("⚠️", "Откат боя не удался", [result.text, todo], room=current_room,
+                                 enemies=CURRENT_ENEMIES, footer="⏸ Бот на мягкой паузе. Снимите её в окне программы.")
+    sent, note = send_alert(text, screenshot, html=True)
     print(f"[ОТКАТ] Сообщение в Telegram: {note}")
 
     with open("pause.flag", "w") as f:
@@ -508,17 +508,25 @@ def close_sos_window(text):
     """Бот решил сам: окно программы закрывает окно SOS (строка [SOS_CLOSE]), а вам уходит сообщение в Telegram."""
     print(f"[SOS_CLOSE] {text}")
     sys.stdout.flush()
-    lines = ["🤖 Вы не ответили на окно «Требуется вмешательство», бот решил сам", text]
-    if current_room in ROOM_NAMES_RU:
-        lines.append(f"Комната: {ROOM_NAMES_RU[current_room]}")
-    if CURRENT_ENEMIES:
-        lines.append("Враги: " + ", ".join(get_text("RU", f"titan_{e}") for e in CURRENT_ENEMIES))
+    message = telegram_report.alert("🤖", "Вы не ответили — бот решил сам", [text], room=current_room,
+                                    enemies=CURRENT_ENEMIES)
     image = data_paths.temp_sos_file() if os.path.exists(data_paths.temp_sos_file()) else None
 
     def send():
-        sent, note = send_alert("\n".join(lines), image)
+        sent, note = send_alert(message, image, html=True)
         print(f"[ТАКТИКА] Сообщение в Telegram: {note}")
     threading.Thread(target=send, daemon=True).start()  # без интернета бот не ждёт
+
+def save_sos_info(reason, team=None, before=None, kind="SOS"):
+    """Для сообщения в Telegram (задача 13): комната, враги, причина и пак этого окна SOS — в bot_data/sos_info.json.
+    Окно программы берёт его, когда шлёт SOS в Telegram (telegram_report.sos_report). JSON после [SOS_TRIGGER] не меняется."""
+    try:
+        telegram_report.write_sos_info(data_paths.sos_info_file(), {
+            "type": kind, "room": current_room, "room_no": SESSION_STATS["rooms_cleared"] + 1,
+            "enemies": list(CURRENT_ENEMIES), "reason": reason, "team": team or {}, "hp_before": before or {},
+        })
+    except Exception as e:
+        print(f"[SOS] Не удалось записать {data_paths.SOS_INFO_FILE}: {e}")
 
 def soft_pause(text):
     """Безопасная остановка: мягкая пауза (pause.flag). Бот ждёт в коридоре, пока вы её не снимете."""
@@ -548,16 +556,14 @@ def raise_watchdog_alarm(game_window, sct):
     SESSION_LOG.count("stuck")
     screenshot = save_debug_shot("stuck", game_window, sct)
 
-    lines = ["⚠️ Бот, похоже, завис", text]
     if pause:
-        lines.append("Умный старт не помог. Бот на мягкой паузе: посмотрите, что на экране телефона, "
-                     "верните игру в коридор подземелья и снимите паузу в окне программы.")
+        footer = ("⏸ Умный старт не помог. Бот на мягкой паузе: верните игру в коридор подземелья "
+                  "и снимите паузу в окне программы.")
     else:
-        lines.append("Пробую умный старт.")
-    if current_room in ROOM_NAMES_RU:
-        lines.append(f"Последняя комната: {ROOM_NAMES_RU[current_room]}")
-    lines.append(f"Пройдено комнат: {SESSION_STATS['rooms_cleared']}")
-    sent, note = send_alert("\n".join(lines), screenshot)
+        footer = "Пробую умный старт."
+    message = telegram_report.alert("🧊", "Бот, похоже, завис", [text, f"Пройдено комнат: {SESSION_STATS['rooms_cleared']}"],
+                                    room=current_room, footer=footer)
+    sent, note = send_alert(message, screenshot, html=True)
     print(f"[СТОРОЖ] Сообщение в Telegram: {note}")
 
     if pause:
@@ -816,6 +822,7 @@ with mss.MSS() as sct:
                         print(f"[СИСТЕМА] Ошибка сохранения скриншота: {e}")
                             
                     save_debug_shot("sos", game_window, sct)
+                    save_sos_info(panic_reason, {t: team_status.get(t, {}) for t in active_pack}, before)
                     print(f"[SOS] Причина: {panic_reason}")
                     SESSION_LOG.count("sos")
                     sos_asked = time.time()
@@ -1151,6 +1158,7 @@ with mss.MSS() as sct:
                         "enemies": CURRENT_ENEMIES,
                         "reason": reason
                     }
+                    save_sos_info(reason, kind="NO_VALID_TEAM")
                     print(f"[SOS] Причина: {reason}")
                     SESSION_LOG.count("sos")
                     sos_asked = time.time()

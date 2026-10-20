@@ -8,6 +8,7 @@
 #   bot_data/profile.yml.bak     копия профиля
 #   bot_data/titan_state.json    ХП и энергия титанов после последнего боя (в пределах игрового дня)
 #   bot_data/temp_sos.png, bot_data/temp_test.png   скриншоты для Telegram
+#   bot_data/sos_info.json       комната, враги и причина последнего окна SOS (для сообщения в Telegram)
 # Пути относительные: бот и окно программы всегда запускаются из папки проекта.
 # При импорте модуль ничего не делает. Старые файлы копируются при первом обращении к любому пути.
 import glob
@@ -24,6 +25,7 @@ PROFILE_BACKUP = f"{BOT_DATA_DIR}/profile.yml.bak"
 TEMP_SOS_FILE = f"{BOT_DATA_DIR}/temp_sos.png"
 TEMP_TEST_FILE = f"{BOT_DATA_DIR}/temp_test.png"
 TITAN_STATE_FILE = f"{BOT_DATA_DIR}/titan_state.json"
+SOS_INFO_FILE = f"{BOT_DATA_DIR}/sos_info.json"
 
 ROOM_TYPES = ("earth", "water", "fire", "mix")
 
@@ -137,3 +139,10 @@ def titan_state_file():
     """ХП и энергия титанов после последнего боя (titan_state.py)."""
     ensure_bot_data()
     return TITAN_STATE_FILE
+
+
+def sos_info_file():
+    """Комната, враги, причина и пак последнего окна SOS: бот пишет перед [SOS_TRIGGER], окно программы
+    берёт для сообщения в Telegram (задача 13, telegram_report.sos_report)."""
+    ensure_bot_data()
+    return SOS_INFO_FILE
