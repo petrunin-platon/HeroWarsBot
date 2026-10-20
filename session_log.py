@@ -211,6 +211,8 @@ class SessionLog:
         self.records = []
         self.totals = {}
         self.tap_delays = []
+        self.tap_kinds = []  # как шло каждое нажатие: "shell" — постоянное соединение, "spawn" — новый adb (задача 11)
+        self.adb_check = None  # замер при запуске: пустая команда новым adb и через постоянное соединение
         self.reaction_waits = []  # сколько бот ждал перед нажатием (пауза реакции, задача 10)
         self.stop_reason = None
         self.started = clock()
@@ -225,20 +227,29 @@ class SessionLog:
         self.totals[name] = self.totals.get(name, 0) + 1
         self.timer.count(name)
 
-    def track_tap(self, proc, started=None):
-        """Замеряет в фоне, сколько секунд выполнялась команда adb tap. Бота не задерживает."""
+    def track_tap(self, proc, started=None, kind="spawn"):
+        """Замеряет в фоне, сколько секунд выполнялась команда adb tap. Бота не задерживает.
+        kind — "shell" (постоянное соединение, задача 11) или "spawn" (новый процесс adb)."""
         started = self._clock() if started is None else started
 
         def watch():
             try:
-                proc.wait()
+                code = proc.wait()
             except Exception:
                 return
-            self.tap_delays.append(self._clock() - started)
+            if kind == "shell" and code != 0:
+                return  # соединение оборвалось — это не замер нажатия
+            done = getattr(proc, "done_at", None)
+            self.tap_delays.append((done if done is not None else self._clock()) - started)
+            self.tap_kinds.append(kind)
 
         thread = threading.Thread(target=watch, daemon=True)
         thread.start()
         return thread
+
+    def track_adb_check(self, spawn, pings):
+        """Замер при запуске (vision.measure_adb): пустая команда новым процессом adb и через постоянное соединение."""
+        self.adb_check = {"spawn": list(spawn), "ping": list(pings)}
 
     def track_reaction(self, seconds):
         """Пауза перед нажатием: сколько бот ждал (0 — кнопка видна давно, ждать не пришлось)."""
@@ -331,12 +342,16 @@ class SessionLog:
 
         if self.tap_delays:
             delays = self.tap_delays
+            shell = [d for d, k in zip(delays, self.tap_kinds) if k == "shell"]
             lines.append(
                 f"[ИТОГ] Нажатия adb tap: {len(delays)} шт. | "
-                f"задержка среднее {sum(delays) / len(delays):.2f} с, максимум {max(delays):.2f} с"
+                f"задержка среднее {sum(delays) / len(delays):.2f} с, максимум {max(delays):.2f} с | "
+                f"через постоянное соединение {len(shell)} из {len(delays)}"
             )
         else:
+            shell = []
             lines.append("[ИТОГ] Нажатия adb tap: замеров нет")
+        lines.extend(self._adb_parts(shell))
         if self.reaction_waits:
             waits = self.reaction_waits
             waited = [w for w in waits if w > 0]
@@ -346,6 +361,26 @@ class SessionLog:
             )
         lines.append("[ИТОГ] ==================================")
         return lines
+
+    def _adb_parts(self, shell_taps):
+        """Строка [ИТОГ]: из чего складывается задержка нажатия (задача 11). Пустой список — замера нет."""
+        check = self.adb_check or {}
+        spawn, pings = check.get("spawn") or [], check.get("ping") or []
+        if not spawn and not pings:
+            return []
+        ping = sum(pings) / len(pings) if pings else None
+        parts = []
+        if spawn:
+            spawn_avg = sum(spawn) / len(spawn)
+            if ping is not None:
+                parts.append(f"запуск нового adb на ПК ~{max(0.0, spawn_avg - ping):.2f} с")
+            else:
+                parts.append(f"новый adb с пустой командой {spawn_avg:.2f} с")
+        if ping is not None:
+            parts.append(f"связь с телефоном ~{ping:.3f} с")
+            if shell_taps:
+                parts.append(f"команда input на телефоне ~{max(0.0, sum(shell_taps) / len(shell_taps) - ping):.2f} с")
+        return ["[ИТОГ] Из чего складывается нажатие: " + ", ".join(parts)]
 
     def print_summary(self, rooms, titanite):
         """Печатает итог один раз, сколько бы раз ни вызвали."""
@@ -422,8 +457,12 @@ def count(name):
     SESSION.count(name)
 
 
-def track_tap(proc, started=None):
-    return SESSION.track_tap(proc, started)
+def track_tap(proc, started=None, kind="spawn"):
+    return SESSION.track_tap(proc, started, kind)
+
+
+def track_adb_check(spawn, pings):
+    SESSION.track_adb_check(spawn, pings)
 
 
 def track_reaction(seconds):

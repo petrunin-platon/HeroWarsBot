@@ -236,15 +236,17 @@ class TapPacer:
 
 
 def wait_until_still(read, same, first=None, clock=time.monotonic, sleep=time.sleep,
-                     interval=STILL_INTERVAL_S, timeout=STILL_TIMEOUT_S):
+                     interval=STILL_INTERVAL_S, timeout=STILL_TIMEOUT_S, not_before=None):
     """«Экран замер» (задача 10): читает снимки, пока два подряд не покажут одно и то же.
 
     read() — новый снимок: то, что сравниваем (например, ХП титанов на окне результата);
     same(a, b) — одинаковы ли два снимка;
     first — (когда сделан, снимок), если первый снимок уже есть.
+    not_before — снимок, который принимается, должен быть сделан не раньше этого момента (задача 11: окно результата
+    первые 1,5 с ещё проявляется). Ожидание до этого момента в timeout не входит.
     Между снимками не меньше interval секунд (если снимок делается дольше, бот не ждёт). Дольше timeout не ждёт.
     Возвращает (последний снимок, замер ли экран, сколько новых снимков сделано)."""
-    started = clock()
+    started = clock() if not_before is None else max(clock(), not_before)
     shots = 0
     if first is None:
         first = (clock(), read())
@@ -257,9 +259,10 @@ def wait_until_still(read, same, first=None, clock=time.monotonic, sleep=time.sl
         now_t = clock()
         now = read()
         shots += 1
-        if same(prev, now):
+        ready = not_before is None or now_t >= not_before
+        if ready and same(prev, now):
             return now, True, shots
-        if clock() - started >= timeout:
+        if ready and clock() - started >= timeout:
             return now, False, shots
         prev_t, prev = now_t, now
 

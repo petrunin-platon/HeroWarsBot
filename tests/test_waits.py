@@ -17,7 +17,7 @@ np = pytest.importorskip("numpy")
 import click_logic  # noqa: E402
 import result_scan as rs  # noqa: E402
 from click_logic import TapPacer, spots_still, wait_until_still  # noqa: E402
-from test_click_logic import FakeProc, FakeTime  # noqa: E402
+from test_click_logic import FakeProc, FakeTime, look_on_frame  # noqa: E402
 
 PACK = ["araji", "hyperion", "rigel", "iyari", "lumira"]
 SCREENS = os.path.join(os.path.dirname(__file__), "..", "logs", "session_01-02", "screens")
@@ -246,6 +246,39 @@ def test_result_window_still_at_once_is_quick(analyzer, clock, capsys):
     assert "второй снимок такой же" in capsys.readouterr().out
 
 
+def test_result_taken_after_window_animation(analyzer, clock, capsys):
+    """Задача 11: чтение теперь быстрое и успевает, пока окно ещё проявляется (~1,5 с, замечание к сессии 09).
+    Полоска Ригеля «доезжает» медленно: два снимка подряд одинаковые, но рано. Итог — со снимка не раньше
+    RESULT_ANIMATION_S после появления окна, и там уже 55%."""
+    img = game_area("54.png")
+    found = {}
+    analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK, found=found)
+    slow = bar_cut(img, found, "rigel", keep=20)
+    sct = SeqSct([slow, slow, slow, img, img])
+    seen = clock.now  # «ОК» появилась
+    first = analyzer.scan_team_health(GAME_RECT, sct, PACK, found=found)
+    reads = []
+
+    def reread():
+        reads.append(clock.now)
+        return analyzer.reread_team_health(GAME_RECT, sct, found)
+
+    final = rs.wait_bars_still(first, PACK, reread, clock.now, clock=clock.monotonic, sleep=clock.sleep,
+                               not_before=seen + rs.RESULT_ANIMATION_S)
+    assert abs(final["rigel"]["hp"] - 55) <= 2
+    assert reads[-1] >= seen + rs.RESULT_ANIMATION_S
+
+
+def test_still_not_before(clock):
+    """Экран не меняется, но принимать снимок можно только с момента not_before."""
+    read, times = frames(clock, [56])
+    start = clock.now
+    value, still, shots = wait_until_still(read, lambda a, b: a == b, first=(start, 56), clock=clock.monotonic,
+                                           sleep=clock.sleep, not_before=start + 1.5)
+    assert (value, still) == (56, True)
+    assert times[-1] >= start + 1.5 and times[-1] < start + 1.5 + click_logic.STILL_INTERVAL_S + 1e-9
+
+
 def test_video_jitter_is_not_movement():
     """Видео scrcpy «дрожит»: край полоски сдвигается на 1–2 пикселя (до 3%). Это не движение полоски."""
     a = {"rigel": {"hp": 55, "energy": 15, "status": "ЖИВ"}}
@@ -339,8 +372,8 @@ def test_room_window_seen_after_door_tap_needs_one_shot(combat, clock):
 
     room, screen, taps = run_door(combat, clock, slide_s=0.0, opened=opened)
     assert room is not None
-    # один снимок — убедиться, что окно замерло, второй — как и раньше, перед самим нажатием «Атаковать»
-    assert screen.shots_before_tap == 2
+    # один снимок — убедиться, что окно замерло; по нему же и первое нажатие «Атаковать» (задача 11)
+    assert screen.shots_before_tap == 1
     assert taps[0][2] == pytest.approx(screen.start - 0.4)  # пауза реакции — от момента, когда окно увидели
 
 
@@ -390,6 +423,8 @@ def navigation(clock, monkeypatch):
     module = importlib.import_module("navigation")
     monkeypatch.setattr(module, "time", clock)
     monkeypatch.setattr(module, "click_point_from_info", lambda name, info, rect: (info["x"], info["y"]))
+    monkeypatch.setattr(module, "game_frame", lambda *a, **k: None)
+    monkeypatch.setattr(module, "find_on_frame", look_on_frame(module))
     return module
 
 

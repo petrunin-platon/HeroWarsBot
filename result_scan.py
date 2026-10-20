@@ -12,6 +12,10 @@ MISSING_LIMIT = 1
 # Сколько раз пересканировать и сколько ждать между снимками
 MAX_RESCANS = 3
 RESCAN_PAUSE_S = 0.5
+# Окно результата первые ~1,5 с ещё проявляется (маленькая анимация, ваше замечание к сессии 09) — она может
+# сбить ХП и энергию. Итоговые цифры берём со снимка, сделанного не раньше чем через столько секунд после того,
+# как бот увидел «ОК» (задача 11: чтение теперь быстрое и успевает раньше)
+RESULT_ANIMATION_S = 1.5
 
 
 def missing_titans(pack, team_status):
@@ -57,12 +61,14 @@ def same_status(a, b, pack):
     return True
 
 
-def wait_bars_still(team_status, pack, reread, scanned_at, clock=time.monotonic, sleep=time.sleep, log=print):
+def wait_bars_still(team_status, pack, reread, scanned_at, clock=time.monotonic, sleep=time.sleep, log=print,
+                    not_before=None):
     """Окно результата прочитано (team_status, снимок сделан в scanned_at). Вместо паузы 1,5 с перед чтением
     (задача 10) перечитываем полоски, пока два снимка подряд не покажут одно и то же.
     reread() — {титан: {...}} для титанов, чьи иконки нашлись снова (быстро: только рядом с прежним местом);
     кого не нашли — остаётся как было. Возвращает итоговый team_status: у кого полоски двигались — с последнего
-    снимка (и строка в лог), у остальных — как в первом чтении (как уже напечатано в логе)."""
+    снимка (и строка в лог), у остальных — как в первом чтении (как уже напечатано в логе).
+    not_before — принятый снимок должен быть сделан не раньше (задача 11: RESULT_ANIMATION_S после появления окна)."""
     def read():
         merged = dict(last["status"])
         merged.update(reread())
@@ -71,7 +77,8 @@ def wait_bars_still(team_status, pack, reread, scanned_at, clock=time.monotonic,
 
     last = {"status": team_status}
     final, still, shots = click_logic.wait_until_still(
-        read, lambda a, b: same_status(a, b, pack), first=(scanned_at, team_status), clock=clock, sleep=sleep)
+        read, lambda a, b: same_status(a, b, pack), first=(scanned_at, team_status), clock=clock, sleep=sleep,
+        not_before=not_before)
     changed = [t for t in pack if not same_status(team_status, final, [t])]
     result = dict(team_status)
     result.update({t: final[t] for t in changed})
@@ -82,6 +89,8 @@ def wait_bars_still(team_status, pack, reread, scanned_at, clock=time.monotonic,
         log(f"[ЛОГИКА] Полоски ХП не замерли за {click_logic.STILL_TIMEOUT_S:.0f} с — беру последний снимок.")
     elif changed:
         log(f"[ЛОГИКА] Полоски ХП замерли после {shots + 1} снимков.")
+    elif shots > 1:
+        log(f"[ЛОГИКА] Полоски ХП не менялись, пока окно проявлялось ({shots + 1} снимков).")
     else:
         log("[ЛОГИКА] Полоски ХП замерли: второй снимок такой же.")
     return result

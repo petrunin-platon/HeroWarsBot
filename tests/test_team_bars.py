@@ -94,8 +94,7 @@ def test_wounded_titan_in_grid(screen):
     """Полоски под иконками в сетке такие же: у Араджи ХП ~55% (36 из 65 пикселей), энергия ~17%."""
     game, sct, rect = screen
     found = tm.match_many_on_frame(["araji", "angus", "rigel"], rect, sct, tm.TITAN_THRESHOLD, tm.GRID_AREA)
-    top = int(game.shape[0] * tm.GRID_AREA[0])
-    read = {t: an.read_bars_under_icon(game, (i["x"], i["y"] + top, i["w"], i["h"])) for t, i in found.items()}
+    read = {t: an.read_bars_under_icon(game, (i["x"], i["y"], i["w"], i["h"])) for t, i in found.items()}
     assert abs(read["araji"]["hp"] - 55) <= 3 and abs(read["araji"]["energy"] - 17) <= 3
     assert read["angus"]["energy"] >= 97      # полная энергия
     assert abs(read["rigel"]["energy"] - 27) <= 3
@@ -135,7 +134,8 @@ def test_bars_after_team_settled(screen):
     """После сборки ХП и энергия берутся с того снимка, где состав совпал."""
     _, sct, rect = screen
     bars = {}
-    assert tm.wait_slots_settled(SLOTS, tm.slot_titan_names(), rect, sct, bars)
+    settled, slots = tm.wait_slots_settled(SLOTS, tm.slot_titan_names(), rect, sct, bars)
+    assert settled and set(slots) == set(SLOTS)
     assert_slot_readings(bars)
 
 

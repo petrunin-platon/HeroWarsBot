@@ -22,7 +22,7 @@ def _find_attack_buttons(screenshot_cv, attack_template, scores=None):
     """Центры всех кнопок «Атаковать» на снимке (в координатах окна), слева направо.
     У каждой кнопки берётся точка с лучшим совпадением: так центр не скачет между снимками (задача 10).
     scores — словарь: в него пишется совпадение для каждого центра."""
-    res = cv2.matchTemplate(screenshot_cv, attack_template, cv2.TM_CCOEFF_NORMED)
+    res, _ = vision.match_scores(screenshot_cv, attack_template, ACTION_THRESHOLD)  # быстрый поиск (задача 11)
     loc = np.where(res >= ACTION_THRESHOLD)
     h, w = attack_template.shape[:-1]
     best = {}  # центр первой найденной точки кнопки -> (совпадение, центр лучшей точки)
@@ -157,17 +157,23 @@ def find_smart_door(window_rect, sct, current_state=None, door_hints=None, opene
 
     if best_btn:
         local_x = best_btn[0]
-        enemies = scan_enemy_team(window_rect, sct, ENEMY_TITANS, local_x)
+        # Враги — на том же снимке, где окно уже замерло (задача 11): нового снимка не нужно
+        enemies = scan_enemy_team(window_rect, sct, ENEMY_TITANS, local_x,
+                                  screen=vision.game_area_of(screenshot_cv, window_rect))
         start_time = time.time()
         policy = None  # появляется после первого нажатия «Атаковать»
+        still_shot = screenshot_cv  # первое нажатие — по этому снимку, без нового (задача 11)
 
         # Жмём один раз. Повтор — только если через click_logic.RETRY_AFTER_S после нажатия окно не отреагировало
         while True:
             elapsed = time.time() - start_time
             if os.path.exists("pause.flag"): return None, []
-            
-            scr = grab_frame(window_rect, sct)
-            scr_cv = cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR)
+
+            if still_shot is not None:
+                scr_cv, still_shot = still_shot, None
+            else:
+                scr = grab_frame(window_rect, sct)
+                scr_cv = cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR)
             dyn_scores = {}
             dyn_buttons = _find_attack_buttons(scr_cv, attack_template, dyn_scores)
             

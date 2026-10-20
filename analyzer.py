@@ -2,15 +2,18 @@
 import cv2
 import numpy as np
 import os
-from vision import imread_cyrillic, get_clean_game_screen
+import time
+from vision import imread_cyrillic, get_clean_game_screen, best_match, Area, area_box
 
-def scan_enemy_team(window_rect, sct, all_titans, btn_local_x):
+def scan_enemy_team(window_rect, sct, all_titans, btn_local_x, screen=None):
     """
     Сканирует маленькие иконки врагов в точных рамках.
     Использует чистую геометрию игры без черных полос.
+    screen — готовый снимок (картинка игровой области, clean_rect), например тот, где окно выбора комнат
+    уже замерло (задача 11): тогда новый снимок не делается.
     """
-    screenshot_cv, clean_rect = get_clean_game_screen(window_rect, sct)
-    
+    screenshot_cv, clean_rect = screen if screen is not None else get_clean_game_screen(window_rect, sct)
+
     w = clean_rect["width"]
     h = clean_rect["height"]
     
@@ -44,17 +47,20 @@ def scan_enemy_team(window_rect, sct, all_titans, btn_local_x):
         if template.shape[0] > roi_img.shape[0] or template.shape[1] > roi_img.shape[1]:
             continue
             
-        res = cv2.matchTemplate(roi_img, template, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, _ = cv2.minMaxLoc(res)
-        
-        if max_val >= 0.72:  
+        max_val, _ = best_match(roi_img, template, ENEMY_THRESHOLD)
+
+        if max_val >= ENEMY_THRESHOLD:
             enemies_found.append(titan)
             
     print(f"[АНАЛИЗАТОР] Обнаружены враги: {enemies_found}")
     return enemies_found
 
+ENEMY_THRESHOLD = 0.72
 RESULT_ICON_THRESHOLD = 0.62  # иконка титана на окне результата
 RESULT_RECHECK_MARGIN = 20    # при перечитывании иконку ищем на столько пикселей вокруг прежнего места (при ширине 939)
+# Где на окне результата искать иконки титанов (задача 11): ряд иконок посередине, с большим запасом
+# (на 54.png и 111.png иконки на 0,28–0,41 высоты и ±0,43 высоты от середины; паки из 3–4 титанов — уже)
+RESULT_AREA = Area(0.05, 0.75, -0.75, 0.75, "center")
 
 
 def _result_masks(screenshot_cv):
@@ -135,17 +141,24 @@ def _result_entry(hp_perc, ep_perc, score):
     return {"hp": hp_perc, "energy": ep_perc, "status": "ЖИВ", "score": float(score)}
 
 
-def scan_team_health(window_rect, sct, current_pack, found=None):
+def scan_team_health(window_rect, sct, current_pack, found=None, frames=None):
     """
     Сканирование здоровья и энергии титанов на окне результатов.
     Абсолютная адаптивность: зона поиска и формула меняются вместе с разрешением.
     found — словарь: в него пишется, где нашлась иконка каждого титана {титан: (x, y, w, h)}.
     По нему reread_team_health быстро перечитывает полоски (задача 10).
+    frames — список: в него добавляется (когда снят — time.monotonic(), картинка BGR, clean_rect).
+    На этом же снимке main.py ищет значок «x2» (задача 11).
     """
     if found is not None:
         found.clear()
+    shot_at = time.monotonic()
     screenshot_cv, clean_rect = get_clean_game_screen(window_rect, sct)
+    if frames is not None:
+        frames.append((shot_at, screenshot_cv, clean_rect))
     masks = _result_masks(screenshot_cv)
+    ax1, ay1, ax2, ay2 = area_box(screenshot_cv.shape, RESULT_AREA)
+    icons_area = screenshot_cv[ay1:ay2, ax1:ax2]
     
     team_status = {}
     
@@ -166,13 +179,13 @@ def scan_team_health(window_rect, sct, current_pack, found=None):
             print(f"[ОШИБКА] Не найдена иконка в RAM/диске: res_{titan}.png")
             continue
 
-        if template.shape[0] > screenshot_cv.shape[0] or template.shape[1] > screenshot_cv.shape[1]:
+        if template.shape[0] > icons_area.shape[0] or template.shape[1] > icons_area.shape[1]:
             continue
 
-        res = cv2.matchTemplate(screenshot_cv, template, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(res)
-        
-        if max_val >= RESULT_ICON_THRESHOLD:
+        max_val, max_loc = best_match(icons_area, template, RESULT_ICON_THRESHOLD)
+
+        if max_loc is not None:
+            max_loc = (ax1 + max_loc[0], ay1 + max_loc[1])
             icon_h, icon_w = template.shape[:-1]
             if found is not None:
                 found[titan] = (max_loc[0], max_loc[1], icon_w, icon_h)
@@ -191,11 +204,15 @@ def scan_team_health(window_rect, sct, current_pack, found=None):
     return team_status
 
 
-def reread_team_health(window_rect, sct, found):
+def reread_team_health(window_rect, sct, found, frames=None):
     """Перечитать полоски ХП и энергии на окне результата (задача 10): «замерли» ли они.
     Иконку каждого титана ищем только рядом с местом, где её нашёл scan_team_health (found), поэтому быстро.
-    В лог не пишет. Возвращает {титан: {"hp", "energy", "status", "score"}} для найденных; found обновляется."""
+    В лог не пишет. Возвращает {титан: {"hp", "energy", "status", "score"}} для найденных; found обновляется.
+    frames — список: в него добавляется снимок (как у scan_team_health)."""
+    shot_at = time.monotonic()
     screenshot_cv, clean_rect = get_clean_game_screen(window_rect, sct)
+    if frames is not None:
+        frames.append((shot_at, screenshot_cv, clean_rect))
     masks = _result_masks(screenshot_cv)
     scale_x = clean_rect["width"] / 939.0
     margin = max(4, int(RESULT_RECHECK_MARGIN * scale_x))
