@@ -17,7 +17,7 @@ np = pytest.importorskip("numpy")
 import click_logic  # noqa: E402
 import result_scan as rs  # noqa: E402
 from click_logic import TapPacer, spots_still, wait_until_still  # noqa: E402
-from test_click_logic import FakeProc, FakeTime  # noqa: E402
+from test_click_logic import FakeProc, FakeTime, look_on_frame  # noqa: E402
 
 PACK = ["araji", "hyperion", "rigel", "iyari", "lumira"]
 SCREENS = os.path.join(os.path.dirname(__file__), "..", "logs", "session_01-02", "screens")
@@ -246,6 +246,16 @@ def test_result_window_still_at_once_is_quick(analyzer, clock, capsys):
     assert "второй снимок такой же" in capsys.readouterr().out
 
 
+def test_result_window_read_after_animation(clock):
+    """Задача 11 (ваш совет): окно появилось, когда видна «ОК»; читать титанов — через 1,2 с.
+    Если бот увидел «ОК» давно (например, долго искал), не ждёт."""
+    seen = clock.now
+    assert rs.wait_window_settled(seen, clock=clock.monotonic, sleep=clock.sleep) == pytest.approx(1.2)
+    assert clock.now == pytest.approx(seen + rs.RESULT_ANIMATION_S)
+    assert rs.wait_window_settled(clock.now - 2.0, clock=clock.monotonic, sleep=clock.sleep) == 0
+    assert clock.now == pytest.approx(seen + rs.RESULT_ANIMATION_S)
+
+
 def test_video_jitter_is_not_movement():
     """Видео scrcpy «дрожит»: край полоски сдвигается на 1–2 пикселя (до 3%). Это не движение полоски."""
     a = {"rigel": {"hp": 55, "energy": 15, "status": "ЖИВ"}}
@@ -339,8 +349,8 @@ def test_room_window_seen_after_door_tap_needs_one_shot(combat, clock):
 
     room, screen, taps = run_door(combat, clock, slide_s=0.0, opened=opened)
     assert room is not None
-    # один снимок — убедиться, что окно замерло, второй — как и раньше, перед самим нажатием «Атаковать»
-    assert screen.shots_before_tap == 2
+    # один снимок — убедиться, что окно замерло; по нему же и первое нажатие «Атаковать» (задача 11)
+    assert screen.shots_before_tap == 1
     assert taps[0][2] == pytest.approx(screen.start - 0.4)  # пауза реакции — от момента, когда окно увидели
 
 
@@ -390,6 +400,8 @@ def navigation(clock, monkeypatch):
     module = importlib.import_module("navigation")
     monkeypatch.setattr(module, "time", clock)
     monkeypatch.setattr(module, "click_point_from_info", lambda name, info, rect: (info["x"], info["y"]))
+    monkeypatch.setattr(module, "game_frame", lambda *a, **k: None)
+    monkeypatch.setattr(module, "find_on_frame", look_on_frame(module))
     return module
 
 

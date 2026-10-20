@@ -23,7 +23,7 @@ ROOM_TIMER = SESSION_LOG.timer
 # -------------------------------------
 
 from config import CONFIG, LIMITS, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS
-from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, wait_for_ui_element, get_first_match, grab_frame
+from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, wait_for_ui_element, get_first_match, grab_frame, find_many
 import vision
 from combat import find_smart_door, execute_angus_ult, execute_rollback
 from navigation import smart_navigate_hallway, take_room_window
@@ -45,6 +45,17 @@ import titan_state
 
 WINDOW_TITLE = "HeroWarsBot_Arena"
 GRACEFUL_STOP = False
+
+# Один снимок на шаг (задача 11): какие кнопки ищутся вместе с флажком коридора в этих состояниях
+STATE_BUTTONS = {
+    "WAIT_FOR_OK": [('btn_ok.png', CONFIDENCE_THRESHOLD)],
+    "SET_TEAM": [('btn_in_battle.png', CONFIDENCE_THRESHOLD), ('btn_auto.png', CONFIDENCE_THRESHOLD)],
+}
+# Признаки, что бой начался (PREP_AUTO): пауза, круглые кнопки автобоя или сразу окно результата
+BATTLE_SIGNS = [
+    ("battle", ['btn_pause.png', 'btn_round_auto_off.png', 'btn_round_auto_on.png'], 0.75),
+    ("result", ['btn_ok.png'], CONFIDENCE_THRESHOLD),
+]
 # ХП и энергия титанов после последнего боя. Хранятся в bot_data/titan_state.json до конца игрового дня
 GLOBAL_TITAN_STATE = titan_state.TitanMemory(data_paths.titan_state_file(), get_game_date)
 if GLOBAL_TITAN_STATE:
@@ -361,6 +372,14 @@ def count_cleared_room(x2):
     print(f"[СТАТИСТИКА] Комнат: {SESSION_STATS['rooms_cleared']} | Титанит: {SESSION_STATS['titanite_gathered']}")
     return SESSION_STATS["rooms_cleared"]
 
+def result_has_x2(frames, result_seen, game_window, sct):
+    """Значок «x2» на окне результата (задача 11): на последнем снимке, с которого бот читал ХП (он сделан, когда окно
+    уже проявилось: RESULT_ANIMATION_S после появления «ОК»). Если такого снимка нет — на новом снимке, как раньше."""
+    if frames and frames[-1][0] >= result_seen + result_scan.RESULT_ANIMATION_S:
+        _, screenshot_cv, _ = frames[-1]
+        return vision.find_on_frame((screenshot_cv, 0, 0), 'badge_x2.png', 0.75) is not None
+    return bool(get_match_loc('badge_x2.png', game_window, sct, 0.75))
+
 def hp_before(pack):
     """ХП титанов пака перед боем (из GLOBAL_TITAN_STATE): {титан: ХП}. Кого бот сегодня не видел — нет в словаре.
     С задачи 9в это ХП с экрана выбора команды (read_team_screen), а не только память."""
@@ -635,6 +654,9 @@ def recover_context(game_window, sct):
     print("[УМНЫЙ СТАРТ] Контекст не требует экстренных действий. Начинаю с HALLWAY.")
     return "HALLWAY"
 
+# Постоянное соединение с телефоном открывается заранее, заодно замер: из чего складывается задержка нажатия (задача 11)
+threading.Thread(target=vision.measure_adb, daemon=True).start()
+
 with mss.MSS() as sct:
     NEEDS_CONTEXT_RECOVERY = True
     
@@ -670,35 +692,46 @@ with mss.MSS() as sct:
         # =================================================
             
         # === ГЛОБАЛЬНАЯ ЗАЩИТА ОТ ДИСКОННЕКТОВ И ЛАГОВ ===
+        # Один снимок на шаг (задача 11): флажок коридора и кнопки этого состояния ищутся на одном снимке
+        SCREEN = {}
         if STATE in ["WAIT_FOR_OK", "SET_TEAM", "PREP_AUTO", "PREP_SPECIAL_ANGUS"]:
-            if get_match_loc('flag_enter.png', game_window, sct, CONFIDENCE_THRESHOLD):
+            SCREEN_AT = time.monotonic()
+            _, SCREEN = find_many(game_window, sct, [('flag_enter.png', CONFIDENCE_THRESHOLD)] + STATE_BUTTONS.get(STATE, []))
+            if 'flag_enter.png' in SCREEN:
                 print(f"\n[СЕТЬ] Сбой! Бот в состоянии {STATE}, но на экране коридор. Сброс состояния...")
                 STATE = "HALLWAY"
                 time.sleep(1.0)
                 continue
         # =================================================
-        
-        if STATE == "WAIT_FOR_OK" and get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
+
+        if STATE == "WAIT_FOR_OK" and 'btn_ok.png' not in SCREEN:
+            time.sleep(0.1)  # бой ещё идёт: не грузим слабый ПК поиском без остановки
+            continue
+
+        if STATE == "WAIT_FOR_OK":
             ROOM_TIMER.begin("result")
-            result_seen = time.monotonic()  # от этого момента пауза реакции перед «ОК» (задача 10)
+            result_seen = SCREEN_AT  # от этого момента пауза реакции перед «ОК» (задача 10)
             counted_room = None  # номер комнаты, если она засчитана и нужна строка [ВРЕМЯ]
             active_pack = CURRENT_PACK
 
             if active_pack:
-                # Паузы 1,5 с «ожидание анимаций» больше нет (задача 10): читаем сразу, потом перечитываем полоски,
-                # пока два снимка подряд не покажут одно и то же
+                # Окно ещё проявляется: читаем через RESULT_ANIMATION_S (1,2 с) после появления «ОК» (задача 11, ваш совет).
+                # Потом перечитываем полоски, пока два снимка подряд не покажут одно и то же (задача 10)
+                result_scan.wait_window_settled(result_seen)
                 icons = {}  # где нашлись иконки титанов: по ним полоски перечитываются быстро
                 scanned_at = []
+                result_frames = []  # снимки окна результата: на последнем ищем значок «x2» (задача 11)
 
                 def scan_result():
                     scanned_at.append(time.monotonic())
-                    return scan_team_health(game_window, sct, active_pack, found=icons)
+                    return scan_team_health(game_window, sct, active_pack, found=icons, frames=result_frames)
 
                 # Не найден хотя бы один титан — окно, скорее всего, перекрыто или не дорисовано: пересканируем
                 team_status, unreadable = result_scan.scan_with_retries(scan_result, active_pack, sleep=time.sleep)
                 if not unreadable:
                     team_status = result_scan.wait_bars_still(
-                        team_status, active_pack, lambda: reread_team_health(game_window, sct, icons), scanned_at[-1])
+                        team_status, active_pack, lambda: reread_team_health(game_window, sct, icons, result_frames),
+                        scanned_at[-1])
                 
                 effective_delta = CURRENT_ALLOWED_DELTA if CURRENT_ALLOWED_DELTA is not None else TACTICS.max_hp_delta
 
@@ -946,7 +979,7 @@ with mss.MSS() as sct:
                         record_battle(current_room, CURRENT_ENEMIES, active_pack, "SUCCESS", tactic_result.get('reason', 'Одобрено'),
                                       team_status, before, before_energy)
                         
-                        x2 = bool(get_match_loc('badge_x2.png', game_window, sct, 0.75))
+                        x2 = result_has_x2(result_frames, result_seen, game_window, sct)
                         counted_room = count_cleared_room(x2)
 
                         if CONFIG.get("debug_mode"):
@@ -1011,9 +1044,11 @@ with mss.MSS() as sct:
             continue
             
         elif STATE == "SET_TEAM":
-            if get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD) or get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD):
+            if 'btn_in_battle.png' not in SCREEN and 'btn_auto.png' not in SCREEN:
+                time.sleep(0.05)  # экран выбора команды ещё не открылся
+            else:
                 ROOM_TIMER.begin("team")  # экран выбора команды виден: коридор и вход закончились
-                TEAM_SEEN = time.monotonic()
+                TEAM_SEEN = SCREEN_AT
                 # Точное ХП и энергия перед боем (задача 9в): полоски у титанов в слотах, до выбора пака
                 slots_seen, slots_read = read_team_screen(game_window, sct)
                 CURRENT_HEAL = None
@@ -1180,7 +1215,10 @@ with mss.MSS() as sct:
                     SESSION_LOG.set_stop_reason("Пак не найден в правилах")
                     sys.exit(0)
                 
-                if target_pack == LAST_USED_TEAMS.get(current_room):
+                # Сборку пропускаем, только если на экране и правда видны все титаны пака (задача 11). Сессия 09:
+                # бот помнил, что поставил Араджи, Игниса и Ашерона, а в слотах вместо Араджи стоял Вулкан
+                if target_pack == LAST_USED_TEAMS.get(current_room) and slots_seen is not None \
+                        and set(slots_seen) == set(target_pack):
                     print(f"[ТАКТИКА] Пак {target_pack} уже стоит в комнате {current_room}. Пропускаем сборку!")
                     team_ready = True
                 else:
@@ -1231,14 +1269,11 @@ with mss.MSS() as sct:
             # (одно потерянное нажатие раньше приводило к зависанию: бот ждал боя, которого не было)
             find_and_click_bulletproof('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD, timeout=3.0, seen_at=TEAM_SEEN)
             
-            # Умное ожидание ЛЮБОГО признака боя (Пауза, Авто-кнопки или сразу победа)
+            # Умное ожидание ЛЮБОГО признака боя (Пауза, Авто-кнопки или сразу победа) — один снимок на все (задача 11)
             wait_start = time.time()
             battle_confirmed = False
             while time.time() - wait_start < 10.0:
-                if get_match_loc('btn_pause.png', game_window, sct, 0.75) or \
-                   get_match_loc('btn_round_auto_off.png', game_window, sct, 0.75) or \
-                   get_match_loc('btn_round_auto_on.png', game_window, sct, 0.75) or \
-                   get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
+                if get_first_match(BATTLE_SIGNS, game_window, sct):
                     battle_confirmed = True
                     break
                 time.sleep(0.1)

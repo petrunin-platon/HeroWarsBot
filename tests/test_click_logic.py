@@ -272,11 +272,24 @@ def test_door_click_point_is_in_central_part():
 # ---------------------------------------------------------------------------
 # navigation.py: дверь и переход на этаж на подделке экрана
 # ---------------------------------------------------------------------------
+def look_on_frame(module):
+    """С задачи 11 коридор делает один снимок на шаг и ищет на нём (find_on_frame). В тестах ответы берутся
+    из подделок get_match_info (флажок) и get_match_loc (кнопки), как раньше."""
+    def look(frame, name, threshold, area=None):
+        if name == "flag_enter.png":
+            return module.get_match_info(name, {}, None, threshold)
+        loc = module.get_match_loc(name, {}, None, threshold)
+        return None if loc is None else {"x": loc[0], "y": loc[1], "w": 10, "h": 10, "score": 0.9, "ox": 0, "oy": 0}
+    return look
+
+
 @pytest.fixture
 def navigation(clock, vision, monkeypatch):
     module = importlib.import_module("navigation")
     monkeypatch.setattr(module, "time", clock)
     monkeypatch.setattr(module, "click_point_from_info", lambda name, info, rect: (info["x"], info["y"]))
+    monkeypatch.setattr(module, "game_frame", lambda *a, **k: None)
+    monkeypatch.setattr(module, "find_on_frame", look_on_frame(module))
     module.misses = []
     monkeypatch.setattr(module.session_log, "count", lambda name: module.misses.append(name))
     return module
@@ -338,19 +351,25 @@ def test_wait_after_tap_counts_from_tap_done(vision, clock, monkeypatch):
 
 
 def test_checkpoint_pressed_once_then_waits_for_new_floor(navigation, clock, monkeypatch):
-    """Точка сохранения: «Активировать» один раз, потом награда и ожидание нового этажа вместо паузы 4 с."""
+    """Точка сохранения: «Активировать» один раз, потом награда и ожидание нового этажа вместо паузы 4 с.
+    Задача 11: пауза реакции перед «Забрать» — от того, как окно награды появилось (без повторных поисков)."""
     clicks, calls = [], []
     monkeypatch.setattr(navigation, "get_match_info", lambda *a, **k: None)
     monkeypatch.setattr(navigation, "get_match_loc",
                         lambda name, *a, **k: (300, 300) if name == "btn_activate.png" else None)
-    monkeypatch.setattr(navigation, "click_human", lambda x, y, **k: clicks.append((x, y)))
-    monkeypatch.setattr(navigation, "wait_for_ui_element", lambda *a, **k: (400, 400))
-    monkeypatch.setattr(navigation, "find_and_click_bulletproof", lambda name, *a, **k: calls.append(name) or True)
+    monkeypatch.setattr(navigation, "click_human", lambda x, y, **k: clicks.append((x, y)) or "proc")
+    claim_seen = clock.now + 1.5
+    waited = []
+    monkeypatch.setattr(navigation, "wait_after_tap",
+                        lambda name, rect, sct, tap, thr, **k: waited.append((name, tap)) or (claim_seen, (400, 400)))
+    monkeypatch.setattr(navigation, "find_and_click_bulletproof",
+                        lambda name, *a, seen_at=None, **k: calls.append((name, seen_at)) or True)
     monkeypatch.setattr(navigation, "wait_for_new_floor", lambda *a, **k: calls.append("floor"))
 
     assert navigation.smart_navigate_hallway({}, None) == "HALLWAY"
     assert clicks == [(300, 300)]
-    assert calls == ["btn_claim.png", "floor"]
+    assert waited == [("btn_claim.png", "proc")]  # окно награды ждём после того, как нажатие дошло
+    assert calls == [("btn_claim.png", claim_seen), "floor"]
 
 
 def test_new_floor_waits_for_door_flag_not_fixed_pause(navigation, clock, monkeypatch):

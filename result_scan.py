@@ -12,6 +12,19 @@ MISSING_LIMIT = 1
 # Сколько раз пересканировать и сколько ждать между снимками
 MAX_RESCANS = 3
 RESCAN_PAUSE_S = 0.5
+# Окно результата в начале ещё проявляется (маленькая анимация, ваше замечание к сессии 09) — она может сбить ХП
+# и энергию. Ваш совет: окно появилось, когда видна «ОК»; через 1,2 с можно читать титанов (задача 11: чтение
+# теперь быстрое и иначе успевало бы во время анимации)
+RESULT_ANIMATION_S = 1.2
+
+
+def wait_window_settled(result_seen, clock=time.monotonic, sleep=time.sleep):
+    """Ждёт, пока с появления «ОК» (result_seen) пройдёт RESULT_ANIMATION_S. Если бот увидел «ОК» давно, не ждёт.
+    Возвращает, сколько секунд ждал."""
+    rest = result_seen + RESULT_ANIMATION_S - clock()
+    if rest > 0:
+        sleep(rest)
+    return max(0.0, rest)
 
 
 def missing_titans(pack, team_status):
