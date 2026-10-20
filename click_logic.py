@@ -1,6 +1,7 @@
 # click_logic.py
-# Логика надёжных нажатий: когда повторять нажатие, когда дверь «стоит на месте», когда картинка замерла.
-# Без OpenCV и игры, поэтому проверяется тестами (tests/test_click_logic.py).
+# Логика надёжных нажатий: когда повторять нажатие, когда дверь «стоит на месте», когда картинка замерла,
+# пауза реакции перед нажатием (задача 10).
+# Без OpenCV и игры, поэтому проверяется тестами (tests/test_click_logic.py, tests/test_waits.py).
 import random
 import time
 
@@ -39,6 +40,19 @@ FLOOR_FLAG_WAIT_S = 12.0
 # --- Начало боя ---
 # Сколько раз пробуем начать бой («Авто»), если экран выбора команды не закрылся. Потом бот останавливается
 START_BATTLE_ATTEMPTS = 3
+
+# --- Человеческая скорость нажатий (задача 10, ваш ответ на вопрос 13) ---
+# Пауза реакции: нажимаем не раньше, чем через столько секунд (случайно) после того, как кнопка ПОЯВИЛАСЬ на экране.
+# Если бот и так думал дольше (читал ХП, разбирал двери), лишнего ожидания нет
+REACTION_S = (0.3, 0.8)
+# И не больше 2 нажатий в секунду
+MIN_TAP_INTERVAL_S = 0.5
+
+# --- «Экран замер» (задача 10): вместо фиксированных пауз ---
+# Два снимка подряд показывают одно и то же, и между ними не меньше столько секунд (если снимок делается дольше, не ждём)
+STILL_INTERVAL_S = 0.3
+# Дольше не ждём: берём последний снимок
+STILL_TIMEOUT_S = 2.0
 
 # Ответы RetryPolicy.observe
 WAIT, RETRY, DONE = "WAIT", "RETRY", "DONE"
@@ -135,6 +149,11 @@ class StableTracker:
         self._streak = []
         self.gave_up = False
 
+    @property
+    def first_seen(self):
+        """Когда предмет появился на экране (None — его нет). От этого момента считается пауза реакции."""
+        return self._first_seen
+
     def update(self, pos):
         """Новый снимок, на котором предмет найден в точке pos. True — можно нажимать."""
         now = self._clock()
@@ -187,3 +206,66 @@ def after_failed_battle_start(team_screen_visible, attempts, limit=START_BATTLE_
     if attempts >= limit:
         return "STOP", attempts
     return "SET_TEAM", attempts
+
+
+class TapPacer:
+    """Пауза перед нажатием (задача 10, вопрос 13): реакция человека и не больше 2 нажатий в секунду.
+
+    Реакция считается от того, как кнопка появилась на экране (seen_at), а не от решения бота нажать:
+    если бот после появления кнопки ещё думал (читал ХП, разбирал двери), время уже прошло и ждать не нужно."""
+
+    def __init__(self, clock=time.monotonic, rng=random, reaction=REACTION_S, min_interval=MIN_TAP_INTERVAL_S):
+        self._clock = clock
+        self._rng = rng
+        self._reaction = reaction
+        self._min_interval = min_interval
+        self._last_tap = None
+
+    def wait_before(self, seen_at=None):
+        """Сколько секунд подождать перед нажатием. seen_at — когда кнопка появилась (None — только что)."""
+        now = self._clock()
+        seen_at = now if seen_at is None else seen_at
+        wait = self._rng.uniform(*self._reaction) - (now - seen_at)
+        if self._last_tap is not None:
+            wait = max(wait, self._min_interval - (now - self._last_tap))
+        return max(0.0, wait)
+
+    def tapped(self):
+        """Нажатие сделано: следующее — не раньше чем через min_interval."""
+        self._last_tap = self._clock()
+
+
+def wait_until_still(read, same, first=None, clock=time.monotonic, sleep=time.sleep,
+                     interval=STILL_INTERVAL_S, timeout=STILL_TIMEOUT_S):
+    """«Экран замер» (задача 10): читает снимки, пока два подряд не покажут одно и то же.
+
+    read() — новый снимок: то, что сравниваем (например, ХП титанов на окне результата);
+    same(a, b) — одинаковы ли два снимка;
+    first — (когда сделан, снимок), если первый снимок уже есть.
+    Между снимками не меньше interval секунд (если снимок делается дольше, бот не ждёт). Дольше timeout не ждёт.
+    Возвращает (последний снимок, замер ли экран, сколько новых снимков сделано)."""
+    started = clock()
+    shots = 0
+    if first is None:
+        first = (clock(), read())
+        shots = 1
+    prev_t, prev = first
+    while True:
+        rest = interval - (clock() - prev_t)
+        if rest > 0:
+            sleep(rest)
+        now_t = clock()
+        now = read()
+        shots += 1
+        if same(prev, now):
+            return now, True, shots
+        if clock() - started >= timeout:
+            return now, False, shots
+        prev_t, prev = now_t, now
+
+
+def spots_still(before, now, tol):
+    """Предметы (например, кнопки «Атаковать») стоят на месте: каждый из before есть в now (±tol пикселей).
+    before и now — списки точек (x, y)."""
+    return bool(now) and all(
+        any(abs(b[0] - n[0]) <= tol and abs(b[1] - n[1]) <= tol for n in now) for b in before)

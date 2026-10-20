@@ -211,6 +211,7 @@ class SessionLog:
         self.records = []
         self.totals = {}
         self.tap_delays = []
+        self.reaction_waits = []  # сколько бот ждал перед нажатием (пауза реакции, задача 10)
         self.stop_reason = None
         self.started = clock()
         self.started_at = started or datetime.now()
@@ -238,6 +239,10 @@ class SessionLog:
         thread = threading.Thread(target=watch, daemon=True)
         thread.start()
         return thread
+
+    def track_reaction(self, seconds):
+        """Пауза перед нажатием: сколько бот ждал (0 — кнопка видна давно, ждать не пришлось)."""
+        self.reaction_waits.append(seconds)
 
     def set_stop_reason(self, reason, force=False):
         if force or not self.stop_reason:
@@ -332,6 +337,13 @@ class SessionLog:
             )
         else:
             lines.append("[ИТОГ] Нажатия adb tap: замеров нет")
+        if self.reaction_waits:
+            waits = self.reaction_waits
+            waited = [w for w in waits if w > 0]
+            lines.append(
+                f"[ИТОГ] Пауза реакции перед нажатием: ждал {len(waited)} раз из {len(waits)} | "
+                f"всего {fmt_s(sum(waits))}, в среднем {sum(waits) / len(waits):.2f} с на нажатие"
+            )
         lines.append("[ИТОГ] ==================================")
         return lines
 
@@ -412,6 +424,10 @@ def count(name):
 
 def track_tap(proc, started=None):
     return SESSION.track_tap(proc, started)
+
+
+def track_reaction(seconds):
+    SESSION.track_reaction(seconds)
 
 
 def excluded(name):

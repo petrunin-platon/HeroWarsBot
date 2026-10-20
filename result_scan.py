@@ -1,7 +1,10 @@
 # result_scan.py
-# Надёжное чтение окна результата: пересканировать, если титаны не нашлись, и имя файла для скриншота SOS.
-# Без OpenCV и игры, поэтому логику можно проверять тестами (tests/test_result_scan.py).
+# Надёжное чтение окна результата: пересканировать, если титаны не нашлись, дождаться, пока полоски ХП замрут
+# (задача 10), и имя файла для скриншота SOS.
+# Без OpenCV и игры, поэтому логику можно проверять тестами (tests/test_result_scan.py, tests/test_waits.py).
 import time
+
+import click_logic
 
 # Пак — это те, кого бот сам поставил перед боем (3, 4 или 5 титанов), и все они должны быть на окне результата.
 # Поэтому не найденный хотя бы один — это сбой чтения, а не «не дрался». Мёртвого бот находит по иконке и ХП = 0.
@@ -36,6 +39,52 @@ def scan_with_retries(scan, pack, sleep=time.sleep, log=print):
         if len(missing_titans(pack, new)) <= len(missing_titans(pack, best)):
             best = new
     return best, is_unreadable(pack, best)
+
+
+# Два снимка окна результата «одинаковые», если ХП и энергия отличаются не больше чем на столько процентов
+# (видео scrcpy слегка «дрожит», край полоски может сдвинуться на 1–2 пикселя: при полоске ~85 пикселей это до 3%)
+SAME_PERCENT = 3
+
+
+def same_status(a, b, pack):
+    """Одинаковы ли два снимка окна результата для титанов пака (±SAME_PERCENT%)."""
+    for t in pack:
+        x, y = a.get(t, {}), b.get(t, {})
+        if x.get("status") != y.get("status"):
+            return False
+        if any(abs(x.get(k, 0) - y.get(k, 0)) > SAME_PERCENT for k in ("hp", "energy")):
+            return False
+    return True
+
+
+def wait_bars_still(team_status, pack, reread, scanned_at, clock=time.monotonic, sleep=time.sleep, log=print):
+    """Окно результата прочитано (team_status, снимок сделан в scanned_at). Вместо паузы 1,5 с перед чтением
+    (задача 10) перечитываем полоски, пока два снимка подряд не покажут одно и то же.
+    reread() — {титан: {...}} для титанов, чьи иконки нашлись снова (быстро: только рядом с прежним местом);
+    кого не нашли — остаётся как было. Возвращает итоговый team_status: у кого полоски двигались — с последнего
+    снимка (и строка в лог), у остальных — как в первом чтении (как уже напечатано в логе)."""
+    def read():
+        merged = dict(last["status"])
+        merged.update(reread())
+        last["status"] = merged
+        return merged
+
+    last = {"status": team_status}
+    final, still, shots = click_logic.wait_until_still(
+        read, lambda a, b: same_status(a, b, pack), first=(scanned_at, team_status), clock=clock, sleep=sleep)
+    changed = [t for t in pack if not same_status(team_status, final, [t])]
+    result = dict(team_status)
+    result.update({t: final[t] for t in changed})
+    for t in changed:
+        log(f" ---> {t.upper()}: ХП {final[t].get('hp', 0)}%, Энергия {final[t].get('energy', 0)}% "
+            f"(было {team_status.get(t, {}).get('hp', 0)}% / {team_status.get(t, {}).get('energy', 0)}%: полоски ещё двигались)")
+    if not still:
+        log(f"[ЛОГИКА] Полоски ХП не замерли за {click_logic.STILL_TIMEOUT_S:.0f} с — беру последний снимок.")
+    elif changed:
+        log(f"[ЛОГИКА] Полоски ХП замерли после {shots + 1} снимков.")
+    else:
+        log("[ЛОГИКА] Полоски ХП замерли: второй снимок такой же.")
+    return result
 
 
 def describe_missing(pack, team_status):

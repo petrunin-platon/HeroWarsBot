@@ -230,10 +230,15 @@ def imread_cyrillic(image_name):
     scale = GEOMETRY_CACHE.get("scale", 1.0)
     return get_scaled_template(image_name, scale)
 
-def click_human(x, y, exact=False, jitter=4):
+# Пауза перед нажатием (задача 10): реакция 0,3–0,8 с после появления кнопки и не больше 2 нажатий в секунду
+TAP_PACER = click_logic.TapPacer()
+
+def click_human(x, y, exact=False, jitter=4, seen_at=None):
     global LAST_WINDOW_RECT
     """Нажимает через adb. Возвращает процесс нажатия (по нему видно, когда команда дошла до телефона)
-    или None, если нажать не удалось."""
+    или None, если нажать не удалось.
+    seen_at — когда кнопка появилась на экране (time.monotonic()): от него считается пауза реакции.
+    None — кнопка только что найдена, пауза реакции целиком."""
     if not LAST_WINDOW_RECT or not GEOMETRY_CACHE["is_calibrated"]:
         return None
 
@@ -255,10 +260,16 @@ def click_human(x, y, exact=False, jitter=4):
         tap_x += random.randint(-phone_jitter, phone_jitter)
         tap_y += random.randint(-phone_jitter, phone_jitter)
         
+    # Одна осознанная пауза перед нажатием вместо паузы 0,1–0,2 с после каждого нажатия
+    wait = TAP_PACER.wait_before(seen_at)
+    if wait > 0:
+        time.sleep(wait)
+    session_log.track_reaction(wait)
+
     tap_started = time.monotonic()
     tap_proc = subprocess.Popen(["adb", "shell", "input", "tap", str(tap_x), str(tap_y)], creationflags=0x08000000)
+    TAP_PACER.tapped()
     session_log.track_tap(tap_proc, tap_started)  # замер задержки в фоне, бота не задерживает
-    time.sleep(0.1 if exact else random.uniform(0.1, 0.2))
     return tap_proc
 
 def swipe_scrcpy(window_rect, direction="down"):
@@ -372,7 +383,7 @@ def get_match_loc(image_name, window_rect, sct, threshold):
         return None
     return click_point_from_info(image_name, info, window_rect)
 
-def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=6.0):
+def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=6.0, seen_at=None):
     """
     Человечный и надежный клик с защитой от непрокликивания и от лишних нажатий.
 
@@ -380,6 +391,8 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
     click_logic.RETRY_AFTER_S после того, как команда нажатия дошла до телефона, экран не отреагировал.
     Если окно уже закрывается (кнопка бледнеет или едет), ждёт дольше.
     timeout — сколько искать кнопку и сколько можно начинать новые нажатия.
+    seen_at — когда кнопка появилась на экране (time.monotonic()), если бот увидел её раньше (например, «ОК»
+    до чтения ХП). Тогда пауза реакции уже прошла. None — считаем от первого снимка, где кнопка найдена.
     """
     start_time = time.time()
     policy = None
@@ -387,6 +400,7 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
 
     while True:
         elapsed = time.time() - start_time
+        shot_at = time.monotonic()  # кнопка видна на экране не позже, чем сделан снимок
         info = get_match_info(image_name, window_rect, sct, threshold)
 
         if info is None:
@@ -405,6 +419,8 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
             continue
 
         pos = (info["x"], info["y"])
+        if seen_at is None:
+            seen_at = shot_at
         if policy is not None:
             verdict = policy.observe(True, info["score"], pos)
             if verdict == click_logic.WAIT:
@@ -420,7 +436,7 @@ def find_and_click_bulletproof(image_name, window_rect, sct, threshold, timeout=
             retried_at = time.monotonic()
 
         coords = click_point_from_info(image_name, info, window_rect)
-        tap_proc = click_human(coords[0], coords[1])
+        tap_proc = click_human(coords[0], coords[1], seen_at=seen_at)
         policy = click_logic.RetryPolicy(click_logic.TapWatch(tap_proc, clock=time.monotonic),
                                          info["score"], pos, clock=time.monotonic)
 
@@ -461,12 +477,15 @@ def wait_for_ui_element(template_name, window_rect, sct, threshold=0.75, timeout
     return None
 
 def wait_after_tap(template_name, window_rect, sct, tap_proc, threshold=0.75, react_s=click_logic.DOOR_REACT_S,
-                   settle_time=0.0, poll_rate=0.05):
+                   poll_rate=0.05):
     """
     Ждёт реакцию на нажатие: появление элемента. Время отсчитывается не от нажатия, а от момента,
     когда команда adb дошла до телефона (иначе медленный adb выглядит как промах).
+    Паузы «дать окну успокоиться» здесь больше нет (задача 10): замерло ли окно, проверяет тот, кто дальше
+    с ним работает (find_smart_door), на своих же снимках.
 
-    :return: координаты элемента или None, если за react_s после нажатия экран не отреагировал.
+    :return: (когда снимок сделан — time.monotonic(), центр элемента в координатах окна) или None,
+             если за react_s после нажатия экран не отреагировал.
     """
     watch = click_logic.TapWatch(tap_proc, clock=time.monotonic)
 
@@ -475,14 +494,9 @@ def wait_after_tap(template_name, window_rect, sct, tap_proc, threshold=0.75, re
         if done is not None and time.monotonic() - done >= react_s:
             return None
 
-        coords = get_match_loc(template_name, window_rect, sct, threshold)
-        if coords:
-            if settle_time <= 0:
-                return coords
-            time.sleep(settle_time)
-            coords_final = get_match_loc(template_name, window_rect, sct, threshold)
-            if coords_final:
-                return coords_final
-            continue
+        shot_at = time.monotonic()
+        info = get_match_info(template_name, window_rect, sct, threshold)
+        if info:
+            return shot_at, (info["ox"] + info["x"] + info["w"] // 2, info["oy"] + info["y"] + info["h"] // 2)
 
         time.sleep(poll_rate)

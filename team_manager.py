@@ -46,10 +46,11 @@ def open_grid_if_needed(window_rect, sct):
     print("[ОШИБКА КОМАНДЫ] Не смог убедиться, что сетка открыта (не вижу 4 точки)!")
     return False
 
-def precise_select_titan(x, y):
-    """Снайперский точный клик по титану (через ADB)"""
-    click_human(x, y, exact=True)
-    time.sleep(0.15) 
+def precise_select_titan(x, y, seen_at=None):
+    """Снайперский точный клик по титану (через ADB).
+    seen_at — когда сделан снимок, на котором нашли титана: от него считается пауза реакции (задача 10).
+    Паузы после нажатия нет: между нажатиями бот сам выдерживает не меньше 0,5 с (не больше 2 нажатий в секунду)."""
+    click_human(x, y, exact=True, seen_at=seen_at)
 
 # Картинки в корне assets/, которые не титаны (кнопки, враги, значки и т.п.)
 NOT_TITAN_PREFIXES = ("btn_", "res_", "enemy_", "icon_", "flag_", "badge_")
@@ -191,14 +192,14 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct, seen=No
                 scrolled -= 1
 
         # 1. Убираем лишних. Одним снимком, справа налево: тогда остальные при сдвиге влево не меняют места
+        seen_at = time.monotonic()
         found, slots = read_slots(names, window_rect, sct)
         unwanted, missing = team_diff(target_pack, slots)
         for titan in unwanted:
             if os.path.exists("pause.flag"): return False
             print(f"[КОМАНДА] Убираю: {titan}")
             x, y = click_point_from_info(f"{titan}.png", found[titan], window_rect)
-            precise_select_titan(x, y)
-            time.sleep(0.2)
+            precise_select_titan(x, y, seen_at)
 
         # 2. Ставим недостающих. Сетка при выборе не двигается, поэтому ищем всех на одном снимке
         remaining = [t for t in sorted_pack if t in missing]
@@ -206,11 +207,12 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct, seen=No
             if not remaining:
                 break
             if os.path.exists("pause.flag"): return False
+            seen_at = time.monotonic()
             in_grid = match_many_on_frame(remaining, window_rect, sct, TITAN_THRESHOLD, GRID_AREA)
             for titan in [t for t in remaining if t in in_grid]:
                 print(f"[КОМАНДА] -> Ставлю {titan}")
                 x, y = click_point_from_info(f"{titan}.png", in_grid[titan], window_rect)
-                precise_select_titan(x, y)
+                precise_select_titan(x, y, seen_at)
                 remaining.remove(titan)
             if remaining and swipe_idx < 2:
                 print(f"[КОМАНДА] -> Не вижу {remaining}. Делаю свайп ВНИЗ ({swipe_idx + 1}/2)...")

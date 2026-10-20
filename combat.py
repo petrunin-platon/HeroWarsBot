@@ -6,6 +6,7 @@ import os
 from config import CONFIG, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS, ENEMY_TITANS
 from vision import click_human, get_match_loc, find_and_click_bulletproof, imread_cyrillic, wait_for_ui_element, \
     get_first_match, click_point_from_info, grab_frame
+import vision
 from analyzer import scan_enemy_team
 import click_logic
 import tactics
@@ -17,36 +18,73 @@ from rules_engine import engine
 
 ACTION_THRESHOLD = 0.75 
 
+def _find_attack_buttons(screenshot_cv, attack_template, scores=None):
+    """Центры всех кнопок «Атаковать» на снимке (в координатах окна), слева направо.
+    У каждой кнопки берётся точка с лучшим совпадением: так центр не скачет между снимками (задача 10).
+    scores — словарь: в него пишется совпадение для каждого центра."""
+    res = cv2.matchTemplate(screenshot_cv, attack_template, cv2.TM_CCOEFF_NORMED)
+    loc = np.where(res >= ACTION_THRESHOLD)
+    h, w = attack_template.shape[:-1]
+    best = {}  # центр первой найденной точки кнопки -> (совпадение, центр лучшей точки)
+    for pt in zip(*loc[::-1]):
+        center = (pt[0] + w // 2, pt[1] + h // 2)
+        score = float(res[pt[1], pt[0]])
+        key = next((k for k in best if abs(center[0] - k[0]) < 40), center)
+        if key not in best or score > best[key][0]:
+            best[key] = (score, center)
+    buttons = sorted(center for _, center in best.values())
+    if scores is not None:
+        scores.update({center: score for score, center in best.values()})
+    return buttons
+
+
+def wait_room_window_still(window_rect, sct, attack_template, opened=None):
+    """Окно выбора комнат могло ещё выезжать. Вместо пауз 0,2 + 0,2 с (задача 10) ждём, пока кнопки «Атаковать»
+    на двух снимках подряд стоят на месте (снимки бот делает всё равно, чтобы разобрать двери).
+    opened — (когда, центр кнопки) из navigation: снимок, где окно уже было видно после нажатия на дверь.
+    Возвращает (снимок BGR, кнопки); кнопок нет и за 2 с не появились — список пустой; окно слишком мало — (None, [])."""
+    tol = click_logic.DOOR_STABLE_TOL_PX * vision.GEOMETRY_CACHE.get("scale", 1.0)
+    started = time.monotonic()
+    prev_t, prev = (opened[0], [opened[1]]) if opened else (None, None)
+    while True:
+        if prev is not None:
+            rest = click_logic.STILL_INTERVAL_S - (time.monotonic() - prev_t)
+            if rest > 0:
+                time.sleep(rest)
+        shot_t = time.monotonic()
+        screenshot_cv = cv2.cvtColor(grab_frame(window_rect, sct), cv2.COLOR_BGRA2BGR)
+
+        # --- ФЕЙЛ-СЕЙФ: ЗАЩИТА ОТ КРАША OpenCV ПРИ СВЕРНУТОМ ОКНЕ ---
+        if attack_template.shape[0] > screenshot_cv.shape[0] or attack_template.shape[1] > screenshot_cv.shape[1]:
+            print("[СИСТЕМА CV] ВНИМАНИЕ: Окно свернуто или слишком мало! Увеличьте окно (или нажмите 'Сброс размера' в GUI).")
+            return None, []
+        # -------------------------------------------------------------
+
+        buttons = _find_attack_buttons(screenshot_cv, attack_template)
+        if prev and len(buttons) >= len(prev) and click_logic.spots_still(prev, buttons, tol):
+            return screenshot_cv, buttons
+        if shot_t - started >= click_logic.STILL_TIMEOUT_S:
+            # Кнопок нет совсем — двери не найдены (main.py вернётся в коридор), как и раньше
+            if buttons:
+                print(f"[НАВИГАЦИЯ] Кнопки «Атаковать» не замерли за {click_logic.STILL_TIMEOUT_S:.0f} с — разбираю двери как есть.")
+            return screenshot_cv, buttons
+        prev_t, prev = shot_t, buttons  # кнопок ещё нет (окно проявляется) или они сдвинулись — смотрим следующий снимок
+
+
 # ДОБАВЛЕН ПАРАМЕТР current_state
 # door_hints — (heals, danger) для выбора двери по здоровью титанов (задача 9б, tactics.door_choice): main.py:door_hints
-def find_smart_door(window_rect, sct, current_state=None, door_hints=None):
+# opened — (когда, центр кнопки «Атаковать») из navigation.take_room_window(): окно уже видели после нажатия на дверь
+def find_smart_door(window_rect, sct, current_state=None, door_hints=None, opened=None):
     if current_state is None:
         current_state = {}
 
-    img = grab_frame(window_rect, sct)
-    screenshot_cv = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-    
     attack_template = imread_cyrillic('btn_attack.png')
     if attack_template is None: 
         return None, []
-        
-    # --- ФЕЙЛ-СЕЙФ: ЗАЩИТА ОТ КРАША OpenCV ПРИ СВЕРНУТОМ ОКНЕ ---
-    if attack_template.shape[0] > screenshot_cv.shape[0] or attack_template.shape[1] > screenshot_cv.shape[1]:
-        print("[СИСТЕМА CV] ВНИМАНИЕ: Окно свернуто или слишком мало! Увеличьте окно (или нажмите 'Сброс размера' в GUI).")
-        return None, []
-    # -------------------------------------------------------------
-        
-    res = cv2.matchTemplate(screenshot_cv, attack_template, cv2.TM_CCOEFF_NORMED)
-    loc = np.where(res >= ACTION_THRESHOLD)
-    
-    attack_buttons = []
-    h, w = attack_template.shape[:-1]
-    
-    for pt in zip(*loc[::-1]):
-        center_x, center_y = pt[0] + w // 2, pt[1] + h // 2
-        if not any(abs(center_x - ax) < 40 for ax, ay in attack_buttons):
-            attack_buttons.append((center_x, center_y))
-            
+
+    # С этого момента считается пауза реакции перед «Атаковать» (задача 10)
+    window_seen = opened[0] if opened else time.monotonic()
+    screenshot_cv, attack_buttons = wait_room_window_still(window_rect, sct, attack_template, opened)
     if not attack_buttons:
         return None, []
         
@@ -130,16 +168,8 @@ def find_smart_door(window_rect, sct, current_state=None, door_hints=None):
             
             scr = grab_frame(window_rect, sct)
             scr_cv = cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR)
-            res = cv2.matchTemplate(scr_cv, attack_template, cv2.TM_CCOEFF_NORMED)
-            loc = np.where(res >= ACTION_THRESHOLD)
-            
-            dyn_buttons = []
             dyn_scores = {}
-            for pt in zip(*loc[::-1]):
-                cx, cy = pt[0] + w // 2, pt[1] + h // 2
-                if not any(abs(cx - ax) < 40 for ax, ay in dyn_buttons):
-                    dyn_buttons.append((cx, cy))
-                    dyn_scores[(cx, cy)] = float(res[pt[1], pt[0]])
+            dyn_buttons = _find_attack_buttons(scr_cv, attack_template, dyn_scores)
             
             if not dyn_buttons:
                 if policy is not None:
@@ -160,7 +190,8 @@ def find_smart_door(window_rect, sct, current_state=None, door_hints=None):
                 print(f"[КОМБАТ] Нажатие на 'Атаковать' не сработало (экран не отреагировал {policy.seconds_since_tap():.1f} с). Повторяю...")
                 session_log.count("repeat_clicks")
             
-            tap_proc = click_human(window_rect["left"] + target_btn[0], window_rect["top"] + target_btn[1])
+            tap_proc = click_human(window_rect["left"] + target_btn[0], window_rect["top"] + target_btn[1],
+                                   seen_at=window_seen)
             policy = click_logic.RetryPolicy(click_logic.TapWatch(tap_proc, clock=time.monotonic),
                                              score, target_btn, clock=time.monotonic)
             local_x = target_btn[0] 
@@ -186,9 +217,11 @@ def execute_angus_ult(window_rect, sct):
         
     if not saved_coords: return False
         
+    # Пауза реакции (задача 10) — только перед первым нажатием: время ульты (1,8 с) не сдвигается
+    battle_seen = time.monotonic()
     auto_x, auto_y = saved_coords
     print("[АНГУС] Бой начался! Включаю Auto...")
-    click_human(auto_x, auto_y)
+    click_human(auto_x, auto_y, seen_at=battle_seen)
     
     turned_on = False
     wait_start = time.time()
@@ -199,7 +232,7 @@ def execute_angus_ult(window_rect, sct):
             break
         time.sleep(0.05) 
         
-    if not turned_on: click_human(auto_x, auto_y)
+    if not turned_on: click_human(auto_x, auto_y, seen_at=battle_seen)
         
     print("[АНГУС] УСПЕХ: Автобой ВКЛЮЧЕН. Жду 1.8 сек для ульты Ангуса...")
     # Тут можно не проверять, 1.8 сек быстро пролетят
@@ -209,9 +242,9 @@ def execute_angus_ult(window_rect, sct):
     active_coords = get_match_loc('btn_round_auto_on.png', roi_rect, sct, 0.7)
     
     if active_coords:
-        click_human(active_coords[0], active_coords[1])
+        click_human(active_coords[0], active_coords[1], seen_at=battle_seen)
     else:
-        click_human(auto_x, auto_y)
+        click_human(auto_x, auto_y, seen_at=battle_seen)
     
     turned_off = False
     wait_start = time.time()
@@ -225,9 +258,9 @@ def execute_angus_ult(window_rect, sct):
     if not turned_off: 
         retry_coords = get_match_loc('btn_round_auto_on.png', roi_rect, sct, 0.7)
         if retry_coords:
-            click_human(retry_coords[0], retry_coords[1])
+            click_human(retry_coords[0], retry_coords[1], seen_at=battle_seen)
         else:
-            click_human(auto_x, auto_y)
+            click_human(auto_x, auto_y, seen_at=battle_seen)
         
     print("[АНГУС] УСПЕХ: Автобой ВЫКЛЮЧЕН.")
     return True
