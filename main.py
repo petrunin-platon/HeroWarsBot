@@ -26,13 +26,13 @@ from config import CONFIG, LIMITS, CONFIDENCE_THRESHOLD, ALL_ACTIVE_TITANS
 from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, wait_for_ui_element, get_first_match, grab_frame
 import vision
 from combat import find_smart_door, execute_angus_ult, execute_rollback
-from navigation import smart_navigate_hallway
+from navigation import smart_navigate_hallway, take_room_window
 from click_logic import after_failed_battle_start, START_BATTLE_ATTEMPTS
 import rollback_logic
 from telegram_agent import send_alert
 from i18n import get_text
 from team_manager import verify_and_set_team, scan_slots, slot_titan_names, recheck_bars
-from analyzer import scan_team_health
+from analyzer import scan_team_health, reread_team_health
 from analytics import log_battle
 from battle_verdict import evaluate_battle
 from rules_engine import engine
@@ -240,6 +240,7 @@ CURRENT_CONDITION = {}  # условие правила, которое дало
 CURRENT_HEAL = None  # кого лечит текущий пак, если пак отхила бот собрал сам (задача 9в); иначе None
 ROOM_AUTO_ROLLBACKS = 0  # сколько раз бот сам откатил бой в этой комнате
 START_FAILS = 0  # сколько раз подряд не удалось начать бой («Авто» не сработала)
+TEAM_SEEN = None  # когда появился экран выбора команды: от этого момента пауза реакции перед «Авто» (задача 10)
 
 LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
 
@@ -676,16 +677,25 @@ with mss.MSS() as sct:
         
         if STATE == "WAIT_FOR_OK" and get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
             ROOM_TIMER.begin("result")
+            result_seen = time.monotonic()  # от этого момента пауза реакции перед «ОК» (задача 10)
             counted_room = None  # номер комнаты, если она засчитана и нужна строка [ВРЕМЯ]
             active_pack = CURRENT_PACK
 
             if active_pack:
-                print("[ЛОГИКА] Ожидание завершения анимаций (1.5 сек)...")
-                time.sleep(1.5)
-                
-                # Не нашлись 2 титана и больше — окно, скорее всего, перекрыто или не дорисовано: пересканируем
-                team_status, unreadable = result_scan.scan_with_retries(
-                    lambda: scan_team_health(game_window, sct, active_pack), active_pack, sleep=time.sleep)
+                # Паузы 1,5 с «ожидание анимаций» больше нет (задача 10): читаем сразу, потом перечитываем полоски,
+                # пока два снимка подряд не покажут одно и то же
+                icons = {}  # где нашлись иконки титанов: по ним полоски перечитываются быстро
+                scanned_at = []
+
+                def scan_result():
+                    scanned_at.append(time.monotonic())
+                    return scan_team_health(game_window, sct, active_pack, found=icons)
+
+                # Не найден хотя бы один титан — окно, скорее всего, перекрыто или не дорисовано: пересканируем
+                team_status, unreadable = result_scan.scan_with_retries(scan_result, active_pack, sleep=time.sleep)
+                if not unreadable:
+                    team_status = result_scan.wait_bars_still(
+                        team_status, active_pack, lambda: reread_team_health(game_window, sct, icons), scanned_at[-1])
                 
                 effective_delta = CURRENT_ALLOWED_DELTA if CURRENT_ALLOWED_DELTA is not None else TACTICS.max_hp_delta
 
@@ -943,14 +953,14 @@ with mss.MSS() as sct:
                                 wait_for_input()
                             force_window_focus()
 
-            find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD)
+            find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD, seen_at=result_seen)
             STATE = "HALLWAY"
             if counted_room:
-                # Окно результата закрыто — комната завершена. Пауза 0.5 с ниже уже считается следующей комнате
+                # Окно результата закрыто — комната завершена. Паузы 0,5 с после «ОК» больше нет (задача 10):
+                # коридор сам ждёт, пока флажок двери встанет на место
                 print(SESSION_LOG.finish_room(counted_room, current_room))
             else:
                 ROOM_TIMER.restart("hallway")
-            time.sleep(0.5)
             continue
             
         if STATE == "HALLWAY":
@@ -986,7 +996,8 @@ with mss.MSS() as sct:
             # ИСПРАВЛЕНИЕ: Передаем актуальный GLOBAL_TITAN_STATE в боевой модуль!
             # Дверь по здоровью титанов (задача 9б) — только если бот решает сам
             found_room, enemies = find_smart_door(game_window, sct, GLOBAL_TITAN_STATE,
-                                                  door_hints=door_hints() if TACTICS.auto_rollback else None)
+                                                  door_hints=door_hints() if TACTICS.auto_rollback else None,
+                                                  opened=take_room_window())
             if found_room:
                 current_room = found_room
                 CURRENT_ENEMIES = enemies
@@ -999,6 +1010,7 @@ with mss.MSS() as sct:
         elif STATE == "SET_TEAM":
             if get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD) or get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD):
                 ROOM_TIMER.begin("team")  # экран выбора команды виден: коридор и вход закончились
+                TEAM_SEEN = time.monotonic()
                 # Точное ХП и энергия перед боем (задача 9в): полоски у титанов в слотах, до выбора пака
                 slots_seen, slots_read = read_team_screen(game_window, sct)
                 CURRENT_HEAL = None
@@ -1190,7 +1202,7 @@ with mss.MSS() as sct:
             
         elif STATE == "PREP_SPECIAL_ANGUS":
             ROOM_TIMER.begin("battle")
-            if find_and_click_bulletproof('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD):
+            if find_and_click_bulletproof('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD, seen_at=TEAM_SEEN):
                 START_FAILS = 0
                 execute_angus_ult(game_window, sct)
                 STATE = "WAIT_FOR_OK" 
@@ -1204,7 +1216,7 @@ with mss.MSS() as sct:
             print("[ТАКТИКА] Выполняю быстрый старт боя...")
             # «Авто» жмём с проверкой: если экран выбора команды не закрылся, нажатие повторится
             # (одно потерянное нажатие раньше приводило к зависанию: бот ждал боя, которого не было)
-            find_and_click_bulletproof('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD, timeout=3.0)
+            find_and_click_bulletproof('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD, timeout=3.0, seen_at=TEAM_SEEN)
             
             # Умное ожидание ЛЮБОГО признака боя (Пауза, Авто-кнопки или сразу победа)
             wait_start = time.time()

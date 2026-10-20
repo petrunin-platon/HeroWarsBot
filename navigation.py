@@ -7,33 +7,48 @@ from click_logic import StableTracker, DOOR_STABLE_TOL_PX, FLOOR_FLAG_WAIT_S
 import vision
 import session_log
 
+# Окно выбора комнат после нажатия на дверь: (когда увидели, центр кнопки «Атаковать» в координатах окна).
+# Его берёт find_smart_door (main.py), чтобы не ждать, пока окно «успокоится», отдельной паузой (задача 10)
+ROOM_WINDOW = {"seen": None}
+
+
+def take_room_window():
+    """Что видели после нажатия на дверь (или None) — один раз."""
+    seen, ROOM_WINDOW["seen"] = ROOM_WINDOW["seen"], None
+    return seen
+
+
 def smart_navigate_hallway(window_rect, sct):
     print("[НАВИГАЦИЯ] Сканирую коридор (динамическое ожидание)...")
     wait_start = time.time()
+    ROOM_WINDOW["seen"] = None
     # Дверь жмём, только когда флажок стоит на месте
     door = StableTracker(clock=time.monotonic, tol=DOOR_STABLE_TOL_PX * vision.GEOMETRY_CACHE.get("scale", 1.0))
     
     while time.time() - wait_start < 10.0:
-        # 1. Приоритет 1: Кнопка атаки (уже стоим у открытой двери)
-        if get_match_loc('btn_attack.png', window_rect, sct, 0.68):
+        # 1. Приоритет 1: Кнопка атаки (уже стоим у открытой двери).
+        # Пока флажок едет, её не ищем: без нажатия на дверь окно не откроется, а каждый поиск — лишний снимок (задача 10)
+        if door.first_seen is None and get_match_loc('btn_attack.png', window_rect, sct, 0.68):
             return "ROOM_SELECTION"
             
         # 2. Приоритет 2: Флаг двери (перехватывает фокус до чекпоинта)
         flag = get_match_info('flag_enter.png', window_rect, sct, CONFIDENCE_THRESHOLD)
         if flag:
             if not door.update((flag["x"], flag["y"])):
-                time.sleep(0.1)  # флажок ещё едет — смотрим следующий снимок
+                time.sleep(0.05)  # флажок ещё едет — смотрим следующий снимок
                 continue
             if door.gave_up:
                 print("[НАВИГАЦИЯ] Флажок так и не замер — жму как есть.")
             print("[НАВИГАЦИЯ] Дверь зафиксирована. Начинаю вход...")
             door_xy = click_point_from_info('flag_enter.png', flag, window_rect)
-            tap = click_human(door_xy[0], door_xy[1])
+            tap = click_human(door_xy[0], door_xy[1], seen_at=door.first_seen)
             
-            # Ждем окно выбора комнат. Отсчёт идёт от момента, когда нажатие дошло до телефона
-            if wait_after_tap('btn_attack.png', window_rect, sct, tap, 0.68, settle_time=0.2):
+            # Ждем окно выбора комнат. Отсчёт идёт от момента, когда нажатие дошло до телефона.
+            # Паузы 0,2 + 0,2 с «дать окну успокоиться» больше нет: find_smart_door сам проверит, что кнопки стоят на месте
+            opened = wait_after_tap('btn_attack.png', window_rect, sct, tap, 0.68)
+            if opened:
                 print("[УСПЕХ] Окно выбора комнат открылось.")
-                time.sleep(0.2)
+                ROOM_WINDOW["seen"] = opened
                 return "ROOM_SELECTION"
             else:
                 print("[ОШИБКА] Окно атаки не появилось после клика в дверь (лаги?).")

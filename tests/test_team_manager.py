@@ -85,7 +85,7 @@ def test_mismatch_removes_unwanted_right_to_left_without_swipes(screen, monkeypa
     sct, rect = screen
     clicked = []
     monkeypatch.setattr(tm, "open_grid_if_needed", lambda *a: True)
-    monkeypatch.setattr(tm, "precise_select_titan", lambda x, y: clicked.append((x, y)))
+    monkeypatch.setattr(tm, "precise_select_titan", lambda x, y, seen_at=None: clicked.append((x, y)))
     swipes = []
     monkeypatch.setattr(tm, "swipe_scrcpy", lambda *a, **k: swipes.append(k))
     monkeypatch.setattr(tm, "SLOTS_SETTLE_TIMEOUT", 0.0)

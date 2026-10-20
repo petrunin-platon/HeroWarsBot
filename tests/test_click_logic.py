@@ -126,6 +126,9 @@ def vision(clock, monkeypatch):
     module = importlib.import_module("vision")
     monkeypatch.setattr(module, "time", clock)
     monkeypatch.setattr(module, "click_point_from_info", lambda name, info, rect: (50, 50))
+    # run_button подменяет их прямо в модуле: после теста вернуть настоящие (их проверяет tests/test_waits.py)
+    monkeypatch.setattr(module, "click_human", module.click_human)
+    monkeypatch.setattr(module, "get_match_info", module.get_match_info)
     module.taps = []
     return module
 
@@ -320,13 +323,16 @@ def test_hallway_door_miss_returns_at_once(navigation, clock, monkeypatch):
 def test_wait_after_tap_counts_from_tap_done(vision, clock, monkeypatch):
     """Медленный adb (1 с). Окно открылось на 2,5 с — это успех; промах считаем только через DOOR_REACT_S после нажатия."""
     start = clock.now
-    monkeypatch.setattr(vision, "get_match_loc", lambda *a, **k: (10, 10) if clock.now - start >= 2.5 else None)
+    info = {"x": 10, "y": 10, "w": 40, "h": 20, "score": 0.9, "ox": 5, "oy": 3}
+    monkeypatch.setattr(vision, "get_match_info", lambda *a, **k: info if clock.now - start >= 2.5 else None)
     proc = FakeProc(clock, 1.0)
-    assert vision.wait_after_tap("btn_attack.png", {}, None, proc, 0.68, react_s=2.0) == (10, 10)
+    seen_at, center = vision.wait_after_tap("btn_attack.png", {}, None, proc, 0.68, react_s=2.0)
+    assert center == (5 + 10 + 20, 3 + 10 + 10)  # центр кнопки в координатах окна (для find_smart_door)
+    assert 2.5 <= seen_at - start <= 2.6
 
     start = clock.now
     proc = FakeProc(clock, 1.0)
-    monkeypatch.setattr(vision, "get_match_loc", lambda *a, **k: None)
+    monkeypatch.setattr(vision, "get_match_info", lambda *a, **k: None)
     assert vision.wait_after_tap("btn_attack.png", {}, None, proc, 0.68, react_s=2.0) is None
     assert 2.9 <= clock.now - start <= 3.3  # 1 с команда + 2 с ожидания
 

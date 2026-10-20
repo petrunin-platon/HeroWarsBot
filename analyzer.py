@@ -53,12 +53,12 @@ def scan_enemy_team(window_rect, sct, all_titans, btn_local_x):
     print(f"[АНАЛИЗАТОР] Обнаружены враги: {enemies_found}")
     return enemies_found
 
-def scan_team_health(window_rect, sct, current_pack):
-    """
-    Сканирование здоровья и энергии титанов на окне результатов.
-    Абсолютная адаптивность: зона поиска и формула меняются вместе с разрешением.
-    """
-    screenshot_cv, clean_rect = get_clean_game_screen(window_rect, sct)
+RESULT_ICON_THRESHOLD = 0.62  # иконка титана на окне результата
+RESULT_RECHECK_MARGIN = 20    # при перечитывании иконку ищем на столько пикселей вокруг прежнего места (при ширине 939)
+
+
+def _result_masks(screenshot_cv):
+    """Зелёная (ХП) и жёлтая (энергия) маски окна результата."""
     hsv = cv2.cvtColor(screenshot_cv, cv2.COLOR_BGR2HSV)
     
     # Зеленая маска для ХП
@@ -70,6 +70,82 @@ def scan_team_health(window_rect, sct, current_pack):
     lower_yellow = np.array([18, 150, 170])
     upper_yellow = np.array([32, 255, 255])
     mask_energy = cv2.inRange(hsv, lower_yellow, upper_yellow)
+    return mask_green, mask_energy
+
+
+def _result_template(titan):
+    """Иконка титана для окна результата (края срезаны) или None."""
+    template = imread_cyrillic(f"res_{titan}.png")
+    if template is None:
+        return None
+    CROP_SIDES = 4 
+    if template.shape[1] > CROP_SIDES * 3:
+        template = template[:, CROP_SIDES:-CROP_SIDES]
+    return template
+
+
+def _result_bars(masks, x_start, y_start, icon_w, icon_h, scale_x):
+    """ХП и энергия (%) по полоскам под иконкой окна результата, иконка найдена в (x_start, y_start)."""
+    mask_green, mask_energy = masks
+    max_bar_width = 50.0 * scale_x
+
+    SHIFT_DOWN = int(icon_h * 1.6) 
+    BOX_HEIGHT = int(icon_h * 0.70) 
+    EXPAND_WIDTH = int(15 * scale_x) 
+    
+    crop_y1 = min(y_start + SHIFT_DOWN, mask_green.shape[0])
+    crop_y2 = min(crop_y1 + BOX_HEIGHT, mask_green.shape[0])
+    
+    crop_x1 = max(x_start - EXPAND_WIDTH, 0)
+    crop_x2 = min(x_start + icon_w + EXPAND_WIDTH, mask_green.shape[1]) 
+    
+    roi_green = mask_green[crop_y1:crop_y2, crop_x1:crop_x2]
+    roi_energy = mask_energy[crop_y1:crop_y2, crop_x1:crop_x2]
+    
+    hp_w, hp_y = 0, -1 
+    
+    if roi_green.size > 0:
+        green_row_sums = np.sum(roi_green == 255, axis=1)
+        if len(green_row_sums) > 0:
+            max_green_pixels = np.max(green_row_sums)
+            if max_green_pixels >= 3:
+                hp_y = np.argmax(green_row_sums)
+                hp_w = max_green_pixels
+
+    ep_w = 0
+    if hp_y != -1 and roi_energy.size > 0:
+        search_start = hp_y + 4
+        search_end = min(roi_energy.shape[0], hp_y + 14)
+        if search_start < search_end:
+            energy_slice = roi_energy[search_start:search_end, :]
+            energy_row_sums = np.sum(energy_slice == 255, axis=1)
+            if len(energy_row_sums) > 0:
+                max_energy_pixels = np.max(energy_row_sums)
+                if max_energy_pixels >= 5:
+                    ep_w = max_energy_pixels
+
+    hp_perc = min(int((hp_w / max_bar_width) * 100), 100)
+    ep_perc = min(int((ep_w / max_bar_width) * 100), 100)
+    return hp_perc, ep_perc
+
+
+def _result_entry(hp_perc, ep_perc, score):
+    if hp_perc == 0:
+        return {"hp": 0, "energy": 0, "status": "МЕРТВ", "score": float(score)}
+    return {"hp": hp_perc, "energy": ep_perc, "status": "ЖИВ", "score": float(score)}
+
+
+def scan_team_health(window_rect, sct, current_pack, found=None):
+    """
+    Сканирование здоровья и энергии титанов на окне результатов.
+    Абсолютная адаптивность: зона поиска и формула меняются вместе с разрешением.
+    found — словарь: в него пишется, где нашлась иконка каждого титана {титан: (x, y, w, h)}.
+    По нему reread_team_health быстро перечитывает полоски (задача 10).
+    """
+    if found is not None:
+        found.clear()
+    screenshot_cv, clean_rect = get_clean_game_screen(window_rect, sct)
+    masks = _result_masks(screenshot_cv)
     
     team_status = {}
     
@@ -85,20 +161,10 @@ def scan_team_health(window_rect, sct, current_pack):
     print(f"[АНАЛИЗАТОР] Масштаб: {scale_x:.3f}x | Эталон полоски: {max_bar_width:.2f}px")
     
     for titan in current_pack:
-        icon_name = f"res_{titan}.png"
-        template = imread_cyrillic(icon_name)
-        
+        template = _result_template(titan)
         if template is None:
-            # ИСПРАВЛЕН БАГ: Добавлено расширение .png в строку фолбэка
-            template = imread_cyrillic(f"res_{titan}.png")
-            
-        if template is None:
-            print(f"[ОШИБКА] Не найдена иконка в RAM/диске: {icon_name}")
+            print(f"[ОШИБКА] Не найдена иконка в RAM/диске: res_{titan}.png")
             continue
-            
-        CROP_SIDES = 4 
-        if template.shape[1] > CROP_SIDES * 3:
-            template = template[:, CROP_SIDES:-CROP_SIDES]
 
         if template.shape[0] > screenshot_cv.shape[0] or template.shape[1] > screenshot_cv.shape[1]:
             continue
@@ -106,54 +172,15 @@ def scan_team_health(window_rect, sct, current_pack):
         res = cv2.matchTemplate(screenshot_cv, template, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(res)
         
-        if max_val >= 0.62:
+        if max_val >= RESULT_ICON_THRESHOLD:
             icon_h, icon_w = template.shape[:-1]
-            x_start = max_loc[0]
-            y_start = max_loc[1]
-            
-            SHIFT_DOWN = int(icon_h * 1.6) 
-            BOX_HEIGHT = int(icon_h * 0.70) 
-            EXPAND_WIDTH = int(15 * scale_x) 
-            
-            crop_y1 = min(y_start + SHIFT_DOWN, screenshot_cv.shape[0])
-            crop_y2 = min(crop_y1 + BOX_HEIGHT, screenshot_cv.shape[0])
-            
-            crop_x1 = max(x_start - EXPAND_WIDTH, 0)
-            crop_x2 = min(x_start + icon_w + EXPAND_WIDTH, screenshot_cv.shape[1]) 
-            
-            roi_green = mask_green[crop_y1:crop_y2, crop_x1:crop_x2]
-            roi_energy = mask_energy[crop_y1:crop_y2, crop_x1:crop_x2]
-            
-            hp_w, hp_y = 0, -1 
-            
-            if roi_green.size > 0:
-                green_row_sums = np.sum(roi_green == 255, axis=1)
-                if len(green_row_sums) > 0:
-                    max_green_pixels = np.max(green_row_sums)
-                    if max_green_pixels >= 3:
-                        hp_y = np.argmax(green_row_sums)
-                        hp_w = max_green_pixels
-
-            ep_w = 0
-            if hp_y != -1 and roi_energy.size > 0:
-                search_start = hp_y + 4
-                search_end = min(roi_energy.shape[0], hp_y + 14)
-                if search_start < search_end:
-                    energy_slice = roi_energy[search_start:search_end, :]
-                    energy_row_sums = np.sum(energy_slice == 255, axis=1)
-                    if len(energy_row_sums) > 0:
-                        max_energy_pixels = np.max(energy_row_sums)
-                        if max_energy_pixels >= 5:
-                            ep_w = max_energy_pixels
-
-            hp_perc = min(int((hp_w / max_bar_width) * 100), 100)
-            ep_perc = min(int((ep_w / max_bar_width) * 100), 100)
-            
+            if found is not None:
+                found[titan] = (max_loc[0], max_loc[1], icon_w, icon_h)
+            hp_perc, ep_perc = _result_bars(masks, max_loc[0], max_loc[1], icon_w, icon_h, scale_x)
+            team_status[titan] = _result_entry(hp_perc, ep_perc, max_val)
             if hp_perc == 0:
-                team_status[titan] = {"hp": 0, "energy": 0, "status": "МЕРТВ", "score": float(max_val)}
                 print(f" ---> {titan.upper()}: [МЕРТВ] (ХП = 0%, сходство иконки {max_val:.2f})")
             else:
-                team_status[titan] = {"hp": hp_perc, "energy": ep_perc, "status": "ЖИВ", "score": float(max_val)}
                 print(f" ---> {titan.upper()}: ХП {hp_perc}%, Энергия {ep_perc}%")
                 
         else:
@@ -161,6 +188,33 @@ def scan_team_health(window_rect, sct, current_pack):
             print(f" ---> {titan.upper()}: [ОТСУТСТВУЕТ] (иконка не найдена: сходство {max_val:.2f}, порог 0.62)")
             
     print("[АНАЛИЗАТОР] Сканирование завершено.\n")
+    return team_status
+
+
+def reread_team_health(window_rect, sct, found):
+    """Перечитать полоски ХП и энергии на окне результата (задача 10): «замерли» ли они.
+    Иконку каждого титана ищем только рядом с местом, где её нашёл scan_team_health (found), поэтому быстро.
+    В лог не пишет. Возвращает {титан: {"hp", "energy", "status", "score"}} для найденных; found обновляется."""
+    screenshot_cv, clean_rect = get_clean_game_screen(window_rect, sct)
+    masks = _result_masks(screenshot_cv)
+    scale_x = clean_rect["width"] / 939.0
+    margin = max(4, int(RESULT_RECHECK_MARGIN * scale_x))
+    team_status = {}
+    for titan, (x, y, icon_w, icon_h) in list(found.items()):
+        template = _result_template(titan)
+        if template is None:
+            continue
+        x1, y1 = max(0, x - margin), max(0, y - margin)
+        roi = screenshot_cv[y1:y + icon_h + margin, x1:x + icon_w + margin]
+        if template.shape[0] > roi.shape[0] or template.shape[1] > roi.shape[1]:
+            continue
+        res = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+        if max_val < RESULT_ICON_THRESHOLD:
+            continue
+        nx, ny = x1 + max_loc[0], y1 + max_loc[1]
+        found[titan] = (nx, ny, icon_w, icon_h)
+        team_status[titan] = _result_entry(*_result_bars(masks, nx, ny, icon_w, icon_h, scale_x), max_val)
     return team_status
 
 
