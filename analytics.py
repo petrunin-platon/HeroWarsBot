@@ -25,9 +25,11 @@ SESSION_ID = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 SESSION_LOG_FILE = f"{LOG_DIR}/battle_log_{SESSION_ID}.jsonl"
 GUI_LOG_FILE = f"{LOG_DIR}/battle_log.csv" 
 
-def log_battle(room_type, enemies, pack, action, reason, team_status, hp_before=None):
+def log_battle(room_type, enemies, pack, action, reason, team_status, hp_before=None, energy_before=None, heal_for=None):
     """Журналирует бой в уникальный файл сессии. Возвращает запись (для истории боёв в tactics.py).
-    hp_before — {титан: ХП до боя} (задача 9б): по нему видно, виноваты враги или титан вошёл в бой раненым."""
+    hp_before — {титан: ХП до боя} (задача 9б): по нему видно, виноваты враги или титан вошёл в бой раненым.
+    energy_before — {титан: энергия до боя} (задача 9в): по ней прогноз потерь берётся из боёв с похожей энергией.
+    heal_for — кого лечил пак отхила, который бот собрал сам (задача 9в): такой пак не становится «золотым правилом»."""
     entry = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "room": room_type,
@@ -39,6 +41,10 @@ def log_battle(room_type, enemies, pack, action, reason, team_status, hp_before=
     }
     if hp_before is not None:
         entry["hp_before"] = hp_before
+    if energy_before is not None:
+        entry["energy_before"] = energy_before
+    if heal_for:
+        entry["heal_for"] = heal_for
     
     with open(SESSION_LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")

@@ -2,7 +2,9 @@
 import time
 import os
 from config import CONFIDENCE_THRESHOLD
-from vision import click_human, get_match_loc, list_root_asset_names, click_point_from_info, match_many_on_frame, swipe_scrcpy, wait_for_ui_element
+import vision
+from vision import click_human, get_match_loc, list_root_asset_names, click_point_from_info, match_many_on_frame, swipe_scrcpy, wait_for_ui_element, game_frame
+from analyzer import read_bars_under_icon
 
 # Оригинальный, проверенный порог совпадения
 TITAN_THRESHOLD = 0.88 
@@ -87,30 +89,86 @@ def sort_pack(target_pack):
     return sorted_pack
 
 
-def read_slots(names, window_rect, sct):
-    """Один снимок экрана: кто стоит в нижних слотах. Возвращает ({титан: info}, {титан: x})."""
-    found = match_many_on_frame(names, window_rect, sct, TITAN_THRESHOLD, SLOTS_AREA)
+def read_slots(names, window_rect, sct, frame=None):
+    """Один снимок экрана: кто стоит в нижних слотах. Возвращает ({титан: info}, {титан: x}).
+    frame — готовый снимок (vision.game_frame), тогда новый не делается."""
+    found = match_many_on_frame(names, window_rect, sct, TITAN_THRESHOLD, SLOTS_AREA, frame=frame)
     return found, {t: info["x"] for t, info in found.items()}
 
 
-def wait_slots_settled(target_pack, names, window_rect, sct):
-    """Ждёт, пока в слотах окажется ровно нужный состав (иконка летит в слот ~1 с). True — состав совпал."""
+def slot_bars(found, frame):
+    """ХП и энергия по полоскам под иконками в слотах (задача 9в). found — из read_slots на этом же снимке frame.
+    Возвращает {титан: {"hp": %, "energy": %}}; не прочиталось — None вместо числа."""
+    screenshot_cv, _, oy = frame
+    scale = vision.GEOMETRY_CACHE.get("scale", 1.0)
+    return {t: read_bars_under_icon(screenshot_cv, (info["x"], info["y"] + info["oy"] - oy, info["w"], info["h"]), scale)
+            for t, info in found.items()}
+
+
+def scan_slots(names, window_rect, sct):
+    """Один снимок: кто стоит в слотах и сколько у них ХП и энергии (задача 9в).
+    names — кого искать: если известно, кто там стоит, хватит этих титанов (так быстрее).
+    Возвращает ({титан: info}, {титан: x}, {титан: {"hp", "energy"}})."""
+    frame = game_frame(window_rect, sct)
+    found, slots = read_slots(names, window_rect, sct, frame)
+    return found, slots, slot_bars(found, frame)
+
+
+BARS_RECHECK_S = 0.3     # через сколько перечитать полоски, если они не совпали с памятью
+BARS_RECHECK_TRIES = 3   # не больше стольких перечитываний
+BARS_SAME = 2            # два снимка «одинаковые», если цифры отличаются не больше чем на 2%
+
+
+def _same_bars(a, b):
+    return all(a.get(k) == b.get(k) or (a.get(k) is not None and b.get(k) is not None and abs(a[k] - b[k]) <= BARS_SAME)
+               for k in ("hp", "energy"))
+
+
+def recheck_bars(titans, bars, window_rect, sct, sleep=time.sleep):
+    """Полоски этих титанов не совпали с памятью бота (задача 9в): вдруг они ещё не дорисовались.
+    Перечитываем их (только этих титанов), пока два снимка подряд не покажут одно и то же (±BARS_SAME%),
+    но не больше BARS_RECHECK_TRIES раз. Берётся последний снимок. Обновляет bars и возвращает его."""
+    last = {t: bars[t] for t in titans if t in bars}
+    for _ in range(BARS_RECHECK_TRIES):
+        if not last:
+            break
+        sleep(BARS_RECHECK_S)
+        _, _, now = scan_slots(sorted(last), window_rect, sct)
+        stable = all(_same_bars(last[t], now[t]) for t in last if t in now)
+        last.update({t: now[t] for t in last if t in now})
+        if stable:
+            break
+    bars.update(last)
+    return bars
+
+
+def wait_slots_settled(target_pack, names, window_rect, sct, bars=None):
+    """Ждёт, пока в слотах окажется ровно нужный состав (иконка летит в слот ~1 с). True — состав совпал.
+    bars — словарь: в него пишутся полоски ХП и энергии с того снимка, где состав совпал."""
     deadline = time.time() + SLOTS_SETTLE_TIMEOUT
     while True:
-        _, slots = read_slots(names, window_rect, sct)
+        _, slots, readings = scan_slots(names, window_rect, sct)
         if not any(team_diff(target_pack, slots)):
+            if bars is not None:
+                bars.update(readings)
             return True
         if time.time() >= deadline:
             return False
         time.sleep(SLOTS_POLL_S)
 
 
-def verify_and_set_team(target_pack, available_titans, window_rect, sct):
+def verify_and_set_team(target_pack, available_titans, window_rect, sct, seen=None, bars=None):
+    """Ставит нужный состав в слоты. True — состав стоит.
+    seen — кто уже виден в слотах ({титан: info} с того же экрана, задача 9в): тогда первый снимок не нужен.
+    bars — словарь: после сборки в него пишутся ХП и энергия титанов с экрана (кого бот поставил сам)."""
     names = slot_titan_names(target_pack)
     sorted_pack = sort_pack(target_pack)
 
     # Быстрая проверка: один снимок нижних слотов. Игра сама помнит последний состав, чаще всего он уже стоит
-    _, slots = read_slots(names, window_rect, sct)
+    if seen is None:
+        _, slots = read_slots(names, window_rect, sct)
+    else:
+        slots = {t: info["x"] for t, info in seen.items()}
     if not any(team_diff(target_pack, slots)):
         print(f"[КОМАНДА] Состав уже стоит в слотах: {sorted_pack}. Ничего не меняю.")
         return True
@@ -163,7 +221,7 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct):
             print(f"[ОШИБКА] Не нашел {titan} даже после 2 свайпов!")
 
         # 3. Контрольная проверка: ждём, пока последняя иконка долетит в слот
-        if wait_slots_settled(target_pack, names, window_rect, sct):
+        if wait_slots_settled(target_pack, names, window_rect, sct, bars):
             print("[КОМАНДА] Состав ИДЕАЛЬНО укомплектован!")
             return True
 

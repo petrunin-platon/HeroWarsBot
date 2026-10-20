@@ -162,3 +162,100 @@ def scan_team_health(window_rect, sct, current_pack):
             
     print("[АНАЛИЗАТОР] Сканирование завершено.\n")
     return team_status
+
+
+# =====================================================================
+# ПОЛОСКИ ХП И ЭНЕРГИИ НА ЭКРАНЕ ВЫБОРА КОМАНДЫ (задача 9в)
+# Под иконкой титана (в слотах и в сетке) две полоски: зелёная — ХП, под ней жёлтая — энергия.
+# Пустая часть полоски почти чёрная. Длину полоски бот меряет сам (заливка + чёрная часть до рамки),
+# поэтому размер окна не важен. Настроено по logs/session_01-02/screens/pered_boem.png.
+# =====================================================================
+BAR_GREEN = (np.array([45, 100, 100]), np.array([75, 255, 255]))   # как на окне результата
+BAR_YELLOW = (np.array([18, 150, 170]), np.array([32, 255, 255]))
+BAR_DARK_V = 45        # пустая часть полоски: яркость (V в HSV) не больше этой; рамка и фон светлее
+BAR_DARK_S = 180       # и насыщенность меньше этой: тёмный край заливки — тень того же цвета, это не пустая часть
+BAR_LENGTH = 65        # длина полоски в пикселях при высоте игры 720 (на pered_boem.png 64–65)
+BAR_MIN_LENGTH = 0.6   # полоска короче 60% этой длины — не полоска
+BAR_AREA_Y = (15, 65)  # где искать полоску ХП: на столько пикселей ниже иконки (при высоте 720)
+BAR_AREA_X = (30, 10)  # и на столько левее и правее иконки (полоска сдвинута влево от шаблона)
+ENERGY_BELOW = (8, 24)  # полоска энергии — на столько пикселей ниже полоски ХП
+
+
+def _bar_percent(fill_row, dark_row, min_length):
+    """Сколько процентов полоски залито. fill_row и dark_row — строки масок (True — заливка / пустая часть).
+    Полоска начинается с самого длинного куска заливки (или, если заливки нет, с самого длинного чёрного куска)
+    и идёт вправо, пока не начнётся рамка. Разрыв в 1–2 пикселя (сглаженный край заливки) допустим.
+    None — полоски нет."""
+    fill = np.asarray(fill_row, dtype=bool)
+    dark = np.asarray(dark_row, dtype=bool)
+    start = _longest_run_start(fill)
+    if start is None:
+        start = _longest_run_start(dark)
+        if start is None:
+            return None
+    last_good, gap = start, 0
+    for x in range(start, len(fill)):
+        if fill[x] or dark[x]:
+            last_good, gap = x, 0
+        else:
+            gap += 1
+            if gap > 2:
+                break
+    length = last_good - start + 1
+    if length < min_length:
+        return None
+    filled = np.flatnonzero(fill[start:last_good + 1])
+    return min(100, round(100 * (filled.max() + 1) / length)) if filled.size else 0
+
+
+def _longest_run_start(mask):
+    """Начало самого длинного куска True подряд (None — нет ни одного)."""
+    best_start, best_len, start = None, 0, None
+    for x, value in enumerate(list(mask) + [False]):
+        if value and start is None:
+            start = x
+        elif not value and start is not None:
+            if x - start > best_len:
+                best_start, best_len = start, x - start
+            start = None
+    return best_start
+
+
+def read_bars_under_icon(screenshot_cv, box, scale=1.0):
+    """ХП и энергия титана по полоскам под его иконкой. box — (x, y, w, h) иконки на снимке screenshot_cv (BGR).
+    Возвращает {"hp": %, "energy": %}; не прочиталось — None вместо числа."""
+    x, y, w, h = box
+    img_h, img_w = screenshot_cv.shape[:2]
+    x1 = max(0, int(x - BAR_AREA_X[0] * scale))
+    x2 = min(img_w, int(x + w + BAR_AREA_X[1] * scale))
+    y1 = min(img_h, int(y + h + BAR_AREA_Y[0] * scale))
+    y2 = min(img_h, int(y + h + BAR_AREA_Y[1] * scale + ENERGY_BELOW[1] * scale))
+    result = {"hp": None, "energy": None}
+    if x2 - x1 < 5 or y2 - y1 < 5:
+        return result
+
+    hsv = cv2.cvtColor(screenshot_cv[y1:y2, x1:x2], cv2.COLOR_BGR2HSV)
+    green = cv2.inRange(hsv, *BAR_GREEN) > 0
+    yellow = cv2.inRange(hsv, *BAR_YELLOW) > 0
+    dark = (hsv[:, :, 2] <= BAR_DARK_V) & (hsv[:, :, 1] < BAR_DARK_S)
+    min_length = BAR_MIN_LENGTH * BAR_LENGTH * scale
+
+    # ХП: строка с самой длинной зелёной заливкой в верхней части окна (ниже — уже энергия)
+    hp_rows = green[:int((BAR_AREA_Y[1] - BAR_AREA_Y[0]) * scale)].sum(axis=1)
+    if hp_rows.size == 0 or hp_rows.max() < 3:
+        return result  # зелёной полоски нет: титан мёртв, слот пуст или окно ещё не дорисовано
+    hp_row = int(np.argmax(hp_rows))
+    result["hp"] = _bar_percent(green[hp_row], dark[hp_row], min_length)
+
+    # Энергия: ниже ХП. Жёлтой заливки нет — значит энергия 0: берём строку с самой длинной чёрной полоской
+    top = hp_row + int(ENERGY_BELOW[0] * scale)
+    bottom = min(green.shape[0], hp_row + int(ENERGY_BELOW[1] * scale) + 1)
+    if top >= bottom:
+        return result
+    yellow_rows = yellow[top:bottom].sum(axis=1)
+    if yellow_rows.max() >= 3:
+        row = top + int(np.argmax(yellow_rows))
+    else:
+        row = top + int(np.argmax(dark[top:bottom].sum(axis=1)))
+    result["energy"] = _bar_percent(yellow[row], dark[row], min_length)
+    return result

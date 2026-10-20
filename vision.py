@@ -301,12 +301,20 @@ def get_match_info(image_name, window_rect, sct, threshold):
     screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
     return _match_on_frame(screenshot_cv, ox, oy, image_name, threshold)
 
-def match_many_on_frame(names, window_rect, sct, threshold, area=(0.0, 1.0)):
+def game_frame(window_rect, sct):
+    """Один снимок игровой области: (картинка BGR, ox, oy). Его можно передать в match_many_on_frame(frame=...),
+    чтобы искать картинки и читать полоски на одном снимке (задача 9в)."""
+    screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
+    return screenshot_cv, ox, oy
+
+def match_many_on_frame(names, window_rect, sct, threshold, area=(0.0, 1.0), frame=None):
     """Один снимок экрана на много картинок сразу (например, все титаны в слотах).
     area — какая часть игровой области по высоте нужна: (от, до) в долях, например (0.75, 1.0) — нижняя четверть.
-    Возвращает {имя: info} только для найденных (info — как у get_match_info; "y" уже считается от верха игровой области).
+    frame — готовый снимок из game_frame (тогда новый снимок не делается).
+    Возвращает {имя: info} только для найденных (info — как у get_match_info, но "y" считается от верха части area,
+    а "oy" — сдвиг этой части; от верха игровой области иконка на info["y"] + info["oy"] - oy снимка).
     Точку нажатия берите через click_point_from_info."""
-    screenshot_cv, ox, oy, _, _ = _crop_screenshot_to_game_area(window_rect, sct)
+    screenshot_cv, ox, oy = frame if frame is not None else game_frame(window_rect, sct)
     top = int(screenshot_cv.shape[0] * area[0])
     bottom = int(screenshot_cv.shape[0] * area[1])
     part = screenshot_cv[top:bottom]

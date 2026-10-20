@@ -168,6 +168,11 @@ class RulesEngine:
             packs.append((list(default_team), {}))
         return packs
 
+    def base_packs(self):
+        """Базовые паки всех стихий: {стихия: пак}. По ним бот видит, где титана лечат в своей комнате (задача 9в)."""
+        return {room: list(data.get("default_team") or []) for room, data in self.rules_cache.items()
+                if isinstance(data, dict)}
+
     def heal_rule_for(self, room_type, current_state, healers):
         """Правило отхила, которое сработает за дверью этой стихии (задача 9б, выбор двери): условие по ХП
         без привязки к врагам выполняется, а в паке есть и раненые титаны условия, и лекарь (healers).

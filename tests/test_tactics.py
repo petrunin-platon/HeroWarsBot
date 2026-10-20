@@ -275,7 +275,8 @@ def test_read_and_write_tactics_keep_other_profile_keys():
     values = tactics.read_tactics(profile)
     assert values == {"auto_rollback": False, "auto_rollback_tries": 2, "group_loss_titans": 3,
                       "group_loss_percent": 40, "titan_critical_hp": {}, "backup_teams": {},
-                      "door_order": ["water", "mix", "earth", "fire"], "sos_timeout_minutes": 10}
+                      "door_order": ["water", "mix", "earth", "fire"], "sos_timeout_minutes": 10,
+                      "heal_below_hp": 60, "heal_remove_order": []}
     values.update(auto_rollback=True, auto_rollback_tries=3, titan_critical_hp={"rigel": 25},
                   backup_teams={"mix": [SIGURD_HEAL]}, door_order=["mix", "water", "earth", "fire"])
     tactics.write_tactics(profile, values)

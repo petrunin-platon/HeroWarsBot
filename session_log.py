@@ -37,6 +37,8 @@ COUNT_NAMES = {
     "rollbacks": "откаты",
     "auto_rollbacks": "из них без вас",
     "stuck": "зависания",
+    "heal_packs": "паки отхила (бот собрал сам)",
+    "screen_hp": "ХП поправлено по экрану выбора команды",
 }
 
 CSV_COLUMNS = [
@@ -44,6 +46,7 @@ CSV_COLUMNS = [
     "hallway_s", "team_s", "battle_s", "result_s", "rollback_s",
     "total_s", "checkpoint_s", "sos_wait_s",
     "door_misses", "repeat_clicks", "sos", "rollbacks", "auto_rollbacks", "stuck",
+    "heal_packs", "screen_hp",
     "screen_lock_s",
 ]
 
