@@ -729,6 +729,13 @@ with mss.MSS() as sct:
 
                 # Не найден хотя бы один титан — окно, скорее всего, перекрыто или не дорисовано: пересканируем
                 team_status, unreadable = result_scan.scan_with_retries(scan_result, active_pack, sleep=time.sleep)
+                if unreadable and result_scan.window_closed(
+                        active_pack, team_status, bool(get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD))):
+                    print("[ЛОГИКА] Окно с «ОК» закрылось, пока бот ждал анимацию: ни одного титана и кнопки «ОК» нет. "
+                          "Читать нечего — возвращаюсь в коридор.")
+                    ROOM_TIMER.restart("hallway")
+                    STATE = "HALLWAY"
+                    continue
                 if not unreadable:
                     team_status = result_scan.wait_bars_still(
                         team_status, active_pack, lambda: reread_team_health(game_window, sct, icons, result_frames),

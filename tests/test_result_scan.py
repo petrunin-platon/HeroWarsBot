@@ -151,3 +151,13 @@ def test_debug_dir_created(tmp_path, monkeypatch):
     data_paths._CHECKED.clear()
     path = data_paths.debug_dir()
     assert path == "bot_data/debug" and os.path.isdir(tmp_path / "bot_data" / "debug")
+
+
+def test_window_closed_while_waiting_is_not_sos():
+    """20.10.2026, 18:16: бот увидел «ОК», подождал анимацию, а окно уже закрылось — на экране коридор.
+    Ни одного титана и «ОК» нет — окно закрылось, SOS не нужен. Если «ОК» ещё видна или кто-то нашёлся — как раньше."""
+    gone = {t: {"hp": 0, "energy": 0, "status": "ОТСУТСТВУЕТ", "score": 0.4} for t in PACK}
+    assert rs.window_closed(PACK, gone, ok_visible=False)
+    assert not rs.window_closed(PACK, gone, ok_visible=True)
+    one = dict(gone, araji={"hp": 50, "energy": 10, "status": "ЖИВ", "score": 0.9})
+    assert not rs.window_closed(PACK, one, ok_visible=False)

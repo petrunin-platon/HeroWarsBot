@@ -107,6 +107,13 @@ def wait_bars_still(team_status, pack, reread, scanned_at, clock=time.monotonic,
     return result
 
 
+def window_closed(pack, team_status, ok_visible):
+    """Окно результата уже закрылось, пока бот ждал анимацию: не найден ни один титан и кнопки «ОК» больше нет.
+    Читать нечего — это не повод для окна SOS (задача 11, 20.10.2026 18:16: бот открыл SOS с 0% у всех,
+    а на экране был обычный коридор)."""
+    return not ok_visible and len(missing_titans(pack, team_status)) == len(pack)
+
+
 def describe_missing(pack, team_status):
     """Текст для лога: кого не нашли и с каким сходством иконки (порог — в analyzer)."""
     parts = []
