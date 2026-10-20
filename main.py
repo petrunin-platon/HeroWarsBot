@@ -33,7 +33,7 @@ from telegram_agent import send_alert
 import telegram_report
 from telegram_i18n import tg_text
 from team_manager import verify_and_set_team, scan_slots, slot_titan_names, recheck_bars
-from analyzer import scan_team_health, reread_team_health, team_status_lines
+from analyzer import scan_team_health, reread_team_health, team_status_lines, result_debug_image
 from analytics import log_battle
 from battle_verdict import evaluate_battle
 from rules_engine import engine
@@ -380,6 +380,21 @@ def count_cleared_room(x2):
 
     print(f"[СТАТИСТИКА] Комнат: {SESSION_STATS['rooms_cleared']} | Титанит: {SESSION_STATS['titanite_gathered']}")
     return SESSION_STATS["rooms_cleared"]
+
+def save_result_debug(frames, icons, team_status, room_no):
+    """Режим отладки (debug_mode): картинка окна результата с разметкой — где бот нашёл иконки и сколько полоски посчитал
+    (analyzer.result_debug_image). Снимок — последний, с которого читались ХП. Ошибка сохранения бота не останавливает."""
+    if not frames:
+        return
+    try:
+        _, screenshot_cv, clean_rect = frames[-1]
+        img = result_debug_image(screenshot_cv, icons, team_status, clean_rect["width"] / 939.0)
+        name = result_scan.debug_shot_name("result_debug", room_no, current_room, datetime.now())
+        path = os.path.join(data_paths.debug_dir(), name)
+        cv2.imwrite(path, img)
+        print(f"[ОТЛАДКА] Разметка окна результата сохранена: {path}")
+    except Exception as e:
+        print(f"[ОТЛАДКА] Не удалось сохранить разметку окна результата: {e}")
 
 def result_has_x2(frames, result_seen, game_window, sct):
     """Значок «x2» на окне результата (задача 11): на последнем снимке, с которого бот читал ХП (он сделан, когда окно
@@ -1009,6 +1024,7 @@ with mss.MSS() as sct:
                         counted_room = count_cleared_room(x2)
 
                         if CONFIG.get("debug_mode"):
+                            save_result_debug(result_frames, icons, team_status, counted_room)
                             print("\n[ПАУЗА ОТЛАДКИ] Бой завершен. Подтвердите продолжение в GUI.")
                             sys.stdout.flush()
                             with ROOM_TIMER.excluded("sos_wait"):

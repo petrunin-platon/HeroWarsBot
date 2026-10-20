@@ -90,8 +90,9 @@ def _result_template(titan):
     return template
 
 
-def _result_bars(masks, x_start, y_start, icon_w, icon_h, scale_x):
-    """ХП и энергия (%) по полоскам под иконкой окна результата, иконка найдена в (x_start, y_start)."""
+def _result_bars(masks, x_start, y_start, icon_w, icon_h, scale_x, marks=None):
+    """ХП и энергия (%) по полоскам под иконкой окна результата, иконка найдена в (x_start, y_start).
+    marks — словарь: в него пишется, где бот мерил (для картинки отладки, result_debug_image). На цифры не влияет."""
     mask_green, mask_energy = masks
     max_bar_width = 50.0 * scale_x
 
@@ -132,7 +133,47 @@ def _result_bars(masks, x_start, y_start, icon_w, icon_h, scale_x):
 
     hp_perc = min(int((hp_w / max_bar_width) * 100), 100)
     ep_perc = min(int((ep_w / max_bar_width) * 100), 100)
+    if marks is not None:
+        marks.update({"box": (crop_x1, crop_y1, crop_x2, crop_y2), "full": max_bar_width,
+                      "hp": _bar_mark(roi_green, hp_y, hp_w, crop_x1, crop_y1),
+                      "energy": _bar_mark(roi_energy, hp_y + 4 + int(np.argmax(energy_row_sums)), ep_w, crop_x1, crop_y1)
+                      if ep_w else None})
     return hp_perc, ep_perc
+
+
+def _bar_mark(roi, row, width, x0, y0):
+    """Где на снимке полоска, которую бот померил: (x начала, y строки, сколько пикселей залито) или None."""
+    if row < 0 or width <= 0:
+        return None
+    cols = np.flatnonzero(roi[row] == 255)
+    return (x0 + int(cols[0]), y0 + int(row), int(width)) if cols.size else None
+
+
+def result_debug_image(screenshot_cv, icons, team_status, scale_x):
+    """Картинка для отладки (debug_mode): окно результата, на нём рамки найденных иконок, зона, где бот искал полоски,
+    и линии, сколько пикселей полоски он посчитал залитыми (ХП — зелёная, энергия — жёлтая) против полной длины (белая
+    рамка = 100%). Подпись — итоговые цифры. icons — {титан: (x, y, w, h)} с этого же снимка."""
+    img = screenshot_cv.copy()
+    masks = _result_masks(screenshot_cv)
+    for titan, (x, y, w, h) in icons.items():
+        marks = {}
+        _result_bars(masks, x, y, w, h, scale_x, marks)
+        cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 255), 2)
+        bx1, by1, bx2, by2 = marks["box"]
+        cv2.rectangle(img, (bx1, by1), (bx2, by2), (255, 255, 0), 1)
+        for key, color in (("hp", (0, 255, 0)), ("energy", (0, 215, 255))):
+            mark = marks.get(key)
+            if mark:
+                mx, my, width = mark
+                cv2.rectangle(img, (mx, my - 3), (mx + int(round(marks["full"])), my + 3), (255, 255, 255), 1)
+                cv2.line(img, (mx, my), (mx + width, my), color, 2)
+                cv2.line(img, (mx + width, my - 6), (mx + width, my + 6), (0, 0, 255), 2)
+        entry = team_status.get(titan, {})
+        for i, text in enumerate((titan.upper(), f"HP {entry.get('hp', '?')}% EN {entry.get('energy', '?')}%")):
+            org = (bx1, by2 + 16 + 16 * i)
+            cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3)
+            cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+    return img
 
 
 def _result_entry(hp_perc, ep_perc, score):

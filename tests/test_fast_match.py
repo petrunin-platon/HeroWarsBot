@@ -325,3 +325,23 @@ def test_steps_at_least_twice_faster(monkeypatch, geometry, one_thread, capsys):
             print(f"[ЗАМЕР] {step} | {before * 1000:.0f} мс | {after * 1000:.0f} мс | {before / after:.1f} раза")
     for step, before, after in rows:
         assert before >= 2 * after, (step, before, after)
+
+
+@pytest.mark.parametrize("name, expected", RESULT_WINDOWS)
+def test_result_debug_image_marks_what_bot_measured(geometry, name, expected):
+    """Режим отладки: картинка с разметкой строится на том же снимке и не меняет цифры. Красная черта (конец заливки)
+    стоит там, где бот посчитал: при 100% — на конце полной длины (белой рамки)."""
+    import analyzer
+    game = geometry(cv2.imread(os.path.join(DATA, name)))
+    h, w = game.shape[:2]
+    icons = {}
+    status = analyzer.scan_team_health({"top": 0, "left": 0, "width": w, "height": h}, GameSct(game), list(expected),
+                                       found=icons, quiet=True)
+    img = analyzer.result_debug_image(game, icons, status, w / 939.0)
+    assert img.shape == game.shape and not np.array_equal(img, game)
+    masks = analyzer._result_masks(game)
+    for titan, (hp, energy) in expected.items():
+        marks = {}
+        assert analyzer._result_bars(masks, *icons[titan], w / 939.0, marks) == (hp, energy)
+        x, _, width = marks["hp"]
+        assert int(width / marks["full"] * 100) == min(hp, 100) or hp == 100
