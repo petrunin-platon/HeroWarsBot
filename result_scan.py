@@ -70,12 +70,18 @@ def same_status(a, b, pack):
     return True
 
 
-def wait_bars_still(team_status, pack, reread, scanned_at, clock=time.monotonic, sleep=time.sleep, log=print):
+# Сколько раз подряд снимок окна результата должен совпасть с предыдущим: 2 — три одинаковых снимка (~0,6 с).
+# Задача 11: после «ОК» полоски иногда ещё заполняются дольше 1,2 с (Араджи на первом снимке 8%, потом 100%)
+RESULT_STILL_PAIRS = 2
+
+
+def wait_bars_still(team_status, pack, reread, scanned_at, clock=time.monotonic, sleep=time.sleep, log=print,
+                    pairs=1):
     """Окно результата прочитано (team_status, снимок сделан в scanned_at). Вместо паузы 1,5 с перед чтением
-    (задача 10) перечитываем полоски, пока два снимка подряд не покажут одно и то же.
+    (задача 10) перечитываем полоски, пока снимки подряд не покажут одно и то же (pairs раз подряд).
     reread() — {титан: {...}} для титанов, чьи иконки нашлись снова (быстро: только рядом с прежним местом);
     кого не нашли — остаётся как было. Возвращает итоговый team_status: у кого полоски двигались — с последнего
-    снимка (и строка в лог), у остальных — как в первом чтении (как уже напечатано в логе)."""
+    снимка, у остальных — как в первом чтении. Цифры в лог не пишет (их печатает main.py по итогу), только кто двигался."""
     def read():
         merged = dict(last["status"])
         merged.update(reread())
@@ -84,20 +90,28 @@ def wait_bars_still(team_status, pack, reread, scanned_at, clock=time.monotonic,
 
     last = {"status": team_status}
     final, still, shots = click_logic.wait_until_still(
-        read, lambda a, b: same_status(a, b, pack), first=(scanned_at, team_status), clock=clock, sleep=sleep)
+        read, lambda a, b: same_status(a, b, pack), first=(scanned_at, team_status), clock=clock, sleep=sleep,
+        pairs=pairs)
     changed = [t for t in pack if not same_status(team_status, final, [t])]
     result = dict(team_status)
     result.update({t: final[t] for t in changed})
-    for t in changed:
-        log(f" ---> {t.upper()}: ХП {final[t].get('hp', 0)}%, Энергия {final[t].get('energy', 0)}% "
-            f"(было {team_status.get(t, {}).get('hp', 0)}% / {team_status.get(t, {}).get('energy', 0)}%: полоски ещё двигались)")
     if not still:
         log(f"[ЛОГИКА] Полоски ХП не замерли за {click_logic.STILL_TIMEOUT_S:.0f} с — беру последний снимок.")
     elif changed:
-        log(f"[ЛОГИКА] Полоски ХП замерли после {shots + 1} снимков.")
-    else:
+        log(f"[ЛОГИКА] Полоски ХП ещё двигались ({', '.join(t.upper() for t in changed)}) — "
+            f"замерли после {shots + 1} снимков.")
+    elif shots == 1:
         log("[ЛОГИКА] Полоски ХП замерли: второй снимок такой же.")
+    else:
+        log(f"[ЛОГИКА] Полоски ХП замерли: {shots + 1} снимка подряд одинаковые.")
     return result
+
+
+def window_closed(pack, team_status, ok_visible):
+    """Окно результата уже закрылось, пока бот ждал анимацию: не найден ни один титан и кнопки «ОК» больше нет.
+    Читать нечего — это не повод для окна SOS (задача 11, 20.10.2026 18:16: бот открыл SOS с 0% у всех,
+    а на экране был обычный коридор)."""
+    return not ok_visible and len(missing_titans(pack, team_status)) == len(pack)
 
 
 def describe_missing(pack, team_status):

@@ -193,6 +193,15 @@ def test_lost_tap_is_repeated_once_after_pause(vision, clock):
     assert taps[1] - taps[0] >= click_logic.RETRY_AFTER_S + 0.3
 
 
+def test_button_flicker_is_not_success(vision, clock):
+    """Задача 11: снимки частые и ловят мгновенное «мигание» кнопки при нажатии. Кнопка пропала на один снимок
+    и снова видна — это не закрытие окна. Успех — когда её нет и на снимке через GONE_CONFIRM_S."""
+    start = clock.now
+    result, taps = run_button(vision, clock, lambda since, n: not (0.3 <= since < 0.4) and since < 2.0)
+    assert result is True and len(taps) == 1
+    assert clock.now - start >= 2.0 + click_logic.GONE_CONFIRM_S - 0.1
+
+
 def test_button_that_never_reacts_gives_up(vision, clock):
     result, taps = run_button(vision, clock, lambda since, n: True, timeout=3.0)
     assert result is False

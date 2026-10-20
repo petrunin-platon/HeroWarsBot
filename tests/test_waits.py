@@ -129,6 +129,13 @@ def test_never_still_gives_up_with_last_shot(clock):
     assert value < 100
 
 
+def test_still_needs_pairs_in_a_row(clock):
+    """pairs=2: снимок должен совпасть с предыдущим два раза подряд (три одинаковых снимка)."""
+    read, _ = frames(clock, [40, 40, 70, 70, 70])
+    value, still, shots = wait_until_still(read, lambda a, b: a == b, clock=clock.monotonic, sleep=clock.sleep, pairs=2)
+    assert (value, still, shots) == (70, True, 5)
+
+
 def test_spots_still():
     assert spots_still([(100, 50)], [(101, 49), (300, 50)], tol=3)  # кнопка на месте, рядом другая дверь
     assert not spots_still([(100, 50)], [(110, 50)], tol=3)          # окно ещё едет
@@ -226,8 +233,35 @@ def test_result_window_bars_moving_then_still(analyzer, clock, capsys):
     assert abs(final["rigel"]["hp"] - 55) <= 2
     assert final["araji"] is first["araji"]
     out = capsys.readouterr().out
-    assert "RIGEL: ХП" in out and "полоски ещё двигались" in out
-    assert "Полоски ХП замерли после 3 снимков" in out
+    assert "Полоски ХП ещё двигались (RIGEL) — замерли после 3 снимков." in out
+
+
+def test_result_window_needs_three_same_shots(analyzer, clock, capsys):
+    """Задача 11: после «ОК» полоска иногда заполняется дольше 1,2 с и может на миг «замереть» на середине
+    (у вас Араджи на первом снимке 8%, потом 100%). Для окна результата бот ждёт три одинаковых снимка подряд:
+    два одинаковых на середине его не обманут."""
+    img = game_area("54.png")
+    found = {}
+    analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK, found=found, quiet=True)
+    half = bar_cut(img, found, "rigel", keep=20)
+    sct = SeqSct([half, half, img, img, img])
+    first = analyzer.scan_team_health(GAME_RECT, sct, PACK, found=found, quiet=True)
+    reread = lambda: analyzer.reread_team_health(GAME_RECT, sct, found)  # noqa: E731
+    final = rs.wait_bars_still(first, PACK, reread, clock.now, clock=clock.monotonic, sleep=clock.sleep,
+                               pairs=rs.RESULT_STILL_PAIRS)
+    assert abs(final["rigel"]["hp"] - 55) <= 2
+    assert capsys.readouterr().out.strip() == "[ЛОГИКА] Полоски ХП ещё двигались (RIGEL) — замерли после 5 снимков."
+
+
+def test_quiet_scan_prints_nothing_and_lines_match(analyzer, capsys):
+    """Окно результата читается молча, а итоговые цифры печатаются одной пачкой — в том же виде, что и раньше."""
+    img = game_area("111.png")
+    status = analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK, quiet=True)
+    assert capsys.readouterr().out == ""
+    analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK)
+    printed = [line for line in capsys.readouterr().out.splitlines() if line.startswith(" ---> ")]
+    assert printed == analyzer.team_status_lines(PACK, status)
+    assert printed[0].startswith(" ---> ARAJI: ХП 56%")
 
 
 def test_result_window_still_at_once_is_quick(analyzer, clock, capsys):

@@ -32,7 +32,7 @@ import rollback_logic
 from telegram_agent import send_alert
 from i18n import get_text
 from team_manager import verify_and_set_team, scan_slots, slot_titan_names, recheck_bars
-from analyzer import scan_team_health, reread_team_health
+from analyzer import scan_team_health, reread_team_health, team_status_lines
 from analytics import log_battle
 from battle_verdict import evaluate_battle
 from rules_engine import engine
@@ -716,7 +716,8 @@ with mss.MSS() as sct:
 
             if active_pack:
                 # Окно ещё проявляется: читаем через RESULT_ANIMATION_S (1,2 с) после появления «ОК» (задача 11, ваш совет).
-                # Потом перечитываем полоски, пока два снимка подряд не покажут одно и то же (задача 10)
+                # Потом перечитываем полоски, пока три снимка подряд не покажут одно и то же (полоски иногда заполняются
+                # дольше 1,2 с). Цифры в лог — только итоговые, по ним бот и решает
                 result_scan.wait_window_settled(result_seen)
                 icons = {}  # где нашлись иконки титанов: по ним полоски перечитываются быстро
                 scanned_at = []
@@ -724,14 +725,24 @@ with mss.MSS() as sct:
 
                 def scan_result():
                     scanned_at.append(time.monotonic())
-                    return scan_team_health(game_window, sct, active_pack, found=icons, frames=result_frames)
+                    return scan_team_health(game_window, sct, active_pack, found=icons, frames=result_frames, quiet=True)
 
                 # Не найден хотя бы один титан — окно, скорее всего, перекрыто или не дорисовано: пересканируем
                 team_status, unreadable = result_scan.scan_with_retries(scan_result, active_pack, sleep=time.sleep)
+                if unreadable and result_scan.window_closed(
+                        active_pack, team_status, bool(get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD))):
+                    print("[ЛОГИКА] Окно с «ОК» закрылось, пока бот ждал анимацию: ни одного титана и кнопки «ОК» нет. "
+                          "Читать нечего — возвращаюсь в коридор.")
+                    ROOM_TIMER.restart("hallway")
+                    STATE = "HALLWAY"
+                    continue
                 if not unreadable:
                     team_status = result_scan.wait_bars_still(
                         team_status, active_pack, lambda: reread_team_health(game_window, sct, icons, result_frames),
-                        scanned_at[-1])
+                        scanned_at[-1], pairs=result_scan.RESULT_STILL_PAIRS)
+                print(f"\n[АНАЛИЗАТОР] Окно результата (через {time.monotonic() - result_seen:.1f} с после появления «ОК»):")
+                for line in team_status_lines(active_pack, team_status):
+                    print(line)
                 
                 effective_delta = CURRENT_ALLOWED_DELTA if CURRENT_ALLOWED_DELTA is not None else TACTICS.max_hp_delta
 
