@@ -168,6 +168,11 @@ class RulesEngine:
             packs.append((list(default_team), {}))
         return packs
 
+    def all_packs(self):
+        """Паки из правил и базовые паки всех стихий (без skip и [STOP]). Из них tactics.own_titans узнаёт,
+        каких титанов вы сами где-то указали (сессия 08)."""
+        return [pack for room in self.rules_cache for pack, _ in self.room_packs(room)]
+
     def base_packs(self):
         """Базовые паки всех стихий: {стихия: пак}. По ним бот видит, где титана лечат в своей комнате (задача 9в)."""
         return {room: list(data.get("default_team") or []) for room, data in self.rules_cache.items()

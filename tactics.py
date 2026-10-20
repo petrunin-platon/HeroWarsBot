@@ -431,14 +431,33 @@ def removal_order(pack, settings, keep=()):
     return [t for t in order if t not in keep]
 
 
-def _helper(pack, state, forbidden):
+def regulars(base_packs):
+    """Кто воюет каждый этаж: титаны базовых паков всех стихий. Только их бот лечит паком отхила (сессия 08:
+    Алекто один раз сходила в бой запасным паком, ушла с 44% и бот весь игровой день тянул её в смешанную)."""
+    return {t for pack in base_packs.values() for t in (pack or [])}
+
+
+def own_titans(rule_packs, settings):
+    """Титаны, которых вы сами где-то указали: базовые паки и паки правил (rule_packs — все паки всех стихий)
+    и ваши запасные паки (окно «⚙️ Тактика»). Паки из истории боёв с другими титанами бот не берёт:
+    там остались паки удалённых правил и запасных паков, которые вы убрали."""
+    titans = {t for pack in rule_packs for t in (pack or [])}
+    titans |= {t for packs in settings.backup_teams.values() for pack in packs for t in pack}
+    titans.discard("STOP")
+    return titans
+
+
+def _helper(pack, state, forbidden, allowed=None):
     """Помощник-лекарь (как Сигурд вместо Амона для Ригеля): лекарь не из пака, здоров (HELPER_MIN_HP) и заряжен
-    (HELPER_MIN_ENERGY), чтобы сразу сделать ультимейт. Из подходящих — самый заряженный. (титан, ХП, энергия) или None."""
+    (HELPER_MIN_ENERGY), чтобы сразу сделать ультимейт. Из подходящих — самый заряженный. (титан, ХП, энергия) или None.
+    allowed — из кого выбирать (regulars); None — из всех лекарей."""
     best = None
     for titan in HEALERS:
         st = state.get(titan) or {}
         hp, energy = st.get("hp"), st.get("energy")
         if titan in pack or titan in forbidden or hp is None or energy is None:
+            continue
+        if allowed is not None and titan not in allowed:
             continue
         if hp >= HELPER_MIN_HP and energy >= HELPER_MIN_ENERGY and (best is None or energy > best[2]):
             best = (titan, hp, energy)
@@ -446,11 +465,13 @@ def _helper(pack, state, forbidden):
 
 
 def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), enemies=None, special_ult=None,
-              notes=None):
+              notes=None, not_placed=()):
     """
     Пак отхила, который бот собирает сам (задача 9в, ваш ответ на вопрос 23), когда ваше правило отхила
     не сработало. Только в смешанной (туда можно ставить кого угодно), pack — пак, который поставил бы движок правил.
     Лечим по одному — того, кто ближе всех к своему порогу паники. Кого лечим:
+      - только титанов базовых паков (regulars): кто сходил в бой один раз запасным паком, тот не лечится
+        (сессия 08: Алекто с 44% весь день);
       - ХП ниже settings.heal_hp, но не ниже порога паники (ниже в смешанной уже не вылечить — вопрос 1),
         и титан не под запретом правил skip;
       - его нет в паке, и в своей комнате его не лечат (heals_at_home: огненных лечить негде) или отхила там
@@ -462,6 +483,7 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
     Пак не берётся, если в нём не осталось лекаря, он проигрывает этим врагам (history.lost_to), опасен для раненых
     по прогнозу (wounded_at_risk) или требует ручного боя (special_ult(пак) не "auto", например Ангус).
     Возвращает (пак, кого лечим, пояснение) или None. notes — куда писать, почему раненого не лечим (для лога).
+    not_placed — кого бот в этом запуске не смог вылечить: пак отхила для него не собрался (сессия 08).
     """
     if room != HEAL_ROOM or not settings.heal_hp or not pack or pack == ["STOP"]:
         return None
@@ -470,9 +492,12 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
         if notes is not None:
             notes.append(text)
 
+    team = regulars(base_packs)
     wounded = []
     for titan, st in state.items():
         hp = st.get("hp") if isinstance(st, dict) else None
+        if titan not in team:
+            continue  # не из базовых паков: бот его сам не ставит, значит и лечить незачем
         if hp is None or hp <= 0 or hp >= settings.heal_hp:
             continue  # здоров, неизвестно или погиб (погибшие до конца дня не воюют)
         panic = max(1, settings.panic_hp(titan))
@@ -480,6 +505,8 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
             note(f"{titan.upper()} {hp}%: ниже порога паники ({panic}%), в смешанной его уже не вылечить")
         elif titan in forbidden:
             note(f"{titan.upper()} {hp}%: под запретом правил skip")
+        elif titan in not_placed:
+            note(f"{titan.upper()} {hp}%: в этом запуске пак отхила для него не собрался, не лечу")
         else:
             wounded.append((hp - panic, titan, hp))
 
@@ -488,7 +515,7 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
         if titan in pack:
             if not history.not_healing(room, titan, settings.heal_hp):
                 continue  # лечится обычным паком смешанной
-            helper = _helper(pack, state, forbidden)
+            helper = _helper(pack, state, set(forbidden) | set(not_placed), team)
             if not helper:
                 note(f"{titan.upper()} {hp}%: не поднимается, но нет здорового заряженного лекаря "
                      f"(ХП от {HELPER_MIN_HP}%, энергия от {HELPER_MIN_ENERGY}%)")
@@ -533,7 +560,7 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
 # Запасной пак
 # ---------------------------------------------------------------------------
 def choose_backup(room, enemies, tried, state, settings, rule_packs, history, forbidden=(),
-                  risky=None, allow_risky=True, notes=None):
+                  risky=None, allow_risky=True, notes=None, roster=None):
     """
     Запасной пак для этой комнаты. Возвращает (пак, откуда взят) или (None, None).
     Порядок поиска:
@@ -548,11 +575,13 @@ def choose_backup(room, enemies, tried, state, settings, rule_packs, history, fo
       - содержит титана из чёрного списка (правила skip) или титана, у которого ХП ниже порога паники.
     risky(пак) — чем пак опасен для раненых титанов ("" — не опасен). Опасный пак берётся, только если
     allow_risky и неопасных нет. notes — список, куда пишутся причины, почему паки не взяты (для лога).
+    roster — ваши титаны (own_titans): пак из истории боёв берётся, только если все его титаны из этого списка.
     """
     tried = {frozenset(p) for p in tried}
     candidates = [(p, SOURCE_USER) for p in settings.backup_teams.get(room, [])]
     candidates += [(p, SOURCE_RULES) for p in _rank_rule_packs(room, enemies, rule_packs, history)]
-    candidates += [(p, SOURCE_HISTORY) for p, _ in history.winners(room, enemies)]
+    candidates += [(p, SOURCE_HISTORY) for p, _ in history.winners(room, enemies)
+                   if roster is None or set(p) <= roster]
 
     seen, fallback = set(), None
     for pack, source in candidates:
@@ -685,11 +714,12 @@ def pick_door(elements, order, is_forbidden):
 # ---------------------------------------------------------------------------
 # «Золотые правила» (задача 9б)
 # ---------------------------------------------------------------------------
-def golden_packs(history, settings=None):
+def golden_packs(history, settings=None, roster=None):
     """Паки, которые много раз побеждали этот состав врагов: не меньше GOLDEN_MIN_BATTLES боёв против него
     и не меньше GOLDEN_MIN_WINRATE% побед — как кнопка во вкладке «Аналитика».
     Ваши запасные паки (settings.backup_teams) не берутся: они для помощи, а не на каждый бой (сессия 07, пак с Молохом).
     Бои паков отхила, которые бот собрал сам (heal_for, задача 9в), тоже: такой пак нужен, только пока титан ранен.
+    roster — ваши титаны (own_titans): пак с другими титанами (из удалённого правила) не берётся.
     Возвращает [{"room", "enemies", "team", "wins", "battles", "avg_hp"}]."""
     backups = {room: [sorted(p) for p in packs] for room, packs in (settings.backup_teams if settings else {}).items()}
     groups = {}
@@ -706,7 +736,7 @@ def golden_packs(history, settings=None):
             g["hp"].append(_avg_hp(e, team))
     result = []
     for (room, enemies, team), g in groups.items():
-        if list(team) in backups.get(room, []):
+        if list(team) in backups.get(room, []) or (roster is not None and not set(team) <= roster):
             continue
         if g["battles"] >= GOLDEN_MIN_BATTLES and g["wins"] * 100 >= GOLDEN_MIN_WINRATE * g["battles"]:
             result.append({"room": room, "enemies": list(enemies), "team": list(team), "wins": g["wins"],
