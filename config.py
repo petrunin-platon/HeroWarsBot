@@ -1,7 +1,7 @@
 import os
 
 CONFIG = {
-    "angus_manual_control": True,
+    "angus_manual_control": False,  # задача 12: земля автобоем, ручная ульта — переключателем в окне
     "debug_mode": False,  
     # Динамически получаем язык из процесса GUI (по умолчанию RU, если переменной нет)
     "game_language": os.environ.get("HEROWARS_LANG", "RU")

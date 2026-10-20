@@ -70,6 +70,7 @@ PENDING_RULE = None
 TACTICS = tactics.Settings(engine.get_global_setting)
 for _line in TACTICS.describe():
     print(_line)
+print(engine.angus_line())
 # История судится по нынешним порогам: откат из-за того, что титан вошёл в бой раненым, пак не портит (задача 9б)
 HISTORY = tactics.BattleHistory.load(data_paths.logs_dir(), TACTICS)
 
@@ -1081,7 +1082,7 @@ with mss.MSS() as sct:
                         CURRENT_SPECIAL_ULT = engine.special_ult_for(target_pack)
                     else:
                         reason = "Тестирование нового пака"
-                        CURRENT_SPECIAL_ULT = "angus" if "angus" in target_pack else "auto"
+                        CURRENT_SPECIAL_ULT = engine.special_ult_for(target_pack)
                 else:
                     choice = engine.battle_decision(current_room, CURRENT_ENEMIES, GLOBAL_TITAN_STATE)
                     target_pack, reason = choice["team"], choice["reason"]
@@ -1210,7 +1211,7 @@ with mss.MSS() as sct:
                         
                         # Подменяем целевой пак и идем расставлять его!
                         target_pack = new_team
-                        CURRENT_SPECIAL_ULT = "angus" if "angus" in target_pack else "auto"
+                        CURRENT_SPECIAL_ULT = engine.special_ult_for(target_pack)
                         
                     elif decision == "STOP":
                         print("[ТАКТИКА] Экстренная остановка по команде пользователя.")
