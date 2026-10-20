@@ -6,6 +6,7 @@ from vision import (click_human, get_match_loc, get_match_info, click_point_from
 from click_logic import StableTracker, DOOR_STABLE_TOL_PX, FLOOR_FLAG_WAIT_S
 import vision
 import session_log
+import session_limits
 
 # Окно выбора комнат после нажатия на дверь: (когда увидели, центр кнопки «Атаковать» в координатах окна).
 # Его берёт find_smart_door (main.py), чтобы не ждать, пока окно «успокоится», отдельной паузой (задача 10)
@@ -77,6 +78,7 @@ def smart_navigate_hallway(window_rect, sct):
                 claim = wait_after_tap('btn_claim.png', window_rect, sct, tap, CONFIDENCE_THRESHOLD, react_s=CLAIM_WAIT_S)
 
                 if claim:
+                    session_limits.FLOORS.claimed()  # этаж пройден: считаем по точке сохранения (задача 14)
                     find_and_click_bulletproof('btn_claim.png', window_rect, sct, CONFIDENCE_THRESHOLD, timeout=4.0,
                                                seen_at=claim[0])
                     print("[НАВИГАЦИЯ] Награда забрана. Спускаемся на следующий этаж...")

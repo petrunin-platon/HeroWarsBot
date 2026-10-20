@@ -1,4 +1,0 @@
-time,room_no,room_type,hallway_s,team_s,battle_s,result_s,rollback_s,total_s,checkpoint_s,sos_wait_s,door_misses,repeat_clicks,sos,rollbacks
-17:58:39,1,mix,17.96,11.47,8.21,8.67,0.0,46.32,9.8,0.0,0,0,0,0
-17:59:07,2,mix,12.22,0.46,8.19,7.85,0.0,28.72,0.0,0.0,0,0,0,0
-17:59:47,3,earth,12.27,11.37,7.45,8.65,0.0,39.73,0.0,0.0,0,0,0,0

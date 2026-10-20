@@ -253,6 +253,29 @@ def test_analytics_writes_history_to_bot_data_and_rotates_only_there(tmp_path, m
     assert read("logs/session_01-02/gui_log.txt") == "лог сессии\n"
 
 
+def test_rotation_limits_timings_and_debug_screenshots(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    data_paths.ensure_bot_data()
+    for number in range(25):
+        for path in (tmp_path / "bot_data" / "logs" / f"timings_{number:02d}.csv",):
+            write(path, "x\n")
+            os.utime(path, (1_000_000 + number, 1_000_000 + number))
+    write(tmp_path / "bot_data" / "logs" / "battle_log.csv", "история\n")
+    os.makedirs(tmp_path / "bot_data" / "debug")
+    for number in range(60):
+        path = tmp_path / "bot_data" / "debug" / f"sos_{number:02d}.png"
+        write(path, "png")
+        os.utime(path, (1_000_000 + number, 1_000_000 + number))
+
+    load_analytics()
+
+    timings = [n for n in os.listdir("bot_data/logs") if n.startswith("timings_")]
+    shots = os.listdir("bot_data/debug")
+    assert len(timings) == 20 and "timings_00.csv" not in timings and "timings_24.csv" in timings
+    assert len(shots) == 50 and "sos_00.png" not in shots and "sos_59.png" in shots
+    assert read("bot_data/logs/battle_log.csv") == "история\n"
+
+
 def test_analytics_import_does_not_create_logs_folder(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 

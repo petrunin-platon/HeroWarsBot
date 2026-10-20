@@ -1,5 +1,5 @@
 # Тесты задачи 9в: ХП и энергия с экрана выбора команды.
-# Скриншот пользователя logs/session_01-02/screens/pered_boem.png: окно scrcpy 1592x741, сверху рамка окна 28 px.
+# Скриншот пользователя tests/data/screens/pered_boem.webp: окно scrcpy 1592x741, сверху рамка окна 28 px.
 # В слотах слева направо: amon, hyperion, lumira, iyari, rigel — у всех полное ХП, энергия разная.
 # В сетке выше есть и раненый: Араджи (первый ряд, справа) — ХП чуть больше половины.
 import os
@@ -16,7 +16,7 @@ np = pytest.importorskip("numpy")
 import analyzer as an  # noqa: E402
 import team_manager as tm  # noqa: E402
 
-SCREEN = os.path.join(os.path.dirname(__file__), "..", "logs", "session_01-02", "screens", "pered_boem.png")
+SCREEN = os.path.join(os.path.dirname(__file__), "data", "screens", "pered_boem.webp")
 SLOTS = ["amon", "hyperion", "lumira", "iyari", "rigel"]
 # Энергия в слотах (длина жёлтой полоски на скриншоте: 39, 51, 31, 12, 18 пикселей из 65)
 SLOT_ENERGY = {"amon": 59, "hyperion": 79, "lumira": 48, "iyari": 18, "rigel": 28}

@@ -1,6 +1,6 @@
 # Тесты задачи 10: вместо фиксированных пауз — «экран замер», и одна пауза реакции перед нажатием.
 # Игры и телефона нет: часы подделываем (время идёт только в sleep), экран — последовательности снимков.
-# Окно результата проверяем на настоящих скриншотах пользователя (logs/session_01-02/screens/54.png и 111.png).
+# Окно результата проверяем на настоящих скриншотах пользователя (tests/data/screens/result_54.webp и result_111.webp).
 import importlib
 import os
 import random
@@ -20,7 +20,7 @@ from click_logic import TapPacer, spots_still, wait_until_still  # noqa: E402
 from test_click_logic import FakeProc, FakeTime, look_on_frame  # noqa: E402
 
 PACK = ["araji", "hyperion", "rigel", "iyari", "lumira"]
-SCREENS = os.path.join(os.path.dirname(__file__), "..", "logs", "session_01-02", "screens")
+SCREENS = os.path.join(os.path.dirname(__file__), "data", "screens")
 GAME_RECT = {"top": 0, "left": 0, "width": 1590, "height": 704}
 
 
@@ -196,7 +196,7 @@ def bar_cut(img, found, titan, keep):
     return out
 
 
-@pytest.mark.parametrize("name", ["54.png", "111.png"])
+@pytest.mark.parametrize("name", ["result_54.webp", "result_111.webp"])
 def test_reread_gives_same_numbers_as_full_scan(analyzer, name):
     img = game_area(name)
     found = {}
@@ -208,7 +208,7 @@ def test_reread_gives_same_numbers_as_full_scan(analyzer, name):
 
 def test_reread_follows_window_that_moved(analyzer):
     """Окно сдвинулось на несколько пикселей: иконки ищутся рядом с прежним местом и находятся."""
-    img = game_area("111.png")
+    img = game_area("result_111.webp")
     found = {}
     status = analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK, found=found)
     before = dict(found)
@@ -220,7 +220,7 @@ def test_reread_follows_window_that_moved(analyzer):
 def test_result_window_bars_moving_then_still(analyzer, clock, capsys):
     """Последовательность снимков окна результата: полоска Ригеля сначала «не доехала» (ХП меньше),
     потом встала на 55%. Бот берёт 55%, остальных — как в первом чтении, и пишет об этом в лог."""
-    img = game_area("54.png")
+    img = game_area("result_54.webp")
     found = {}
     analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK, found=found)
     moving = bar_cut(img, found, "rigel", keep=20)
@@ -240,7 +240,7 @@ def test_result_window_needs_three_same_shots(analyzer, clock, capsys):
     """Задача 11: после «ОК» полоска иногда заполняется дольше 1,2 с и может на миг «замереть» на середине
     (у вас Араджи на первом снимке 8%, потом 100%). Для окна результата бот ждёт три одинаковых снимка подряд:
     два одинаковых на середине его не обманут."""
-    img = game_area("54.png")
+    img = game_area("result_54.webp")
     found = {}
     analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK, found=found, quiet=True)
     half = bar_cut(img, found, "rigel", keep=20)
@@ -255,7 +255,7 @@ def test_result_window_needs_three_same_shots(analyzer, clock, capsys):
 
 def test_quiet_scan_prints_nothing_and_lines_match(analyzer, capsys):
     """Окно результата читается молча, а итоговые цифры печатаются одной пачкой — в том же виде, что и раньше."""
-    img = game_area("111.png")
+    img = game_area("result_111.webp")
     status = analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK, quiet=True)
     assert capsys.readouterr().out == ""
     analyzer.scan_team_health(GAME_RECT, SeqSct([img]), PACK)
@@ -266,7 +266,7 @@ def test_quiet_scan_prints_nothing_and_lines_match(analyzer, capsys):
 
 def test_result_window_still_at_once_is_quick(analyzer, clock, capsys):
     """Обычный случай: окно уже не двигается. Один быстрый снимок вместо паузы 1,5 с."""
-    img = game_area("111.png")
+    img = game_area("result_111.webp")
     found = {}
     sct = SeqSct([img])
     first = analyzer.scan_team_health(GAME_RECT, sct, PACK, found=found)

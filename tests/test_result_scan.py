@@ -1,5 +1,5 @@
 # Тесты задачи 6: надёжное чтение окна результата.
-# Распознавание проверяем на настоящих скриншотах пользователя (logs/session_01-02/screens/54.png и 111.png):
+# Распознавание проверяем на настоящих скриншотах пользователя (tests/data/screens/result_54.webp и result_111.webp):
 # из них вырезано окно игры 1590x704, как его видит бот («Чистая зона игры» в логе).
 import os
 import sys
@@ -16,7 +16,7 @@ np = pytest.importorskip("numpy")
 import result_scan as rs  # noqa: E402
 
 PACK = ["araji", "hyperion", "rigel", "iyari", "lumira"]
-SCREENS = os.path.join(os.path.dirname(__file__), "..", "logs", "session_01-02", "screens")
+SCREENS = os.path.join(os.path.dirname(__file__), "data", "screens")
 
 
 class FakeSct:
@@ -47,8 +47,8 @@ def scan_screen(analyzer, img):
 
 
 @pytest.mark.parametrize("name, expected", [
-    ("54.png", [100, 100, 55, 100, 100]),
-    ("111.png", [56, 59, 81, 38, 44]),
+    ("result_54.webp", [100, 100, 55, 100, 100]),
+    ("result_111.webp", [56, 59, 81, 38, 44]),
 ])
 def test_real_screens_all_titans_found(analyzer, name, expected):
     img = cv2.imread(os.path.join(SCREENS, name))
