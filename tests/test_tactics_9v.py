@@ -157,10 +157,26 @@ def test_fire_titan_is_healed_in_mix_instead_of_amon():
 
 
 def test_water_and_earth_titans_heal_at_home():
-    """Сигурда лечат в воде (Гиперион), Эдема — в земле (Авалон): в смешанную их не тянем."""
+    """Сигурда лечат в воде (Гиперион), Эдема — в земле (Авалон): пока отхила там хватает, в смешанную их не тянем."""
     assert plan(state(sigurd=40, eden=45)) == (None, [])
     assert tactics.heals_at_home("sigurd", BASE_PACKS) and tactics.heals_at_home("eden", BASE_PACKS)
     assert not tactics.heals_at_home("araji", BASE_PACKS) and not tactics.heals_at_home("moloch", BASE_PACKS)
+
+
+def test_water_titan_is_healed_in_mix_when_home_heal_is_not_enough():
+    """Ваше замечание: водных и земляных вы тоже лечите в смешанной, если отхила в своей комнате не хватает.
+    Тидус 2 боя подряд в воде держится ниже 60% — бот ставит его в смешанную вместо Амона."""
+    water = BASE_PACKS["water"]
+    h = tactics.BattleHistory([
+        battle(water, "SUCCESS", {"tidus": 45}, room="water", time=f"{DAY} 10:10:00", before={"tidus": 50}),
+        battle(water, "SUCCESS", {"tidus": 40}, room="water", time=f"{DAY} 10:20:00", before={"tidus": 45}),
+    ], settings())
+    (pack, titan, why), _ = plan(state(tidus=40), history=h)
+    assert titan == "tidus" and pack == ["hyperion", "rigel", "iyari", "lumira", "tidus"]
+    assert "water" in why and "вместо AMON" in why
+    # Один бой в воде — ещё ждём, вдруг там вылечат
+    one = tactics.BattleHistory(h.entries[:1], settings())
+    assert plan(state(tidus=40), history=one) == (None, [])
 
 
 def test_one_at_a_time_closest_to_panic_first():

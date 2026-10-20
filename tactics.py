@@ -410,11 +410,16 @@ def describe_risks(risks, state=None):
 # ---------------------------------------------------------------------------
 # Пак отхила, который бот собирает сам (задача 9в)
 # ---------------------------------------------------------------------------
+def home_rooms(titan, base_packs, room=HEAL_ROOM):
+    """Где титана лечат в своей комнате: стихии, в базовом паке которых он стоит вместе с лекарем
+    (вода — Гиперион и Сигурд, земля — Авалон). Огненных лечить негде: в огне лекарей нет (ваш ответ на вопрос 23)."""
+    return [r for r, pack in base_packs.items()
+            if r != room and pack and titan in pack and any(t in HEALERS for t in pack)]
+
+
 def heals_at_home(titan, base_packs, room=HEAL_ROOM):
-    """Лечится ли титан в своей комнате: он в базовом паке другой стихии, где есть лекарь (вода — Гиперион и Сигурд,
-    земля — Авалон). Огненных лечить негде: в огне лекарей нет (ваш ответ на вопрос 23). base_packs — {стихия: пак}."""
-    return any(titan in pack and any(t in HEALERS for t in pack)
-               for r, pack in base_packs.items() if r != room and pack)
+    """Лечится ли титан в своей комнате (home_rooms). base_packs — {стихия: пак}."""
+    return bool(home_rooms(titan, base_packs, room))
 
 
 def removal_order(pack, settings, keep=()):
@@ -448,7 +453,9 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
     Лечим по одному — того, кто ближе всех к своему порогу паники. Кого лечим:
       - ХП ниже settings.heal_hp, но не ниже порога паники (ниже в смешанной уже не вылечить — вопрос 1),
         и титан не под запретом правил skip;
-      - его нет в паке, и в своей комнате его не лечат (heals_at_home: огненных лечить негде) —
+      - его нет в паке, и в своей комнате его не лечат (heals_at_home: огненных лечить негде) или отхила там
+        не хватает (STUCK_BATTLES боя подряд в своей комнате не поднимается выше порога — ваше замечание:
+        водных и земляных вы тоже иногда лечите в смешанной) —
         он встаёт вместо первого из removal_order;
       - или он в паке, но STUCK_BATTLES боя подряд не поднимается выше порога (BattleHistory.not_healing) —
         тогда вместо первого из removal_order встаёт помощник-лекарь (_helper).
@@ -493,13 +500,17 @@ def heal_plan(room, pack, state, settings, history, base_packs, forbidden=(), en
             why = (f"{titan.upper()} {hp}% ХП {STUCK_BATTLES} боя подряд не поднимается выше {settings.heal_hp}% — "
                    f"лекарь {helper[0].upper()} ({helper[1]}% ХП, ⚡{helper[2]}%) вместо {out[0].upper()}")
         else:
-            if heals_at_home(titan, base_packs, room):
-                continue  # его лечат в своей комнате (вода, земля)
+            homes = home_rooms(titan, base_packs, room)
+            stuck = [r for r in homes if history.not_healing(r, titan, settings.heal_hp)]
+            if homes and not stuck:
+                continue  # его лечат в своей комнате (вода, земля), и отхила там хватает
+            where = (f"в своей комнате ({stuck[0]}) {STUCK_BATTLES} боя подряд не поднимается выше {settings.heal_hp}%"
+                     if stuck else "в своей комнате его не лечат")
             if len(pack) < 5:
-                new_pack, why = list(pack) + [titan], f"{titan.upper()} {hp}% ХП: в своей комнате его не лечат"
+                new_pack, why = list(pack) + [titan], f"{titan.upper()} {hp}% ХП: {where}"
             elif out:
                 new_pack = [titan if t == out[0] else t for t in pack]
-                why = f"{titan.upper()} {hp}% ХП: в своей комнате его не лечат — ставлю вместо {out[0].upper()}"
+                why = f"{titan.upper()} {hp}% ХП: {where} — ставлю вместо {out[0].upper()}"
             else:
                 note(f"{titan.upper()} {hp}%: некого убрать из пака")
                 continue
