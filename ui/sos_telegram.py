@@ -31,7 +31,8 @@ class TelegramQuestion:
     titans — ХП титанов из строки бота; info — bot_data/sos_info.json (комната, враги, причина), прочитанный окном."""
 
     def __init__(self, kind, titans, lang, on_answer, log, info=None, is_manual=False, can_rollback=True,
-                 profile_path="profile.yml", delays=None):
+                 profile_path="profile.yml", delays=None, on_failed=None):
+        self.on_failed = on_failed      # вопрос так и не ушёл (окно программы спросит само)
         self.kind = kind
         self.titans = titans
         self.lang = lang
@@ -93,6 +94,8 @@ class TelegramQuestion:
             error = agent.last_error or ""
             if not error.startswith(telegram_agent.NETWORK_ERROR) or not delays:
                 self.log(f"[TELEGRAM] {name} в Telegram не отправлен: {error or 'нет ответа'}\n")
+                if self.on_failed and not self.stopped:
+                    self.on_failed()
                 return
             delay = delays.pop(0)
             self.log(f"[TELEGRAM] {name} в Telegram не ушёл ({error}). Пробую снова через {delay} с.\n")

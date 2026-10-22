@@ -33,9 +33,15 @@ ROW_HEIGHT = 40
 WINDOW = (900, 676)
 
 
-@lru_cache(maxsize=4)
 def empty_slot_image(size=SLOT):
-    """Пустой слот: пунктирная рамка 1,5 px со скруглением и плюс посередине (в Tk пунктирной рамки у виджетов нет)."""
+    """Пустой слот: пунктирная рамка 1,5 px со скруглением и плюс посередине (в Tk пунктирной рамки у виджетов нет).
+    Запоминается сам рисунок, а не картинка Tk: она принадлежит одному окну."""
+    img = _empty_slot_picture(size)
+    return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
+
+
+@lru_cache(maxsize=4)
+def _empty_slot_picture(size):
     k = 4
     big = size * k
     width = round(1.5 * k)
@@ -60,7 +66,7 @@ def empty_slot_image(size=SLOT):
     img.putalpha(Image.composite(line, Image.new("L", (big, big), 0), mask))
     plus = icon_image("plus", C["text_muted"], 16 * k)
     img.alpha_composite(plus, ((big - plus.width) // 2, (big - plus.height) // 2))
-    return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
+    return img
 
 
 def icon_image(name, color, size):
@@ -69,16 +75,21 @@ def icon_image(name, color, size):
     return _colored(name, color.upper()).resize((size, size), Image.LANCZOS)
 
 
-@lru_cache(maxsize=4)
 def check_badge(size=18):
     """Зелёный кружок с белой галочкой — титан выбран."""
+    img = _check_picture(size)
+    return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
+
+
+@lru_cache(maxsize=4)
+def _check_picture(size):
     k = 4
     img = Image.new("RGBA", (size * k, size * k), (0, 0, 0, 0))
     rgb = tuple(int(C["green"][i:i + 2], 16) for i in (1, 3, 5))
     ImageDraw.Draw(img).ellipse((0, 0, size * k - 1, size * k - 1), fill=rgb + (255,))
     mark = icon_image("check", C["white"], 11 * k)
     img.alpha_composite(mark, ((size * k - mark.width) // 2, (size * k - mark.height) // 2))
-    return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
+    return img
 
 
 class TitanChoice(ClickFrame):

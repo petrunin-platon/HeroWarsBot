@@ -249,6 +249,8 @@ class Question:
         self.picker = None
         self.confirm = None
         self.telegram = None
+        self.info = {}              # bot_data/sos_info.json этого вопроса
+        self.asked_at = None        # когда бот спросил (для «бот решит сам через …»)
 
     def close(self):
         """Закрыть всё без ответа (бот решил сам, ответ пришёл из Telegram, бот остановился)."""
@@ -325,6 +327,7 @@ class MainPage(ctk.CTkFrame):
         self._shown = 0
         self._errors_shown = None
         self._empty_shown = None
+        self._more_shown = True
         self._closing = False
         self._clear_dialog = None
 
@@ -664,7 +667,8 @@ class MainPage(ctk.CTkFrame):
         tiles[2].show(g("main_panic"), f"{cfg['panic']}%", mono=True)
         tiles[3].show(g("main_reset"), f"{int(cfg['reset_hour']) % 24:02d}:00", mono=True)
 
-    def _session_tiles(self, tiles, stats, goal):
+    def _session_tiles(self, tiles, stats, goal, summary=False):
+        """Четыре плашки сессии (и итога): титанит, этажи и дверь, бои, время. summary — в «Итоге» ещё окна SOS."""
         g = lambda key: get_text(self.lang, key)  # noqa: E731
         elapsed = stats.elapsed()
         progress = launch_config.goal_progress(goal, stats.rooms, stats.titanite, stats.floors, elapsed)
@@ -688,13 +692,17 @@ class MainPage(ctk.CTkFrame):
         value, right, share = goal_parts("titanite", log_lines.group_digits(stats.titanite))
         tiles[0].show(g("main_tile_titanite"), value, mono=True, right=right, progress=share)
         value, right, share = goal_parts("floors", str(stats.floors))
-        door = g("main_tile_door").format(door=theme.plain_text(get_text(self.lang, f"elem_{stats.door}"))) \
-            if stats.door else ""
+        door = ""
+        if stats.door:
+            name = get_text(self.lang, f"elem_{stats.door}")
+            door = g("main_tile_door").format(door=stats.door.upper() if name == f"elem_{stats.door}"
+                                              else theme.plain_text(name))
         tiles[1].show(g("main_tile_floors"), value, mono=True, extra=f"· {door}" if door else "", right=right,
                       progress=share)
         battles = g("main_battles_value").format(wins=stats.rooms, total=stats.battles)
         right, share = goal_share("rooms")
-        tiles[2].show(g("main_tile_battles"), battles, right=right, progress=share)
+        tiles[2].show(g("main_tile_battles"), battles, right=right, progress=share,
+                      extra=g("main_sos_value").format(sos=stats.sos) if summary else "")
         avg = stats.avg_room()
         avg_text = g("main_room_avg").format(s=f"{avg:.0f}") if avg is not None else ""
         right, share = goal_share("time")
@@ -727,15 +735,14 @@ class MainPage(ctk.CTkFrame):
         reason = stats.stop_reason and telegram_report.humanize(stats.stop_reason, self.lang) or \
             g(stats.ended_by or log_lines.ENDED_EXIT)
         set_text(self.summary_reason, g("main_summary_reason").format(reason=reason))
-        if stats.summary:
-            self.summary_more.grid()
-        else:
-            self.summary_more.grid_remove()
-        tiles = self.summary_tiles
+        if bool(stats.summary) != self._more_shown:
+            self._more_shown = bool(stats.summary)
+            if self._more_shown:
+                self.summary_more.grid()
+            else:
+                self.summary_more.grid_remove()
         goal = (self.run_config or self.config)["goal"]
-        self._session_tiles(tiles, stats, goal)
-        tiles[2].show(g("main_tile_battles"), g("main_battles_value").format(wins=stats.rooms, total=stats.battles),
-                      extra=g("main_sos_value").format(sos=stats.sos))
+        self._session_tiles(self.summary_tiles, stats, goal, summary=True)
 
     # ── Кнопки карточки ─────────────────────────────────────────────────────
     def launch_phone(self):
@@ -887,6 +894,8 @@ class MainPage(ctk.CTkFrame):
             self._scrcpy_done(value)
         elif kind == "tg_answer":
             self._telegram_answer(*value)
+        elif kind == "tg_failed":
+            self._telegram_failed(value)
 
     def _bot_exited(self, run_id):
         if not self.link.exited(run_id):
@@ -922,11 +931,14 @@ class MainPage(ctk.CTkFrame):
         cfg = self.run_config or self.config
         return cfg["settings"].panic_hp, cfg["sos_timeout"]
 
-    def _telegram(self, question, kind, titans, info=None, is_manual=False, can_rollback=True):
+    def _telegram(self, question, kind, titans, info=None, is_manual=False, can_rollback=True, only_telegram=False):
+        """Вопрос в Telegram (с повторами). only_telegram — окна в программе нет: не ушло — окно откроется здесь."""
         events = self.controller.events
+        failed = (lambda: events.put(("tg_failed", question.id))) if only_telegram else None
         question.telegram = TelegramQuestion(
             kind, titans, self.lang, lambda decision: events.put(("tg_answer", (question.id, decision))),
-            lambda text: events.put(("log", text)), info=info, is_manual=is_manual, can_rollback=can_rollback).start()
+            lambda text: events.put(("log", text)), info=info, is_manual=is_manual, can_rollback=can_rollback,
+            on_failed=failed).start()
 
     def _open_sos(self, data, asked_at):
         info = telegram_report.read_sos_info(data_paths.sos_info_file())
@@ -954,16 +966,27 @@ class MainPage(ctk.CTkFrame):
         titans = data.get("titans") or {}
         info = read_recent_info(data_paths.sos_info_file(), TEST_INFO_MAX_AGE_S)
         question = Question(bot_link.TEST_OK, self.link.epoch, titans, info.get("room"))
+        question.info, question.asked_at = info, asked_at
         self.questions.append(question)
         if data.get("source") == "telegram" and telegram_ready():
-            # Пак прислали из Telegram — и спрашиваем там же (как старое окно)
-            self._telegram(question, TG_TEST, titans)
+            # Пак прислали из Telegram — и спрашиваем там же (как старое окно). Не ушло — спросим здесь
+            self._telegram(question, TG_TEST, titans, only_telegram=True)
             return
+        self._test_window(question)
+
+    def _test_window(self, question):
         panic, timeout = self._run_settings()
         question.window = sos_dialogs.test_window(
-            self, self.lang, titans, info, panic, timeout, asked_at,
+            self, self.lang, question.titans, question.info, panic, timeout, question.asked_at,
             on_answer=lambda command: self._answer(question, command), on_close=lambda: self._ask_stop(question),
             on_other=lambda: self._pick(question, "ROLLBACK:"))
+
+    def _telegram_failed(self, question_id):
+        """Вопрос «Пак справился» ушёл только в Telegram, но так и не отправился — спрашиваем в окне программы."""
+        question = next((q for q in self.questions if q.id == question_id), None)
+        if question is not None and question.window is None and question.kind == bot_link.TEST_OK:
+            self._test_window(question)
+            self.refresh()
 
     def _pick(self, question, prefix):
         """«Откатить бой», «Попробовать другой», «Собрать новый пак» — окно «Собери состав». Закрыли его без выбора —
@@ -996,12 +1019,13 @@ class MainPage(ctk.CTkFrame):
             return
         self.questions.remove(question)
         question.close()
-        self.append_log(f"[{source}] Ответ боту: {command}\n" if source == "GUI" else
-                        f"[TELEGRAM] Ответ из Telegram: {command}\n")
         if command == "STOP":
-            self.link.request_stop(question.epoch)
+            sent = self.link.request_stop(question.epoch)
         else:
-            self.link.answer(command, question.epoch)
+            sent = self.link.answer(command, question.epoch)
+        if sent:  # устаревший ответ link не отправит и сам напишет почему
+            self.append_log(f"[GUI] Ответ боту: {command}\n" if source == "GUI" else
+                            f"[TELEGRAM] Ответ из Telegram: {command}\n")
         self.refresh()
 
     def _ask_stop(self, question):

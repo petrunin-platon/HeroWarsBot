@@ -124,7 +124,7 @@ class InterventionWindow(ctk.CTkToplevel):
         if isinstance(widget_or_text, str):
             widget_or_text = ctk.CTkLabel(frame, text=widget_or_text, font=F["text"], text_color=C["text"],
                                           anchor="w", justify="left", wraplength=WIDTH - 190, height=20)
-        widget_or_text.grid(row=row, column=1, sticky="w", padx=(0, 14), pady=pad)
+        widget_or_text.grid(row=row, column=1, sticky="nw", padx=(0, 14), pady=pad)  # верх — вровень с подписью
 
     def add_facts(self, reason=None, room=None, room_no=None, enemies=None):
         """Причина, комната, враги (то, что есть)."""

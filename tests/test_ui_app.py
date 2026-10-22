@@ -5,7 +5,8 @@
 - полоска, шапка, шесть разделов (внутри — старые вкладки), заголовок раздела в шапке;
 - язык меняет надписи окна и старых вкладок и запоминается до следующего запуска;
 - события из фоновых потоков (телефон, Telegram, строки журнала) доходят до окна через очередь;
-- F9 и F10 делают то же, что «Мягкая пауза» и «Экстренный СТОП» старой главной, и только когда бот запущен;
+- F9 и F10 делают то же, что «Пауза» и «СТОП» главной (как «Мягкая пауза» и «Экстренный СТОП» старой), и только когда
+  бот запущен;
 - кнопки шапки не замораживают окно (работа — в фоне или через after);
 - крестик: бот работает — вопрос «Остановить бота?»; потом бот и scrcpy остановлены, а процесс окна выходит сам.
 pygetwindow и pyautogui есть только в Windows — здесь вместо них заглушки.
@@ -104,11 +105,17 @@ def pump(window, seconds=0.3, until=None):
 
 
 def log_text(window):
-    return window.frames["dash"].log_box.get("1.0", "end")
+    return window.frames["dash"].log_text()
 
 
 def fake_process():
     return subprocess.Popen(SLEEPER, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+
+
+def fake_bot(dash):
+    """Вместо бота — спящий процесс: главная считает бота запущенным (ui/bot_link.py)."""
+    dash.link.process = fake_process()
+    return dash.link.process
 
 
 def test_frame_like_design(app):
@@ -121,8 +128,10 @@ def test_frame_like_design(app):
     assert app.title_label.master.winfo_height() == theme.SIZES["header_height"]
     assert app.title_label.cget("text") == get_text("RU", "page_title_main") == "Главная — Фарм"
     assert app.nav["dash"]._active and not app.nav["rules"]._active
-    # Заголовок и кнопки старой главной теперь в шапке — в новом окне строка старой главной спрятана
-    assert not app.frames["dash"].lbl_title.master.winfo_ismapped()
+    # С шага 3 главная новая (ui/main_page.py): первый запуск — «С чего начать», пустой журнал
+    from ui.main_page import MainPage
+    assert isinstance(app.frames["dash"], MainPage) and app.frames["dash"].left_mode == "first"
+    assert app.frames["dash"].empty.winfo_ismapped()
     assert set(app.header_buttons) == {"moon", "refresh-cw", "maximize-2"}
     assert app.plate.connected is False
     assert app.plate._status.cget("text") == "Ожидание телефона…"
@@ -156,7 +165,8 @@ def test_language_changes_texts_and_is_remembered(app, workdir):
     assert app.current_lang == "DE"
     assert app.title_label.cget("text") == get_text("DE", "page_title_main")
     assert app.lang_button.cget("text") == "DE"
-    assert app.frames["dash"].btn_launch_scrcpy.cget("text") == get_text("DE", "dash_btn_connect")  # старые вкладки
+    assert app.frames["dash"].cta["connect"].cget("text") == get_text("DE", "main_btn_connect")
+    assert app.frames["rules"].lbl_goal.cget("text") == get_text("DE", "rules_goal")  # старые вкладки
     assert "[GUI] Язык интерфейса изменен: Deutsch (DE)" in log_text(app)
     assert ui_settings.load(str(workdir / "ui_settings.json"))["language"] == "DE"
     app.shutdown()
@@ -188,21 +198,22 @@ def test_hotkeys_do_what_old_buttons_do(app, workdir):
     app.on_hotkey("F9")
     assert "[GUI] Нажата F9, но бот не запущен." in log_text(app)
     assert not (workdir / "pause.flag").exists()
-    dash.bot_process = fake_process()
-    proc = dash.bot_process
+    proc = fake_bot(dash)
     app.on_hotkey("F9")
     assert (workdir / "pause.flag").exists()              # мягкая пауза — тот же pause.flag
+    assert dash.pause_button.kind == "continue"           # «Пауза» стала «Продолжить»
     app.on_hotkey("F9")
     assert not (workdir / "pause.flag").exists()          # снять паузу
+    assert dash.pause_button.kind == "pause"
     app.on_hotkey("F10")
-    assert proc.poll() is not None and dash.bot_process is None
-    assert "[GUI] ЭКСТРЕННЫЙ СТОП. Процесс убит." in log_text(app)
+    assert proc.poll() is not None and not dash.bot_running()
+    assert pump(app, 2, until=lambda: "[GUI] ЭКСТРЕННЫЙ СТОП. Процесс убит." in log_text(app))
 
 
 def test_close_asks_when_bot_runs(app):
     dash = app.frames["dash"]
-    dash.bot_process, dash.scrcpy_process = fake_process(), fake_process()
-    bot, scrcpy = dash.bot_process, dash.scrcpy_process
+    bot, dash.scrcpy_process = fake_bot(dash), fake_process()
+    scrcpy = dash.scrcpy_process
     app.on_close()
     dialog = app._close_dialog
     assert dialog is not None and not app._closing
@@ -290,9 +301,9 @@ CLOSE_SCRIPT = STUBS + textwrap.dedent('''
     app.hotkeys = hotkeys.HotkeyWatcher(app.events, "x", key_down=lambda vk: vk in keys, allowed=lambda: True).start()
     sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
     dash = app.frames["dash"]
-    dash.bot_process = subprocess.Popen(sleeper, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    dash.link.process = subprocess.Popen(sleeper, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     dash.scrcpy_process = subprocess.Popen(sleeper)
-    print("PIDS", dash.bot_process.pid, dash.scrcpy_process.pid, flush=True)
+    print("PIDS", dash.link.process.pid, dash.scrcpy_process.pid, flush=True)
     targets = []
     def collect():
         app.update()

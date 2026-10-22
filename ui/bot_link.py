@@ -287,11 +287,11 @@ class BotLink:
                 self.ended_by = ended_by
         self._cancel_stop_timer()
         self.stopping = self.debug_wait = False
+        if (alive or was_starting) and log:
+            self._log("[GUI] ЭКСТРЕННЫЙ СТОП. Процесс убит.\n")  # раньше строки «Процесс бота завершен»
         if alive:
             cleanup_process(proc)
         if alive or was_starting:
-            if log:
-                self._log("[GUI] ЭКСТРЕННЫЙ СТОП. Процесс убит.\n")
             if self.paused():
                 try:
                     os.remove(self.pause_file)
