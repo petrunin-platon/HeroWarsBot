@@ -3,6 +3,7 @@
 Card — карточка; Button — кнопка нужного вида (второстепенная, синяя, сохранить, «Начать фарм», опасная);
 IconButton — квадратная кнопка с иконкой (шапка, сайдбар, мини-бар); Tooltip — подсказка при наведении;
 TitanAvatar — квадрат титана цветом стихии; Chip — фильтр-«таблетка»; Field — поле ввода с подписью и состояниями;
+Switch — тумблер, Dropdown — выпадающий список (шаг 5а, мастер правил);
 DialogBody / ConfirmDialog — подтверждение опасного действия; ToastBody / Toast — короткое уведомление.
 
 Цвета, шрифты и размеры — только из ui/theme.py, иконки — ui/icons. Надписи передаёт тот, кто создаёт виджет (из i18n.py).
@@ -19,6 +20,7 @@ import tkinter as tk
 from functools import lru_cache
 
 import customtkinter as ctk
+from customtkinter.windows.widgets.core_widget_classes import DropdownMenu
 from PIL import Image, ImageDraw
 
 from i18n import get_text
@@ -785,6 +787,120 @@ class Field(ctk.CTkFrame):
         self.entry.delete(0, "end")
         self.entry.insert(0, str(value))
         self.entry.configure(state=state)
+
+
+class Switch(ctk.CTkSwitch):
+    """Тумблер 40×22 (макет 03a): включён — синий трек и белая ручка, выключен — серый трек и серая ручка.
+    command(включён) — после переключения мышью; set_on() меняет положение без вызова command.
+    (set и get — методы самого CTkSwitch, их не переопределяем.)"""
+
+    def __init__(self, master, value=False, command=None, **kwargs):
+        self._on_change = command
+        super().__init__(master, text="", width=40, height=22, switch_width=40, switch_height=22, border_width=0,
+                         corner_radius=11, button_length=0, fg_color=C["border_strong"], progress_color=C["blue"],
+                         command=self._toggled, **kwargs)
+        self.set_on(value)
+
+    def _paint_knob(self):
+        knob = C["white"] if self.is_on() else C["text_secondary"]
+        if self.cget("button_color") != knob:  # цвет ручки — только при переключении, не при наведении
+            self.configure(button_color=knob, button_hover_color=knob)
+
+    def set_on(self, value):
+        if value:
+            self.select()
+        else:
+            self.deselect()
+        self._paint_knob()
+
+    def is_on(self):
+        return self.get() == 1
+
+    def _toggled(self):
+        self._paint_knob()
+        if self._on_change:
+            self._on_change(self.is_on())
+
+
+class Dropdown(ClickFrame):
+    """Выпадающий список в цветах поля ввода (макет 03a: «Титанит ▾», «05:00»): высота 36, слева значок (по желанию),
+    надпись, справа стрелка. Пункты — (ключ, надпись); command(ключ) — после выбора. icons — {ключ: (иконка, цвет)}.
+    Список — меню CustomTkinter (как выбор языка в полоске)."""
+
+    def __init__(self, master, items, value, command=None, icons=None, width=140, mono=False, **kwargs):
+        super().__init__(master, command=self.open, width=width, height=S["control_height"],
+                         corner_radius=S["radius_control"], border_width=1, border_color=C["border"],
+                         fg_color=C["bg_elevated"], **kwargs)
+        self.items = list(items)
+        self.value = value
+        self.icons = icons or {}
+        self.on_choose = command
+        self._look = None
+        self.grid_propagate(False)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self._icon_label = ctk.CTkLabel(self, text="", width=15, height=20)
+        self._label = ctk.CTkLabel(self, text="", height=20, anchor="w", text_color=C["text"],
+                                   font=F["mono_field"] if mono else F["body"])
+        self._label.grid(row=0, column=1, sticky="ew", padx=(10, 4))
+        self._arrow = ctk.CTkLabel(self, text="", image=icon("chevron-down", C["text_muted"], 16), width=16, height=20)
+        self._arrow.grid(row=0, column=2, padx=(0, 10))
+        self.bind_parts(self._icon_label, self._label, self._arrow)
+        self.menu = DropdownMenu(self.winfo_toplevel(), values=[text for _k, text in self.items],
+                                 command=self._chosen, fg_color=C["bg_elevated"], hover_color=C["blue_button"],
+                                 text_color=C["text"], font=F["text"], min_character_width=6)
+        self._show_value()
+        self._paint()
+
+    def _paint(self):
+        look = T["hover_elevated"] if self._hovering and self.enabled else C["bg_elevated"]
+        if look != self._look:
+            self._look = look
+            self.configure(fg_color=look)
+
+    def _show_value(self):
+        text = next((t for k, t in self.items if k == self.value), str(self.value))
+        if self._label.cget("text") != text:
+            self._label.configure(text=text)
+        if self.value in self.icons:
+            name, color = self.icons[self.value]
+            self._icon_label.configure(image=icon(name, color, 15))
+            self._icon_label.grid(row=0, column=0, padx=(10, 0))
+            self._label.grid_configure(padx=(8, 4))
+        else:
+            self._icon_label.grid_forget()
+            self._label.grid_configure(padx=(10, 4))
+
+    def open(self):
+        self.menu.open(self.winfo_rootx(), self.winfo_rooty() + self.winfo_height() + 2)
+
+    def _chosen(self, text):
+        key = next((k for k, t in self.items if t == text), None)
+        if key is None:
+            return
+        self.set(key)
+        if self.on_choose:
+            self.on_choose(key)
+
+    def set(self, value):
+        self.value = value
+        self._show_value()
+
+    def get(self):
+        return self.value
+
+    def set_items(self, items):
+        """Новые надписи (другой язык)."""
+        self.items = list(items)
+        self.menu.configure(values=[text for _k, text in self.items])
+        self._show_value()
+
+    def destroy(self):
+        try:
+            self.menu.destroy()  # меню живёт у окна, а не у списка: убираем вместе со списком
+        except tk.TclError:
+            pass
+        super().destroy()
 
 
 # Значок диалога: иконка, её цвет, цвет подложки; кнопка подтверждения по умолчанию (вид и иконка)

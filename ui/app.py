@@ -4,7 +4,8 @@
 
 Каркас — по design/README.md («Каркас окна»): слева полоска 64 px (логотип, 6 разделов с подсказками, Telegram, язык),
 сверху шапка 56 px (название раздела, плашка телефона, три кнопки), ниже — страница. С шага 3 главная новая
-(ui/main_page.py), остальные страницы пока — старые вкладки, их заменят следующие шаги. Для них окно — прежний
+(ui/main_page.py), с шага 5а — «Мастер правил» (ui/rules_page.py), остальные страницы пока — старые вкладки,
+их заменят следующие шаги. Для них окно — прежний
 controller: current_lang, frames, select_frame; главная для них — frames["dash"] с append_log().
 
 Связь с ботом не меняется (протокол тот же): бота запускает, читает и останавливает главная через ui/bot_link.py.
@@ -41,7 +42,7 @@ from ui.hotkeys import HotkeyWatcher
 from ui.hud import Hud
 from ui.icons import dot, icon, icon_with_dot
 from ui.main_page import MainPage
-from ui.rules_tab import RulesFrame
+from ui.rules_page import RulesPage
 from ui.statistics_tab import StatisticsFrame
 from ui.status import StatusWatcher
 from ui.widgets import Button, ConfirmDialog, IconButton, Toast, Tooltip
@@ -55,7 +56,7 @@ S = theme.SIZES
 # Разделы: имя (как в старом окне), старая вкладка, иконка, подсказка в полоске, заголовок в шапке
 PAGES = (
     ("dash", MainPage, "house", "btn_main", "page_title_main"),
-    ("rules", RulesFrame, "sliders-vertical", "btn_rules", "btn_rules"),
+    ("rules", RulesPage, "sliders-vertical", "btn_rules", "btn_rules"),
     ("analytics", AnalyticsFrame, "activity", "btn_analytics", "btn_analytics"),
     ("stats", StatisticsFrame, "chart-no-axes-column", "btn_stats", "page_title_stats"),
     ("guide", GuideFrame, "book-open", "btn_guide", "btn_guide"),
@@ -238,12 +239,20 @@ class App(ctk.CTk):
 
     # ── Страницы и язык ─────────────────────────────────────────────────────
     def select_frame(self, frame_name):
+        """Открыть раздел. Уходим из «Мастера правил» с несохранёнными изменениями — сначала «Сохранить изменения?»."""
+        if self.page == "rules" and frame_name != "rules":
+            self.frames["rules"].ask_leave(lambda: self._show_frame(frame_name))
+            return
+        self._show_frame(frame_name)
+
+    def _show_frame(self, frame_name):
         if frame_name == "stats":
             self.frames["stats"].refresh_data()
         for frame in self.frames.values():
             frame.grid_forget()
-        pad = S["content_padding"]
-        self.frames[frame_name].grid(row=0, column=0, sticky="nsew", padx=pad, pady=pad)
+        frame = self.frames[frame_name]
+        pad = 0 if getattr(frame, "full_bleed", False) else S["content_padding"]  # мастер правил: футер во всю ширину
+        frame.grid(row=0, column=0, sticky="nsew", padx=pad, pady=pad)
         self.page = frame_name
         for name, button in self.nav.items():
             button.set_active(name == frame_name)
@@ -300,6 +309,7 @@ class App(ctk.CTk):
                     break
                 self._handle_event(kind, value)
             self.frames["dash"].flush_log()
+            self.frames["rules"].update_bot_state(self.bot_running())
         finally:
             if not self._closing:
                 self._timers["drain"] = self.after(DRAIN_MS, self._drain)
@@ -345,7 +355,7 @@ class App(ctk.CTk):
 
     def open_telegram(self):
         """Настройки Telegram (ответ пользователя 22.10.2026). Пока — старое окно из «Мастера правил»:
-        сохраняется оно там же, кнопкой «Сохранить профиль»."""
+        сохраняется оно там же, кнопкой «Сохранить настройки» (новое окно Telegram — шаг 5б)."""
         self.select_frame("rules")
         self.frames["rules"].open_tg_dialog()
 
@@ -429,6 +439,17 @@ class App(ctk.CTk):
     # ── Закрытие ────────────────────────────────────────────────────────────
     def on_close(self):
         """Крестик окна. Бот работает — сначала вопрос (ответ пользователя 22.10.2026), иначе закрываем сразу."""
+        if self._closing:
+            return
+        if self.frames["rules"].dirty():
+            # Несохранённые настройки мастера правил — сначала «Сохранить изменения?» (ваш ответ 22.10.2026)
+            if self.state() != "normal":
+                self.deiconify()
+            self.frames["rules"].ask_leave(self._close_after_rules)
+            return
+        self._close_after_rules()
+
+    def _close_after_rules(self):
         if self._closing:
             return
         if not self.bot_running():

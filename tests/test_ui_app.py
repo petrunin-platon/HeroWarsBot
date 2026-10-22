@@ -166,7 +166,8 @@ def test_language_changes_texts_and_is_remembered(app, workdir):
     assert app.title_label.cget("text") == get_text("DE", "page_title_main")
     assert app.lang_button.cget("text") == "DE"
     assert app.frames["dash"].cta["connect"].cget("text") == get_text("DE", "main_btn_connect")
-    assert app.frames["rules"].lbl_goal.cget("text") == get_text("DE", "rules_goal")  # старые вкладки
+    assert app.frames["rules"].save_button.cget("text") == get_text("DE", "rb_save")  # мастер правил (шаг 5а)
+    assert app.frames["analytics"].lbl_title.cget("text") == get_text("DE", "analytics_title")  # старые вкладки
     assert "[GUI] Язык интерфейса изменен: Deutsch (DE)" in log_text(app)
     assert ui_settings.load(str(workdir / "ui_settings.json"))["language"] == "DE"
     app.shutdown()

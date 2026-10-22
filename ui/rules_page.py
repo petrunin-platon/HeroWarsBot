@@ -1,0 +1,330 @@
+"""Страница «Мастер правил» нового окна (задача 15, шаг 5а; макеты 03a–03c, экран 8).
+
+Сверху три вкладки (сегменты): «База и комнаты» (ui/rules_base.py), «Авто-тактика и ХП» (шаг 5б), «Правила и перехваты»
+(шаг 5в) — две последние пока пустые (ваш ответ 22.10.2026: заглушки не нужны). Ниже — прокручиваемая вкладка,
+внизу общий футер: «Все изменения сохранены» / «Есть несохранённые изменения», «Восстановить / Сброс» (с подтверждением),
+«Сохранить настройки». Пока бот работает, в футере подсказка «Бот возьмёт новые настройки при следующем запуске»
+(менять можно, как в старом окне: бот читает настройки при запуске).
+
+Все значения — в форме страницы (form — profile.yml, teams — основные паки), пишет их только «Сохранить настройки»
+(ваш ответ, сверка 4.1), и только то, что поменялось (ui/rules_store.py; ваше замечание: беречь диск).
+Уйти со страницы (или закрыть окно) с несохранёнными изменениями — окно «Сохранить изменения?» (ask_leave).
+Для старого кода страница по-прежнему frames["rules"] с open_tg_dialog() (точка Telegram в полоске).
+"""
+import copy
+
+import tkinter as tk
+
+import customtkinter as ctk
+
+from i18n import get_text
+from ui import rules_store, theme
+from ui.icons import icon
+from ui.rules_base import BaseTab
+from ui.widgets import Button, ConfirmDialog, Toast
+
+C = theme.COLORS
+T = theme.TINTS
+F = theme.FONTS
+S = theme.SIZES
+
+TABS = ("base", "tactics", "rules")
+TAB_KEYS = {"base": "rb_tab_base", "tactics": "rb_tab_tactics", "rules": "rb_tab_rules"}
+
+
+class RulesPage(ctk.CTkFrame):
+    full_bleed = True   # без отступов окна: вкладки и футер — во всю ширину (макет 03a)
+
+    def __init__(self, master, controller):
+        super().__init__(master, corner_radius=0, fg_color=C["bg_primary"])
+        self.controller = controller
+        self.lang = getattr(controller, "current_lang", "RU")
+        self.tab = "base"
+        self.expanded = {}         # раскрытые «Запасные паки» по стихиям
+        self.field_errors = {}     # поля с ошибкой: что в них введено
+        self.bot_running = False
+        self._dialog = None
+        self.load()
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self._build()
+
+    def text(self, key):
+        return get_text(self.lang, key)
+
+    def log(self, line):
+        dash = self.controller.frames.get("dash") if hasattr(self.controller, "frames") else None
+        if dash is not None:
+            dash.append_log(line)
+
+    # ── Чтение ──────────────────────────────────────────────────────────────
+    def load(self):
+        """Прочитать profile.yml и основные паки. Ошибки — в журнал, как в старой вкладке."""
+        state, profile, where = rules_store.read_profile()
+        if state == rules_store.BROKEN:
+            loc = f" (строка:символ {where})" if where else ""
+            self.log(f"[ОШИБКА] Файл profile.yml поврежден{loc}! Настройки показаны стандартные. "
+                     f"Нажмите «Восстановить / Сброс».\n")
+        elif state == rules_store.OK:
+            rules_store.ensure_backup()
+        self.profile_state = state
+        self.form = rules_store.form_from_profile(profile)
+        self.saved = copy.deepcopy(self.form)
+        self.teams, broken = rules_store.read_default_teams()
+        for room in broken:
+            self.log(f"[ОШИБКА] Не удалось загрузить основной пак: bot_data/rules/{room}.yml поврежден.\n")
+        self.saved_teams = copy.deepcopy(self.teams)
+        self.field_errors = {}
+
+    def dirty(self):
+        """Есть несохранённые изменения (в том числе поле с ошибкой)."""
+        return bool(rules_store.changed_keys(self.saved, self.form) or self.teams != self.saved_teams
+                    or self.field_errors)
+
+    # ── Части страницы ──────────────────────────────────────────────────────
+    def _build(self):
+        holder = ctk.CTkFrame(self, fg_color="transparent", width=10, height=10)
+        holder.grid(row=0, column=0, sticky="ew", padx=24, pady=(14, 0))
+        holder.grid_columnconfigure(0, weight=1)
+        self.tabs = ctk.CTkSegmentedButton(
+            holder, values=[self.text(TAB_KEYS[t]) for t in TABS], command=self._tab_chosen, height=40,
+            corner_radius=8, border_width=3, fg_color=C["bg_surface"], selected_color=C["blue_button"],
+            selected_hover_color=C["blue_button"], unselected_color=C["bg_surface"],
+            unselected_hover_color=C["bg_elevated"], text_color=C["white"], font=F["button"], dynamic_resizing=False)
+        self.tabs.grid(row=0, column=0, sticky="ew")
+        self.tabs.set(self.text(TAB_KEYS[self.tab]))
+        self._paint_tabs()
+
+        self.body = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0, width=10, height=10)
+        self.body.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
+        self.body.grid_rowconfigure(0, weight=1)
+        self.body.grid_columnconfigure(0, weight=1)
+        self.base = None
+        self._show_tab()
+
+        tk.Frame(self, height=1, bg=C["border"]).grid(row=2, column=0, sticky="ew")
+        footer = ctk.CTkFrame(self, height=S["footer_height"], corner_radius=0, fg_color=C["bg_surface"])
+        footer.grid(row=3, column=0, sticky="ew")
+        footer.grid_propagate(False)
+        footer.grid_rowconfigure(0, weight=1)
+        footer.grid_columnconfigure(1, weight=1)
+        self.state_label = ctk.CTkLabel(footer, text="", font=F["text"], text_color=C["text_secondary"], height=20,
+                                        compound="left")
+        self.state_label.grid(row=0, column=0, sticky="w", padx=(24, 0))
+        self.bot_label = ctk.CTkLabel(footer, text="", font=F["label"], text_color=C["text_muted"], height=20,
+                                      anchor="w")
+        self.bot_label.grid(row=0, column=1, sticky="w", padx=(16, 10))
+        self.restore_button = Button(footer, theme.plain_text(self.text("rules_btn_restore")), kind="danger",
+                                     icon_name="rotate-ccw", icon_size=15, height=S["button_height_footer"],
+                                     command=self.ask_restore)
+        self.restore_button.grid(row=0, column=2, padx=(0, 10))
+        self.save_button = Button(footer, self.text("rb_save"), kind="save", icon_name="save", icon_size=15,
+                                  height=S["button_height_footer"], pad_x=18, font=F["body_bold"],
+                                  command=self.save)
+        self.save_button.grid(row=0, column=3, padx=(0, 24))
+        self._state_shown = None
+        self.changed()
+        self._show_bot_hint()
+
+    def _tab_chosen(self, text):
+        tab = next((t for t in TABS if self.text(TAB_KEYS[t]) == text), "base")
+        if tab != self.tab:
+            self.tab = tab
+            self._paint_tabs()
+            self._show_tab()
+
+    def _paint_tabs(self):
+        """Выбранная вкладка — белый текст, остальные — серый (макет). У CTkSegmentedButton цвет текста общий,
+        поэтому красим кнопки по одной — только при выборе вкладки, не при наведении."""
+        for tab in TABS:
+            button = self.tabs._buttons_dict.get(self.text(TAB_KEYS[tab]))
+            if button is not None:
+                color = C["white"] if tab == self.tab else C["text_secondary"]
+                if button.cget("text_color") != color:
+                    button.configure(text_color=color)
+
+    def _show_tab(self):
+        """«База и комнаты» строится один раз; две другие вкладки пока пустые (шаги 5б и 5в)."""
+        if self.tab == "base":
+            if self.base is None:
+                self.base = BaseTab(self.body, self)
+            self.base.grid(row=0, column=0, sticky="nsew")
+        elif self.base is not None:
+            self.base.grid_forget()
+
+    def rebuild_base(self):
+        """Построить вкладку заново из формы (язык, «Восстановить», «Не сохранять»)."""
+        if self.base is not None:
+            self.base.destroy()
+            self.base = None
+        self._show_tab()
+
+    def rebuild_room(self, room):
+        if self.base is not None:
+            self.base.rooms[room].build()
+
+    # ── Состояние футера ────────────────────────────────────────────────────
+    def changed(self):
+        """Любая правка формы: обновить надпись футера (только если она правда поменялась)."""
+        dirty = self.dirty()
+        if dirty == self._state_shown:
+            return
+        self._state_shown = dirty
+        if dirty:
+            self.state_label.configure(text=" " + self.text("rb_unsaved_state"), text_color=C["warning"],
+                                       image=icon("triangle-alert", C["warning"], 15))
+        else:
+            self.state_label.configure(text=" " + self.text("rb_saved_state"), text_color=C["text_secondary"],
+                                       image=icon("check", C["success"], 15))
+
+    def update_bot_state(self, running):
+        """Бот запущен или нет (ui/app.py зовёт часто — меняем надпись, только если правда поменялось)."""
+        if running != self.bot_running:
+            self.bot_running = running
+            self._show_bot_hint()
+
+    def _show_bot_hint(self):
+        self.bot_label.configure(text=self.text("rb_bot_hint") if self.bot_running else "")
+
+    # ── Правки из вкладки ───────────────────────────────────────────────────
+    def set_team(self, room, team):
+        self.teams[room] = list(team)
+        self.rebuild_room(room)
+        self.changed()
+
+    def add_backup(self, room, team):
+        if not rules_store.add_backup(self.form, room, team):
+            Toast(self, self.text("rb_pack_exists"), kind="info")
+            return
+        self.expanded[room] = True
+        self.rebuild_room(room)
+        self.changed()
+
+    def remove_backup(self, room, index):
+        rules_store.remove_backup(self.form, room, index)
+        self.rebuild_room(room)
+        self.changed()
+
+    def open_tg_dialog(self):
+        """«Настроить Telegram» (и точка Telegram в полоске). Пока — старое окно (новое — шаг 5б); его «Применить»
+        меняет форму, в profile.yml пишет «Сохранить настройки»."""
+        from ui.telegram_dialog import TelegramDialog
+
+        def on_save(data):
+            self.form["telegram"] = {"active": bool(data.get("active")), "token": str(data.get("token", "")),
+                                     "chat_id": str(data.get("chat_id", ""))}
+            if self.base is not None:
+                self.base.show_telegram()
+            self.changed()
+            self.log("[GUI] Настройки Telegram обновлены — нажмите «Сохранить настройки» в «Мастере правил».\n")
+        TelegramDialog(self.controller, self.controller, dict(self.form["telegram"]), on_save)
+
+    def add_condition(self, room):
+        """«+ Условие» — окно нового правила с этой стихией. Пока старое (новое — шаг 5в); правило оно пишет само."""
+        from ui.rule_builder_dialog import RuleBuilderDialog
+
+        def on_rule_saved(rule_name, _room):
+            self.log(f"[GUI] Rule '{rule_name}' added!\n")
+        RuleBuilderDialog(self.controller, room, on_rule_saved)
+
+    # ── Сохранение ──────────────────────────────────────────────────────────
+    def save(self):
+        """«Сохранить настройки». True — сохранено (или нечего было сохранять)."""
+        if self.field_errors:
+            Toast(self, self.text("rb_fix_fields"), kind="error")
+            return False
+        state, result = rules_store.save_profile(self.saved, self.form)
+        if state == rules_store.BROKEN:
+            loc = f" (строка:символ {result})" if result else ""
+            self.log(f"[ОШИБКА] Сохранение прервано: profile.yml сломан{loc}. Нажмите «Восстановить / Сброс»!\n")
+            Toast(self, self.text("rb_broken_toast"), kind="error")
+            return False
+        failed = []
+        for room in rules_store.ROOMS:
+            if self.teams[room] != self.saved_teams[room]:
+                if rules_store.save_default_team(room, self.teams[room]):
+                    self.saved_teams[room] = list(self.teams[room])
+                else:
+                    failed.append(room)
+                    self.log(f"[ОШИБКА] Сохранение прервано: файл bot_data/rules/{room}.yml поврежден!\n")
+        self.saved = copy.deepcopy(self.form)
+        self.profile_state = rules_store.OK
+        self.changed()
+        if failed:
+            Toast(self, self.text("rb_broken_toast"), kind="error")
+            return False
+        if result:
+            self.log("[GUI] Профиль настроек сохранен!\n")
+        Toast(self, self.text("rb_saved_toast"), kind="success")
+        return True
+
+    def discard(self):
+        """«Не сохранять»: форма — как в файлах."""
+        self.form = copy.deepcopy(self.saved)
+        self.teams = copy.deepcopy(self.saved_teams)
+        self.field_errors = {}
+        self.rebuild_base()
+        self.changed()
+
+    def ask_restore(self):
+        if self._dialog_open():
+            return
+        self._dialog = ConfirmDialog(self, self.text("rb_restore_title"), self.text("rb_restore_text"),
+                                     self.text("rb_restore_ok"), on_confirm=self.restore, kind="danger",
+                                     lang=self.lang, confirm_kind="danger_solid", confirm_icon="rotate-ccw")
+
+    def restore(self):
+        """«Восстановить / Сброс» — как старая вкладка: profile.yml из копии, а без копии — удалить его."""
+        try:
+            done = rules_store.restore_profile()
+        except OSError as e:
+            self.log(f"[ОШИБКА] Не удалось восстановить профиль: {e}\n")
+            return
+        if done == "restored":
+            self.log("[GUI] Профиль успешно восстановлен из резервной копии!\n")
+        elif done == "reset":
+            self.log("[GUI] Битый профиль удален. Выполнен сброс до заводских настроек!\n")
+        self.load()
+        self.rebuild_base()
+        self._state_shown = None
+        self.changed()
+
+    # ── Уход со страницы ────────────────────────────────────────────────────
+    def _dialog_open(self):
+        if self._dialog is not None and not self._dialog.done:
+            self._dialog.lift()
+            return True
+        return False
+
+    def ask_leave(self, proceed):
+        """Уйти со страницы или закрыть окно: есть несохранённые изменения — «Сохранить изменения?»
+        (Сохранить / Не сохранять / Отмена); proceed() — когда можно уходить."""
+        if not self.dirty():
+            proceed()
+            return
+        if self._dialog_open():
+            return
+
+        def save_and_go():
+            if self.save():
+                proceed()
+
+        def discard_and_go():
+            self.discard()
+            proceed()
+
+        tab = self.text(TAB_KEYS["base"])
+        self._dialog = ConfirmDialog(self, self.text("rb_leave_title"), self.text("rb_leave_text").format(tab=tab),
+                                     self.text("rb_leave_save"), on_confirm=save_and_go, kind="warning",
+                                     lang=self.lang, discard_text=self.text("rb_leave_discard"),
+                                     on_discard=discard_and_go)
+
+    # ── Язык ────────────────────────────────────────────────────────────────
+    def update_language(self, lang):
+        if lang == self.lang:
+            return
+        self.lang = lang
+        for child in self.winfo_children():
+            child.destroy()
+        self.base = None
+        self._build()

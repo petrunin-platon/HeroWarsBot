@@ -151,7 +151,10 @@ def test_demo_window_builds(monkeypatch):
         assert len(app.fields) == 4 and app.fields[2].error
         assert not app.fields[3].enabled
         avatar = widgets.TitanAvatar(app, "araji", lang=lang)
-        assert avatar.label.cget("text") == theme.initials(widgets.titan_name(lang, "araji"))
+        if theme.titan_icon_path("araji") is None:
+            assert avatar.label.cget("text") == theme.initials(widgets.titan_name(lang, "araji"))
+        else:  # картинки титанов уже в assets/icons/ (шаг 8): в квадрате картинка, а не две буквы
+            assert avatar.label.cget("text") == "" and avatar.label.cget("image")
         assert widgets.titan_name(lang, "metis") == "Metis"
         dialog = widgets.ConfirmDialog(app, "?", "text", "OK", lang=lang, on_confirm=lambda: None)
         app.update()
