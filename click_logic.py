@@ -38,8 +38,12 @@ DOOR_ZONE_H = 245
 FLOOR_FLAG_WAIT_S = 12.0
 
 # --- Начало боя ---
-# Сколько раз пробуем начать бой («Авто»), если экран выбора команды не закрылся. Потом бот останавливается
+# Сколько раз подряд пробуем начать бой («Авто») сразу, если экран выбора команды не закрылся
 START_BATTLE_ATTEMPTS = 3
+# Не помогло — похоже, нет связи с сервером (сессия 10: «Авто» не сработала, пока пропадал интернет). Раньше бот на этом
+# выключался совсем. Теперь пробует реже: ждёт столько секунд перед каждой следующей попыткой (всего ~15 мин),
+# потом мягкая пауза и сообщение в Telegram
+START_SLOW_WAITS_S = (30, 60, 120, 240, 480)
 
 # --- Человеческая скорость нажатий (задача 10, ваш ответ на вопрос 13) ---
 # Пауза реакции: нажимаем не раньше, чем через столько секунд (случайно) после того, как кнопка ПОЯВИЛАСЬ на экране.
@@ -194,22 +198,30 @@ def door_click_point(flag_x, flag_y, flag_w, flag_h, scale, rng=random):
     return rng.randint(x1, x2), rng.randint(y1, y2)
 
 
-def after_failed_battle_start(team_screen_visible, attempts, limit=START_BATTLE_ATTEMPTS):
+def after_failed_battle_start(team_screen_visible, attempts, limit=START_BATTLE_ATTEMPTS, slow_waits=START_SLOW_WAITS_S):
     """Бой не начался за отведённое время. Что делать дальше.
 
     team_screen_visible — на экране всё ещё выбор команды (кнопка «Авто» не сработала).
     attempts — сколько неудачных запусков боя уже было подряд (без текущего).
     Возвращает (состояние бота, сколько неудачных попыток теперь):
       "SET_TEAM" — вернуться к выбору команды и нажать «Авто» снова;
-      "STOP"     — попытки кончились, бот останавливается с понятной причиной;
+      "WAIT"     — быстрые попытки кончились (нет связи?): подождать start_wait_s(попыток) секунд и попробовать снова;
+      "PAUSE"    — не помогло и это: мягкая пауза и сообщение (раньше бот здесь выключался);
       "HALLWAY"  — на экране не выбор команды (например, загрузка), смотрим коридор, как раньше.
     """
     if not team_screen_visible:
         return "HALLWAY", 0
     attempts += 1
-    if attempts >= limit:
-        return "STOP", attempts
-    return "SET_TEAM", attempts
+    if attempts < limit:
+        return "SET_TEAM", attempts
+    if attempts - limit < len(slow_waits):
+        return "WAIT", attempts
+    return "PAUSE", attempts
+
+
+def start_wait_s(attempts, limit=START_BATTLE_ATTEMPTS, slow_waits=START_SLOW_WAITS_S):
+    """Сколько секунд ждать перед следующей попыткой начать бой, если after_failed_battle_start ответил "WAIT"."""
+    return slow_waits[min(max(attempts - limit, 0), len(slow_waits) - 1)]
 
 
 class TapPacer:

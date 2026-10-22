@@ -27,9 +27,9 @@ from vision import get_window_rect, find_and_click_bulletproof, get_match_loc, w
 import vision
 from combat import find_smart_door, execute_angus_ult, execute_rollback
 from navigation import smart_navigate_hallway, take_room_window
-from click_logic import after_failed_battle_start, START_BATTLE_ATTEMPTS
+from click_logic import after_failed_battle_start, start_wait_s, START_BATTLE_ATTEMPTS, START_SLOW_WAITS_S
 import rollback_logic
-from telegram_agent import send_alert
+from telegram_agent import send_alert_retrying, send_alert_in_background
 import telegram_report
 from telegram_i18n import tg_text
 from team_manager import verify_and_set_team, scan_slots, slot_titan_names, recheck_bars
@@ -101,11 +101,10 @@ def user_waited():
     STATE_CLOCK.reset()
 
 def alert_screen_locked(seconds):
-    """ПК заблокирован (Win+L) больше минуты: бот не может делать снимки и ждёт. Сообщаем один раз."""
-    sent, note = send_alert(telegram_report.alert(
+    """ПК заблокирован (Win+L) больше минуты: бот не может делать снимки и ждёт. Сообщаем один раз (в фоне, с повторами)."""
+    send_alert_in_background(telegram_report.alert(
         "🔒", tg_text(TG_LANG, "al_lock_title"), [tg_text(TG_LANG, "al_lock_text", s=f"{seconds:.0f}")],
-        footer=tg_text(TG_LANG, "al_lock_footer"), lang=TG_LANG), html=True)
-    print(f"[ЭКРАН] Сообщение в Telegram: {note}")
+        footer=tg_text(TG_LANG, "al_lock_footer"), lang=TG_LANG), html=True, prefix="[ЭКРАН]")
 
 # Снимок экрана не получается (ПК заблокирован): vision.grab_frame ждёт и зовёт эти функции
 vision.SCREEN_HOOKS["long_wait"] = alert_screen_locked
@@ -156,10 +155,13 @@ def print_session_summary():
     SESSION_LOG.print_summary(SESSION_STATS["rooms_cleared"], SESSION_STATS["titanite_gathered"])
 
 REPORT_SENT = False
+# Итог сессии не ушёл из-за связи — пробуем снова через столько секунд. Бот после этого выключается, поэтому недолго
+REPORT_RETRY_S = (10, 30)
 
-def send_session_report():
+def send_session_report(retry=True):
     """Итог сессии в Telegram при любой остановке (задача 13, ваш ответ на вопрос 17): удачно или нет и почему,
-    комнаты, этажи, титанит, проблемы. Ошибка Python — тоже сюда. Без интернета ждёт не дольше telegram_agent.TIMEOUT."""
+    комнаты, этажи, титанит, проблемы. Ошибка Python — тоже сюда. Без интернета каждая попытка ждёт не дольше
+    telegram_agent.TIMEOUT; retry=False — одна попытка (Ctrl+Shift+Q: остановиться сразу)."""
     global REPORT_SENT
     if REPORT_SENT:
         return
@@ -167,7 +169,9 @@ def send_session_report():
     try:
         rooms = SESSION_STATS["rooms_cleared"]
         data = SESSION_LOG.report_data(rooms, SESSION_STATS["titanite_gathered"], SESSION_STATS["floors_cleared"])
-        sent, note = send_alert(telegram_report.session_report(data, TG_LANG), html=True)
+        sent, note = send_alert_retrying(
+            telegram_report.session_report(data, TG_LANG), html=True, delays=REPORT_RETRY_S if retry else (),
+            on_retry=lambda why, delay: print(f"[TELEGRAM] Итог сессии не ушёл ({why}). Пробую снова через {delay} с."))
         print(f"[TELEGRAM] Итог сессии: {note}")
     except Exception as e:
         print(f"[TELEGRAM] Итог сессии не отправлен: {e}")
@@ -177,7 +181,7 @@ def trigger_emergency_stop():
     SESSION_LOG.set_stop_reason("Экстренная остановка пользователем (Ctrl+Shift+Q)")
     try:
         print_session_summary()  # os._exit не запускает atexit, поэтому итог печатаем и отправляем здесь
-        send_session_report()
+        send_session_report(retry=False)
     except Exception:
         pass
     os._exit(0)
@@ -263,6 +267,10 @@ CURRENT_HEAL = None  # кого лечит текущий пак, если па�
 HEAL_NOT_PLACED = set()  # кого бот не смог поставить в пак отхила: до конца запуска их паком отхила не лечит (сессия 08)
 ROOM_AUTO_ROLLBACKS = 0  # сколько раз бот сам откатил бой в этой комнате
 START_FAILS = 0  # сколько раз подряд не удалось начать бой («Авто» не сработала)
+# Окно результата, которое бот уже обработал (комната засчитана или бой принят), а «ОК» его не закрыла (нет связи).
+# Увидев это окно снова, бот только жмёт «ОК»: второй раз комнату не засчитывает и бой не откатывает.
+# Сбрасывается, когда начинается новый бой или выбрана новая дверь
+RESULT_DONE = False
 TEAM_SEEN = None  # когда появился экран выбора команды: от этого момента пауза реакции перед «Авто» (задача 10)
 
 LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
@@ -314,19 +322,14 @@ def get_stop_reason():
 
 
 def handle_rollback_failure(result, game_window, sct):
-    """Откат не удался: пишем причину, шлём в Telegram текст и скриншот, ставим мягкую паузу.
-    Окно «Требуется вмешательство» не трогаем (оно в ui/), поэтому сообщаем через Telegram и лог."""
+    """Откат не удался: пишем причину, скриншот в bot_data/debug/, шлём в Telegram текст и этот скриншот, ставим мягкую паузу.
+    Окно «Требуется вмешательство» не трогаем (оно в ui/), поэтому сообщаем через Telegram и лог.
+    Telegram — в фоне и с повторами (сессия 10: интернет пропал, и сообщение не ушло с первой попытки)."""
     print(f"\n[ОТКАТ] ОШИБКА ({result.code}): {result.text}")
     if result.code == rollback_logic.SOFT_PAUSE:
         return  # мягкую паузу включил сам пользователь, сообщать не нужно
 
-    screenshot = None
-    try:
-        scr = grab_frame(game_window, sct)
-        screenshot = data_paths.temp_sos_file()
-        cv2.imwrite(screenshot, cv2.cvtColor(scr, cv2.COLOR_BGRA2BGR))
-    except Exception as e:
-        print(f"[СИСТЕМА] Ошибка сохранения скриншота: {e}")
+    screenshot = save_debug_shot("rollback_fail", game_window, sct)
 
     if result.code == rollback_logic.BATTLE_ENDED:
         todo = tg_text(TG_LANG, "al_rb_ended")
@@ -334,16 +337,19 @@ def handle_rollback_failure(result, game_window, sct):
         todo = tg_text(TG_LANG, "al_rb_check")
     text = telegram_report.alert("⚠️", tg_text(TG_LANG, "al_rb_title"), [result.text, todo], room=current_room,
                                  enemies=CURRENT_ENEMIES, footer=tg_text(TG_LANG, "al_rb_footer"), lang=TG_LANG)
-    sent, note = send_alert(text, screenshot, html=True)
-    print(f"[ОТКАТ] Сообщение в Telegram: {note}")
+    send_alert_in_background(text, screenshot, html=True, prefix="[ОТКАТ]")
 
     with open("pause.flag", "w") as f:
         f.write("1")
     print("[ВНИМАНИЕ] Бот на мягкой паузе. Исправьте ситуацию в игре и снимите паузу в окне программы.")
 
 def run_rollback(game_window, sct, press_retry=True):
-    """Откат боя. True — бот в коридоре. Иначе пользователь уже оповещён и включена мягкая пауза."""
-    result = execute_rollback(game_window, sct, press_retry=press_retry)
+    """Откат боя. True — бот в коридоре. Иначе пользователь уже оповещён и включена мягкая пауза.
+    Если экран долго не узнаётся (нет связи), откат ждёт игру до rollback_logic.GAME_WAIT_S: скриншот rollback_wait_...png."""
+    result = execute_rollback(game_window, sct, press_retry=press_retry,
+                              on_game_wait=lambda: save_debug_shot("rollback_wait", game_window, sct))
+    if result.game_wait_s:
+        WATCHDOG.waited_for_user()  # бот ждал игру (связь), а не стоял без дела: сторож это время не считает
     if result.ok:
         return True
     handle_rollback_failure(result, game_window, sct)
@@ -534,11 +540,7 @@ def close_sos_window(text):
     message = telegram_report.alert("🤖", tg_text(TG_LANG, "al_auto_title"), [text], room=current_room,
                                     enemies=CURRENT_ENEMIES, lang=TG_LANG)
     image = data_paths.temp_sos_file() if os.path.exists(data_paths.temp_sos_file()) else None
-
-    def send():
-        sent, note = send_alert(message, image, html=True)
-        print(f"[ТАКТИКА] Сообщение в Telegram: {note}")
-    threading.Thread(target=send, daemon=True).start()  # без интернета бот не ждёт
+    send_alert_in_background(message, image, html=True, prefix="[ТАКТИКА]")  # без интернета бот не ждёт, повторит позже
 
 def save_sos_info(reason, team=None, before=None, kind="SOS"):
     """Для сообщения в Telegram (задача 13): комната, враги, причина и пак этого окна SOS — в bot_data/sos_info.json.
@@ -585,8 +587,7 @@ def raise_watchdog_alarm(game_window, sct):
         [tg_text(TG_LANG, "al_stuck_text", m=f"{minutes:.0f}"),
          tg_text(TG_LANG, "al_stuck_rooms", n=SESSION_STATS["rooms_cleared"])],
         room=current_room, footer=footer, lang=TG_LANG)
-    sent, note = send_alert(message, screenshot, html=True)
-    print(f"[СТОРОЖ] Сообщение в Telegram: {note}")
+    send_alert_in_background(message, screenshot, html=True, prefix="[СТОРОЖ]")  # в фоне, с повторами при обрыве связи
 
     if pause:
         with open("pause.flag", "w") as f:
@@ -620,25 +621,67 @@ def play_manually(game_window, sct, first_screen):
     user_waited()
     return play
 
+def wait_for_server(seconds):
+    """Пауза перед новой попыткой, когда игра не отвечает (нет связи с сервером). Бот ничего не нажимает.
+    False — во время ожидания включили мягкую паузу. Ctrl+Q останавливает бота, как в других ожиданиях."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if os.path.exists("pause.flag"):
+            return False
+        if GRACEFUL_STOP:
+            print("[ТАКТИКА] Остановка по команде пользователя (Ctrl+Q) во время ожидания связи.")
+            SESSION_LOG.set_stop_reason("Ручная остановка пользователем (Ctrl+Q)")
+            sys.exit(0)
+        time.sleep(1.0)
+    WATCHDOG.waited_for_user()  # бот ждал связь, а не стоял без дела: сторож это время не считает
+    return True
+
 def handle_failed_start(button, game_window, sct):
-    """Бой не начался после нажатия «Авто» или «В бой». Возвращает следующее состояние."""
+    """Бой не начался после нажатия «Авто» или «В бой». Возвращает следующее состояние.
+    Сессия 10: при обрыве связи «Авто» не срабатывает. После быстрых попыток бот не выключается, как раньше,
+    а пробует реже (click_logic.START_SLOW_WAITS_S, ~15 мин), потом встаёт на мягкую паузу и пишет в Telegram."""
     global START_FAILS
     team_screen = bool(get_match_loc('btn_auto.png', game_window, sct, CONFIDENCE_THRESHOLD) or
                        get_match_loc('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD))
     state, START_FAILS = after_failed_battle_start(team_screen, START_FAILS)
     if state == "SET_TEAM":
         print(f"[СЕТЬ] Бой не начался, экран выбора команды всё ещё открыт. Пробую ещё раз ({START_FAILS} из {START_BATTLE_ATTEMPTS - 1})...")
-    elif state == "STOP":
-        print(f"\n[ОШИБКА] Бой не удалось начать {START_FAILS} раза подряд: кнопка «{button}» не срабатывает.")
-        SESSION_LOG.set_stop_reason(f"Не удалось начать бой: «{button}» не срабатывает")
-        sys.exit(0)
+    elif state == "WAIT":
+        wait_s = start_wait_s(START_FAILS)
+        print(f"[СЕТЬ] Бой не начался {START_FAILS} раз(а) подряд: кнопка «{button}» не срабатывает. Похоже, нет связи "
+              f"с сервером. Жду {wait_s} с и пробую снова. Мягкая пауза в окне программы прекращает ожидание.")
+        if not wait_for_server(wait_s):
+            print("[СЕТЬ] Включена мягкая пауза: больше не пробую.")
+            START_FAILS = 0
+            return "HALLWAY"  # бот ждёт, пока вы снимете паузу, потом умный старт
+        state = "SET_TEAM"
+    elif state == "PAUSE":
+        why = (f"бой не удалось начать {START_FAILS} раз подряд за ~{sum(START_SLOW_WAITS_S) / 60:.0f} мин: "
+               f"кнопка «{button}» не срабатывает")
+        print(f"\n[ОШИБКА] {why[0].upper()}{why[1:]}.")
+        START_FAILS = 0
+        screenshot = save_debug_shot("start_fail", game_window, sct)
+        send_alert_in_background(telegram_report.alert(
+            "🧊", tg_text(TG_LANG, "al_stuck_title"), [f"{why[0].upper()}{why[1:]}. Похоже, нет связи с сервером."],
+            room=current_room, enemies=CURRENT_ENEMIES, footer=tg_text(TG_LANG, "al_rb_footer"), lang=TG_LANG),
+            screenshot, html=True, prefix="[СЕТЬ]")
+        soft_pause(why)
+        return "HALLWAY"  # после снятия паузы умный старт: на экране выбора команды бот снова нажмёт «Авто»
     else:
         print("[СЕТЬ] Бой не начался. Сброс в HALLWAY...")
     return state
 
 def recover_context(game_window, sct):
+    global RESULT_DONE
     print("\n[УМНЫЙ СТАРТ] Сканирую экран для восстановления контекста...")
-    
+
+    # 0. Окно результата, которое бот уже засчитал, а «ОК» его не закрыла (нет связи): не откатываем — только закрываем
+    if RESULT_DONE and get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
+        print("[УМНЫЙ СТАРТ] Это окно результата бот уже засчитал. Откатывать нельзя — только закрываю «ОК».")
+        if find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
+            RESULT_DONE = False
+        return "HALLWAY"
+
     # 1. Экран результатов автобоя («Ещё раз» есть) — откатываем
     if get_match_loc('btn_retry.png', game_window, sct, CONFIDENCE_THRESHOLD):
         print("[УМНЫЙ СТАРТ] Найден экран результатов. Запускаю откат боя...")
@@ -735,6 +778,16 @@ with mss.MSS() as sct:
 
         if STATE == "WAIT_FOR_OK" and 'btn_ok.png' not in SCREEN:
             time.sleep(0.1)  # бой ещё идёт: не грузим слабый ПК поиском без остановки
+            continue
+
+        if STATE == "WAIT_FOR_OK" and RESULT_DONE:
+            # Это окно бот уже обработал, а «ОК» в прошлый раз его не закрыла (нет связи?): например, после таймаута
+            # коридора бот снова пришёл к нему. Второй раз комнату не засчитываем — только закрываем
+            print("[ЛОГИКА] Это окно результата бот уже засчитал, а «ОК» в прошлый раз его не закрыла. "
+                  "Второй раз не считаю — только закрываю.")
+            if find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD, seen_at=SCREEN_AT):
+                RESULT_DONE = False
+            STATE = "HALLWAY"
             continue
 
         if STATE == "WAIT_FOR_OK":
@@ -1031,7 +1084,11 @@ with mss.MSS() as sct:
                                 wait_for_input()
                             force_window_focus()
 
-            find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD, seen_at=result_seen)
+            RESULT_DONE = not find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD,
+                                                         seen_at=result_seen)
+            if RESULT_DONE:
+                print("[ЛОГИКА] «ОК» не закрыла окно результата (нет связи?). Если окно останется на экране, "
+                      "второй раз его не засчитаю — только закрою.")
             STATE = "HALLWAY"
             if counted_room:
                 # Окно результата закрыто — комната завершена. Паузы 0,5 с после «ОК» больше нет (задача 10):
@@ -1080,6 +1137,7 @@ with mss.MSS() as sct:
             if found_room:
                 current_room = found_room
                 CURRENT_ENEMIES = enemies
+                RESULT_DONE = False  # новая комната: старое окно результата точно закрыто
                 STATE = "SET_TEAM"
             else:
                 print("[СЕТЬ] Двери не найдены (ошибка загрузки окна). Сброс в HALLWAY...")
@@ -1299,6 +1357,7 @@ with mss.MSS() as sct:
             ROOM_TIMER.begin("battle")
             if find_and_click_bulletproof('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD, seen_at=TEAM_SEEN):
                 START_FAILS = 0
+                RESULT_DONE = False  # новый бой: его окно результата обрабатывается как обычно
                 execute_angus_ult(game_window, sct)
                 STATE = "WAIT_FOR_OK" 
             else:
@@ -1324,6 +1383,7 @@ with mss.MSS() as sct:
                 
             if battle_confirmed:
                 START_FAILS = 0
+                RESULT_DONE = False  # новый бой: его окно результата обрабатывается как обычно
                 STATE = "WAIT_FOR_OK"
             else:
                 STATE = handle_failed_start("Авто", game_window, sct)

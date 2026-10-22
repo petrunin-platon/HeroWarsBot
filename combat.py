@@ -271,9 +271,10 @@ def execute_angus_ult(window_rect, sct):
     print("[АНГУС] УСПЕХ: Автобой ВЫКЛЮЧЕН.")
     return True
 
-def execute_rollback(window_rect, sct, press_retry=True):
+def execute_rollback(window_rect, sct, press_retry=True, on_game_wait=None):
     """Откат боя: «Ещё раз» → пауза (один раз) → «Отступить» → коридор. Шаги и ожидания — в rollback_logic.py.
     press_retry=False — бой уже идёт (умный старт), «Ещё раз» не нажимаем.
+    on_game_wait() — один раз, когда экран долго не узнаётся и бот начал ждать игру (нет связи): скриншот для разбора.
     Возвращает rollback_logic.RollbackResult (в условии `if` ведёт себя как True/False)."""
     print("[ОТКАТ] Запускаю протокол отката боя...")
 
@@ -312,4 +313,5 @@ def execute_rollback(window_rect, sct, press_retry=True):
         log=lambda text: print(f"[ОТКАТ] {text}"),
         clock=time.monotonic,
         sleep=time.sleep,
+        on_game_wait=on_game_wait,
     )

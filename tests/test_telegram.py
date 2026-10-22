@@ -286,6 +286,83 @@ def test_agent_send_fails_quietly_without_network(tg, tmp_path, monkeypatch, cap
 
 
 # ---------------------------------------------------------------------------
+# Связь пропала — сообщение уходит позже (сессия 10)
+# ---------------------------------------------------------------------------
+def test_alert_is_resent_when_network_comes_back(tg, tmp_path, monkeypatch):
+    """Сессия 10: интернет пропал, и сообщение «откат не удался» не ушло с первой попытки. Теперь бот пробует снова."""
+    write_profile(tmp_path)
+    fake = FakeTelegram()
+    monkeypatch.setattr(tg, "API_URL", "http://127.0.0.1:9")  # сначала связи нет
+    image = tmp_path / "shot.png"
+    image.write_bytes(b"png")
+    pauses = []
+
+    def sleep(seconds):
+        pauses.append(seconds)
+        if len(pauses) == 2:
+            monkeypatch.setattr(tg, "API_URL", fake.url)  # связь вернулась
+
+    try:
+        sent, note = tg.send_alert_retrying("откат", str(image), sleep=sleep)
+    finally:
+        fake.close()
+    assert sent and "3-й попытки" in note
+    assert pauses == list(tg.ALERT_RETRY_S[:2])
+    assert fake.methods() == ["sendPhoto"]  # скриншот тоже ушёл
+
+
+def test_alert_retry_gives_up_after_all_pauses(tg, tmp_path, monkeypatch):
+    write_profile(tmp_path)
+    monkeypatch.setattr(tg, "API_URL", "http://127.0.0.1:9")
+    pauses, notes = [], []
+    sent, note = tg.send_alert_retrying("x", sleep=pauses.append, on_retry=lambda why, delay: notes.append(delay))
+    assert sent is False and "сбой связи" in note and "SECRET" not in note
+    assert pauses == notes == list(tg.ALERT_RETRY_S)
+    assert 15 * 60 <= sum(pauses) <= 20 * 60
+
+
+def test_alert_not_retried_when_telegram_answers_error_or_is_off(tg, tmp_path, monkeypatch):
+    """Telegram ответил ошибкой (например, неверный токен) или выключен — повторять бессмысленно."""
+    class Resp:
+        def json(self):
+            return {"ok": False, "description": "Unauthorized"}
+
+    monkeypatch.setattr(tg.requests, "post", lambda *a, **k: Resp())
+    write_profile(tmp_path)
+    pauses = []
+    sent, note = tg.send_alert_retrying("x", sleep=pauses.append)
+    assert not sent and "Unauthorized" in note and pauses == []
+    (tmp_path / "profile.yml").unlink()
+    sent, note = tg.send_alert_retrying("x", sleep=pauses.append)
+    assert not sent and pauses == []
+
+
+def test_alert_in_background_does_not_block_and_logs_result(tg, tmp_path, monkeypatch):
+    write_profile(tmp_path)
+    fake = FakeTelegram(hang=0.3)
+    monkeypatch.setattr(tg, "API_URL", fake.url)
+    lines = []
+    try:
+        started = time.monotonic()
+        thread = tg.send_alert_in_background("откат", html=True, log=lines.append, prefix="[ОТКАТ]")
+        assert time.monotonic() - started < 0.2  # бот не ждёт Telegram
+        thread.join(5)
+    finally:
+        fake.close()
+    assert lines == ["[ОТКАТ] Сообщение в Telegram: отправлено"]
+
+
+def test_alert_in_background_logs_retries(tg, tmp_path, monkeypatch):
+    write_profile(tmp_path)
+    monkeypatch.setattr(tg, "API_URL", "http://127.0.0.1:9")
+    lines = []
+    tg.send_alert_in_background("x", log=lines.append, prefix="[СТОРОЖ]", delays=(0.01,)).join(5)
+    assert len(lines) == 2
+    assert lines[0].startswith("[СТОРОЖ] Сообщение в Telegram не ушло") and "Пробую снова через 0.01 с" in lines[0]
+    assert lines[1].startswith("[СТОРОЖ] Сообщение в Telegram: сбой связи")
+
+
+# ---------------------------------------------------------------------------
 # Токен — только в profile.yml
 # ---------------------------------------------------------------------------
 TOKEN_RE = re.compile(rb"\d{6,12}:[A-Za-z0-9_-]{30,}")
