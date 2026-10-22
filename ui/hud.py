@@ -11,7 +11,7 @@
 - цель сессии с полоской (как на главной, ответ 1.7), среднее время комнаты, сколько осталось до цели;
 - ХП пака после последнего боя (квадраты титанов, ниже порога паники — красным);
 - четыре последних события (ui/hud_events.py);
-- кнопки 2×2: пауза / продолжить (F9), стоп (F10), выключить экран телефона, развернуть окно программы.
+- кнопки 2×2 (шире квадрата, по центру колонки): пауза / продолжить (F9), стоп (F10), выключить экран телефона, развернуть окно программы.
 На SOS мини-бар красный, а первая кнопка поднимает окно SOS (ваш ответ 22.10.2026): бот ждёт решения, а не «продолжить».
 
 Мини-бар никогда не становится активным окном (ui/hud_place.py: win_no_activate): бот работает, только пока активно
@@ -40,6 +40,7 @@ PULSE_MS = 800           # точка состояния «дышит» на ф�
 # Колонки (ваш ответ после проверки шага 4: панель выше, 4 строки, ХП пака): состояние, цель, пак, события, кнопки
 COLUMNS = (15, 21, 19, 33, 12)
 BUTTON = 38
+BUTTON_WIDE = 64         # кнопки шире квадрата: колонка не пустует, но и не забита до краёв (ваш ответ)
 PAD = 14
 LINE_GAP = 3             # между строками колонки
 AVATAR = 30              # квадрат титана в колонке пака
@@ -206,7 +207,7 @@ class Hud:
         column.grid_rowconfigure((0, 2), weight=1)
         column.grid_columnconfigure(0, weight=1)
         grid = self._frame(column)
-        grid.grid(row=1, column=0, sticky="e", padx=(0, 10))
+        grid.grid(row=1, column=0)
         self.buttons = {}
         style = dict(fg_color=C["bg_elevated"], hover_color=T["hover_elevated"], border_color=C["border"])
         for index, (name, icon_name, color, size) in enumerate((("pause", "pause-filled", C["warning"], 15),
@@ -215,7 +216,9 @@ class Hud:
                                                                 ("expand", "maximize-2", C["text_secondary"], 16))):
             button = IconButton(grid, icon_name, size=BUTTON, icon_size=size, icon_color=color,
                                 tooltip=lambda n=name: self._tip(n), command=lambda n=name: self._pressed(n), **style)
-            button.grid(row=index // 2, column=index % 2, padx=(4, 0), pady=(0 if index < 2 else 4, 0))
+            button.configure(width=BUTTON_WIDE)
+            button.grid(row=index // 2, column=index % 2, padx=(0 if index % 2 == 0 else 6, 0),
+                        pady=(0 if index < 2 else 6, 0))
             self.buttons[name] = button
 
     def _tooltips(self):
