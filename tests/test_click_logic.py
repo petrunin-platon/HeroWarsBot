@@ -421,9 +421,26 @@ def test_failed_start_on_team_screen_tries_again():
     assert after_failed_battle_start(True, 1) == ("SET_TEAM", 2)
 
 
-def test_failed_start_stops_after_limit():
-    state, attempts = after_failed_battle_start(True, click_logic.START_BATTLE_ATTEMPTS - 1)
-    assert state == "STOP" and attempts == click_logic.START_BATTLE_ATTEMPTS
+def test_failed_start_waits_for_connection_instead_of_stopping():
+    """Сессия 10: при обрыве связи «Авто» не срабатывает. Бот больше не выключается после 3 попыток, а пробует реже."""
+    limit = click_logic.START_BATTLE_ATTEMPTS
+    state, attempts = after_failed_battle_start(True, limit - 1)
+    assert state == "WAIT" and attempts == limit
+    assert click_logic.start_wait_s(attempts) == click_logic.START_SLOW_WAITS_S[0]
+
+
+def test_failed_start_slow_tries_grow_then_soft_pause():
+    waits, attempts = [], 0
+    while True:
+        state, attempts = after_failed_battle_start(True, attempts)
+        if state == "WAIT":
+            waits.append(click_logic.start_wait_s(attempts))
+        elif state != "SET_TEAM":
+            break
+    assert state == "PAUSE"
+    assert waits == list(click_logic.START_SLOW_WAITS_S)
+    assert waits == sorted(waits)  # пробует всё реже
+    assert 10 * 60 <= sum(waits) <= 20 * 60  # около 15 минут ожидания связи
 
 
 def test_failed_start_on_other_screen_goes_to_hallway_and_resets_counter():

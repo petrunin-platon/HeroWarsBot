@@ -21,6 +21,11 @@ BASE_TITANS = [
 API_URL = "https://api.telegram.org"
 TIMEOUT = (5, 15)
 POLL_SECONDS = 5  # сколько Telegram держит запрос getUpdates, если нажатий нет
+# Начало пояснения, когда до Telegram не достучались (нет интернета, обрыв). Только такие сообщения стоит отправлять снова
+NETWORK_ERROR = "сбой связи с Telegram"
+# Сообщение бота не ушло из-за связи — пробуем снова через столько секунд (всего ~18 мин). Сессия 10: интернет пропал
+# на несколько минут, и сообщение «откат не удался» потерялось с первой же попытки
+ALERT_RETRY_S = (30, 60, 120, 300, 600)
 
 
 def _hide_token(text, token):
@@ -39,7 +44,7 @@ def call_api(token, method, data=None, files=None, timeout=None):
             resp = requests.post(url, json=data or {}, timeout=timeout or TIMEOUT)
         result = resp.json()
     except Exception as e:
-        return None, f"сбой связи с Telegram: {_hide_token(e, token)}"
+        return None, f"{NETWORK_ERROR}: {_hide_token(e, token)}"
     if not isinstance(result, dict) or not result.get("ok"):
         desc = result.get("description", result) if isinstance(result, dict) else result
         return None, f"Telegram ответил ошибкой: {_hide_token(desc, token)}"
@@ -94,6 +99,42 @@ def send_alert(text, image_path=None, profile_path="profile.yml", html=False):
     if error:
         return False, error
     return True, "отправлено"
+
+
+def send_alert_retrying(text, image_path=None, profile_path="profile.yml", html=False, delays=ALERT_RETRY_S,
+                        sleep=time.sleep, on_retry=None):
+    """Как send_alert, но если до Telegram не достучались (нет интернета), ждёт и пробует снова: паузы delays (секунды).
+    Ошибки самого Telegram (неверный токен и т. п.) и выключенный Telegram не повторяются.
+    on_retry(пояснение, через сколько секунд) — перед каждой паузой (для лога). Возвращает (удалось, пояснение)."""
+    sent, note = send_alert(text, image_path, profile_path, html)
+    tries = 1
+    for delay in delays:
+        if sent or not note.startswith(NETWORK_ERROR):
+            break
+        if on_retry:
+            on_retry(note, delay)
+        sleep(delay)
+        sent, note = send_alert(text, image_path, profile_path, html)
+        tries += 1
+    if sent and tries > 1:
+        note = f"отправлено с {tries}-й попытки"
+    return sent, note
+
+
+def send_alert_in_background(text, image_path=None, html=False, log=print, prefix="[TELEGRAM]", profile_path="profile.yml",
+                             delays=ALERT_RETRY_S):
+    """Сообщение в Telegram в фоне, с повторами при обрыве связи (send_alert_retrying): бот не ждёт и работает дальше.
+    Итог пишет в лог строкой «<prefix> Сообщение в Telegram: ...». Возвращает поток."""
+    def retry_note(note, delay):
+        log(f"{prefix} Сообщение в Telegram не ушло ({note}). Пробую снова через {delay} с.")
+
+    def run():
+        sent, note = send_alert_retrying(text, image_path, profile_path, html, delays=delays, on_retry=retry_note)
+        log(f"{prefix} Сообщение в Telegram: {note}")
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return thread
 
 
 class TelegramAgent:

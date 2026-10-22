@@ -182,26 +182,77 @@ def test_result_window_flicker_right_after_retry_is_ignored(clock):
     assert result.ok
 
 
-def test_pause_never_appears_gives_up_after_60s(clock):
+def test_pause_never_appears_waits_for_game_then_gives_up(clock):
+    """Экран так и не узнаётся (игра перезагрузилась или связи нет совсем): бот ждёт игру GAME_WAIT_S, а не 60 с."""
     game = Game(clock, never_pause=True)
-    result = game.run()
+    shots = []
+    result = game.run(on_game_wait=lambda: shots.append(game.t()))
     assert result.code == rl.PAUSE_TIMEOUT
-    assert 60.0 <= game.t() < 61.0
-    assert "Кнопка паузы не появилась" in result.text
+    assert rl.GAME_WAIT_S <= game.t() < rl.GAME_WAIT_S + rl.PAUSE_WAIT_S + 1.0
+    assert "нет связи" in result.text
+    assert result.game_wait_s >= rl.GAME_WAIT_S
+    assert len(shots) == 1 and rl.PAUSE_WAIT_S <= shots[0] < rl.PAUSE_WAIT_S + 1.0  # скриншот один, через 60 с
+    text = "\n".join(game.logs)
+    assert "нет связи с сервером" in text and "Не сдаюсь" in text
+    waits = [line for line in game.logs if line.startswith("Всё ещё жду игру")]
+    assert 10 <= len(waits) <= 16  # раз в минуту, а не на каждом снимке
+
+
+def test_session_10_battle_loads_after_network_is_back(clock):
+    """Сессия 10: после «Ещё раз» пропала связь, бой грузился дольше 60 с. Бот дождался загрузки, поставил паузу
+    сразу (бой без паузы убил бы титанов) и отступил."""
+    game = Game(clock, load_s=180.0)
+    shots = []
+    result = game.run(on_game_wait=lambda: shots.append(game.t()))
+    assert result.ok
+    assert len(game.pause_taps) == 1
+    assert 180.0 <= game.pause_taps[0] < 180.0 + 2 * rl.POLL_GAME_WAIT_S  # пауза — сразу, как бой загрузился
+    assert game.retreat_presses == 1
+    assert len(shots) == 1
+    assert result.game_wait_s > 180.0
+    assert any("Игра снова откликается" in line for line in game.logs)
+
+
+def test_normal_rollback_does_not_wait_for_game(clock):
+    game = Game(clock, load_s=25.0)
+    shots = []
+    result = game.run(on_game_wait=lambda: shots.append(1))
+    assert result.ok and result.game_wait_s == 0.0 and shots == []
+    assert not any("Не сдаюсь" in line for line in game.logs)
+
+
+def test_soft_pause_stops_waiting_for_game(clock):
+    game = Game(clock, never_pause=True)
+    result = game.run(pause_flag=lambda: game.t() > 200.0)
+    assert result.code == rl.SOFT_PAUSE
+    assert game.t() < 201.0
 
 
 def test_menu_never_opens_reports_pause_taps(clock):
+    """Пауза видна, но меню не открывается — экран знакомый, связь тут ни при чём: бот сдаётся через 60 с, как раньше."""
     game = Game(clock, load_s=2.0, lost_pauses=1000)
     result = game.run()
     assert result.code == rl.PAUSE_TIMEOUT
     assert len(game.pause_taps) >= 10
     assert "«Отступить» не появилась" in result.text
+    assert game.t() < rl.PAUSE_WAIT_S + 3.0
+    assert result.game_wait_s == 0.0
 
 
 def test_retreat_pressed_but_no_hallway(clock):
     game = Game(clock, load_s=2.0, hallway_delay_s=None)
     result = game.run()
     assert result.code == rl.NO_HALLWAY
+    assert "нет связи" in result.text
+
+
+def test_hallway_loads_slowly_after_retreat_without_network(clock):
+    """После «Отступить» связь пропала, коридор грузится 2 мин: бот ждёт, а не сдаётся через 15 с."""
+    game = Game(clock, load_s=2.0, hallway_delay_s=120.0)
+    result = game.run()
+    assert result.ok
+    assert game.retreat_presses == 1
+    assert result.game_wait_s > 0
 
 
 def test_retreat_never_works_gives_up(clock):
@@ -226,11 +277,82 @@ def test_already_in_hallway_is_done(clock):
 
 
 def test_retry_window_still_on_screen_presses_retry_again_limited(clock):
+    """«Ещё раз» на месте, и нажатия не срабатывают (кнопка не пропадает) — не бесконечно."""
     game = Game(clock)
     game.look = lambda: rl.RETRY
+
+    def lost_retry():
+        game.retry_presses += 1
+        clock.sleep(3.0)
+        return False
+
+    game.press_retry = lost_retry
     result = game.run()
     assert result.code == rl.RETRY_LOST
     assert game.retry_presses == rl.RETRY_MAX_EXTRA
+
+
+class Outage:
+    """Нет связи до back_at секунд после «Ещё раз»: каждое нажатие «Ещё раз» — загрузка fail_s секунд, потом игра
+    возвращает окно с «Ещё раз». Когда связь есть, бой грузится load_s секунд, дальше — пауза и «Отступить»."""
+
+    def __init__(self, clock, back_at, fail_s=20.0, load_s=8.0):
+        self.game = Game(clock, load_s=10 ** 9)
+        self.clock = clock
+        self.back_at = back_at
+        self.fail_s = fail_s
+        self.load_s = load_s
+        self.pressed_at = 0.0  # первое «Ещё раз» нажато до отката
+        self.retries = []
+        self.game.look = self.look
+        self.game.press_retry = self.press_retry
+
+    def look(self):
+        g = self.game
+        if g.retreated_at is not None or g.menu_opens_at is not None:
+            return Game.look(g)
+        since = g.t() - self.pressed_at
+        if self.pressed_at < self.back_at:
+            return rl.RETRY if since >= self.fail_s else None
+        return rl.PAUSE if since >= self.load_s else None
+
+    def press_retry(self):
+        self.retries.append(self.game.t())
+        self.clock.sleep(0.6)
+        self.pressed_at = self.game.t()
+        return True
+
+
+def test_retry_window_returns_while_network_is_down_pressed_rarely(clock):
+    """Связи нет 5 мин: игра каждый раз возвращает окно с «Ещё раз». Бот жмёт снова, но не часто,
+    а когда связь вернулась, бой загрузился — пауза и «Отступить»."""
+    outage = Outage(clock, back_at=300.0)
+    shots = []
+    result = outage.game.run(on_game_wait=lambda: shots.append(1))
+    assert result.ok
+    assert len(outage.game.pause_taps) == 1
+    gaps = [b - a for a, b in zip(outage.retries, outage.retries[1:])]
+    assert all(gap >= rl.RETRY_GAP_S for gap in gaps[rl.RETRY_MAX_EXTRA - 1:])
+    assert len(outage.retries) <= rl.RETRY_MAX_EXTRA + 300.0 / rl.RETRY_GAP_S
+    assert shots == [1] and result.game_wait_s > 0  # скриншот для разбора, сторож это время не считает
+    assert any("нет связи" in line for line in outage.game.logs)
+
+
+def test_retry_window_keeps_returning_gives_up_after_game_wait(clock):
+    outage = Outage(clock, back_at=10 ** 9)
+    result = outage.game.run()
+    assert result.code == rl.RETRY_LOST
+    assert "нет связи" in result.text
+    assert rl.GAME_WAIT_S <= outage.game.t() < rl.GAME_WAIT_S + 2 * rl.PAUSE_WAIT_S
+
+
+def test_second_retry_restarts_wait_for_pause(clock):
+    """«Ещё раз» пришлось нажать второй раз: кнопку паузы ждём заново от этого нажатия, бой грузится обычно."""
+    outage = Outage(clock, back_at=1.0, fail_s=5.0, load_s=58.0)
+    result = outage.game.run()
+    assert result.ok
+    assert len(outage.retries) == 1
+    assert result.game_wait_s == 0.0  # обычная загрузка, а не «нет связи»
 
 
 def test_steps_are_logged(clock):
@@ -315,6 +437,40 @@ def test_execute_rollback_full_chain(combat, clock):
     assert result.ok
     assert pressed == ["btn_retry.png", "btn_retreat.png"]
     assert len(taps) == 1  # пауза нажата один раз
+
+
+def test_execute_rollback_waits_for_game_and_takes_screenshot(combat, clock):
+    """Связь пропала после «Ещё раз»: экран 90 с не узнаётся. combat.execute_rollback зовёт on_game_wait (скриншот)
+    и дожидается боя."""
+    t0 = clock.now
+    state = {"retreated": None}
+
+    def visible():
+        if state["retreated"] is not None:
+            return {"flag_enter.png"}
+        if clock.now - t0 < 90.0:
+            return set()
+        if not taps:
+            return {"btn_pause.png"}
+        return {"btn_pause.png", "btn_retreat.png"}
+
+    taps, pressed = wire_combat(combat, clock, visible)
+    orig = combat.find_and_click_bulletproof
+
+    def bulletproof(name, *a, **k):
+        res = orig(name, *a, **k)
+        if name == "btn_retreat.png":
+            state["retreated"] = clock.now
+        return res
+
+    combat.find_and_click_bulletproof = bulletproof
+    shots = []
+    result = combat.execute_rollback({"left": 0, "top": 0, "width": 100, "height": 100}, None,
+                                     on_game_wait=lambda: shots.append(clock.now - t0))
+    assert result.ok
+    assert len(shots) == 1
+    assert len(taps) == 1
+    assert result.game_wait_s > 0
 
 
 def test_execute_rollback_without_retry_button_fails_at_once(combat, clock):
