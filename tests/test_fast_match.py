@@ -169,6 +169,55 @@ def test_result_window_reads_same_as_before(geometry, name, expected):
     assert vision.find_on_frame((game, 0, 0), "badge_x2.png", 0.75) is not None
 
 
+# ---------------------------------------------------------------------------
+# «Ещё раз» и «Инфо» (сессия 10)
+# ---------------------------------------------------------------------------
+def retry_scores(game):
+    return cv2.matchTemplate(game, vision.imread_cyrillic("btn_retry.png"), cv2.TM_CCOEFF_NORMED)
+
+
+@pytest.mark.parametrize("path", [os.path.join(DATA, "result_window_5_titans.webp"),
+                                  os.path.join(DATA, "result_window_3_titans.webp"),
+                                  os.path.join(SCREENS, "s06_01.webp")], ids=["5_titans", "3_titans", "s06_01"])
+def test_retry_is_not_confused_with_info(geometry, path):
+    """Сессия 10: бот нажал «Инфо» вместо «Ещё раз» — обе кнопки синие и стоят рядом, по всей картинке «Ещё раз»
+    совпадала с «Инфо» на 0,90 (с собой — на 0,91–0,93). Теперь ищется надпись (vision.TEMPLATE_CROP):
+    «Ещё раз» — левая кнопка, а «Инфо» (между ней и «ОК») не дотягивает даже до 0,7."""
+    img = cv2.imread(path)
+    game = geometry(img[:745, :1597] if "s06" in path else img)
+    retry = vision.find_on_frame((game, 0, 0), "btn_retry.png", 0.8)  # 0,8 — порог умного старта, у отката 0,75
+    ok = vision.find_on_frame((game, 0, 0), "btn_ok.png", 0.8)
+    assert retry and ok
+    button_w = retry["w"] / (1 - 2 * vision.TEMPLATE_CROP["btn_retry.png"][0])  # ширина всей кнопки
+    retry_x = retry["x"] + retry["w"] / 2
+    ok_x = ok["x"] + ok["w"] / 2
+    assert retry_x < ok_x - 1.5 * button_w  # между «Ещё раз» и «ОК» стоит «Инфо»
+    scores = retry_scores(game)
+    x, y, w, h = retry["x"], retry["y"], retry["w"], retry["h"]
+    scores[max(0, y - h):y + h, max(0, x - w):x + w] = -1  # сама «Ещё раз»
+    assert scores.max() < 0.7
+
+
+def test_info_without_retry_is_not_retry(monkeypatch):
+    """Окно результата, где «Ещё раз» не видно (здесь её закрыло окно SOS; так же — после ручного боя): «Инфо» рядом
+    с «ОК» не принимается за «Ещё раз» (раньше — 0,93). Иначе бот откатывал бы бой, который откатить нельзя."""
+    use_result_geometry(monkeypatch)
+    for name in ("result_54.webp", "result_111.webp"):
+        game = result_game(name)
+        assert vision.find_on_frame((game, 0, 0), "btn_ok.png", 0.8) is not None
+        assert vision.find_on_frame((game, 0, 0), "btn_retry.png", 0.75) is None
+        assert retry_scores(game).max() < 0.7
+
+
+def test_info_window_is_unknown_screen(geometry):
+    """Окно «Статистика победы» (кнопка «Инфо»), которое бот снял в сессии 10 вместо загрузки боя: ни одной кнопки
+    отката на нём нет — бот видит «незнакомый экран» и ждёт (откат ничего на нём не нажимает)."""
+    game = geometry(shot("s10_info_window.webp"))
+    for name, thr in [("btn_retreat.png", 0.75), ("btn_pause.png", 0.75), ("flag_enter.png", 0.75),
+                      ("btn_attack.png", 0.75), ("btn_retry.png", 0.75), ("btn_ok.png", 0.75)]:
+        assert vision.find_on_frame((game, 0, 0), name, thr) is None, name
+
+
 TEAM_SCREENS = [
     "pered_boem.webp",
     "s09_araji_i_vulkan_v_slotah.webp",

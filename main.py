@@ -267,6 +267,10 @@ CURRENT_HEAL = None  # кого лечит текущий пак, если па�
 HEAL_NOT_PLACED = set()  # кого бот не смог поставить в пак отхила: до конца запуска их паком отхила не лечит (сессия 08)
 ROOM_AUTO_ROLLBACKS = 0  # сколько раз бот сам откатил бой в этой комнате
 START_FAILS = 0  # сколько раз подряд не удалось начать бой («Авто» не сработала)
+# Окно результата, которое бот уже обработал (комната засчитана или бой принят), а «ОК» его не закрыла (нет связи).
+# Увидев это окно снова, бот только жмёт «ОК»: второй раз комнату не засчитывает и бой не откатывает.
+# Сбрасывается, когда начинается новый бой или выбрана новая дверь
+RESULT_DONE = False
 TEAM_SEEN = None  # когда появился экран выбора команды: от этого момента пауза реакции перед «Авто» (задача 10)
 
 LAST_USED_TEAMS = {"earth": [], "water": [], "fire": [], "mix": []}
@@ -668,8 +672,16 @@ def handle_failed_start(button, game_window, sct):
     return state
 
 def recover_context(game_window, sct):
+    global RESULT_DONE
     print("\n[УМНЫЙ СТАРТ] Сканирую экран для восстановления контекста...")
-    
+
+    # 0. Окно результата, которое бот уже засчитал, а «ОК» его не закрыла (нет связи): не откатываем — только закрываем
+    if RESULT_DONE and get_match_loc('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
+        print("[УМНЫЙ СТАРТ] Это окно результата бот уже засчитал. Откатывать нельзя — только закрываю «ОК».")
+        if find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD):
+            RESULT_DONE = False
+        return "HALLWAY"
+
     # 1. Экран результатов автобоя («Ещё раз» есть) — откатываем
     if get_match_loc('btn_retry.png', game_window, sct, CONFIDENCE_THRESHOLD):
         print("[УМНЫЙ СТАРТ] Найден экран результатов. Запускаю откат боя...")
@@ -766,6 +778,16 @@ with mss.MSS() as sct:
 
         if STATE == "WAIT_FOR_OK" and 'btn_ok.png' not in SCREEN:
             time.sleep(0.1)  # бой ещё идёт: не грузим слабый ПК поиском без остановки
+            continue
+
+        if STATE == "WAIT_FOR_OK" and RESULT_DONE:
+            # Это окно бот уже обработал, а «ОК» в прошлый раз его не закрыла (нет связи?): например, после таймаута
+            # коридора бот снова пришёл к нему. Второй раз комнату не засчитываем — только закрываем
+            print("[ЛОГИКА] Это окно результата бот уже засчитал, а «ОК» в прошлый раз его не закрыла. "
+                  "Второй раз не считаю — только закрываю.")
+            if find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD, seen_at=SCREEN_AT):
+                RESULT_DONE = False
+            STATE = "HALLWAY"
             continue
 
         if STATE == "WAIT_FOR_OK":
@@ -1062,7 +1084,11 @@ with mss.MSS() as sct:
                                 wait_for_input()
                             force_window_focus()
 
-            find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD, seen_at=result_seen)
+            RESULT_DONE = not find_and_click_bulletproof('btn_ok.png', game_window, sct, CONFIDENCE_THRESHOLD,
+                                                         seen_at=result_seen)
+            if RESULT_DONE:
+                print("[ЛОГИКА] «ОК» не закрыла окно результата (нет связи?). Если окно останется на экране, "
+                      "второй раз его не засчитаю — только закрою.")
             STATE = "HALLWAY"
             if counted_room:
                 # Окно результата закрыто — комната завершена. Паузы 0,5 с после «ОК» больше нет (задача 10):
@@ -1111,6 +1137,7 @@ with mss.MSS() as sct:
             if found_room:
                 current_room = found_room
                 CURRENT_ENEMIES = enemies
+                RESULT_DONE = False  # новая комната: старое окно результата точно закрыто
                 STATE = "SET_TEAM"
             else:
                 print("[СЕТЬ] Двери не найдены (ошибка загрузки окна). Сброс в HALLWAY...")
@@ -1330,6 +1357,7 @@ with mss.MSS() as sct:
             ROOM_TIMER.begin("battle")
             if find_and_click_bulletproof('btn_in_battle.png', game_window, sct, CONFIDENCE_THRESHOLD, seen_at=TEAM_SEEN):
                 START_FAILS = 0
+                RESULT_DONE = False  # новый бой: его окно результата обрабатывается как обычно
                 execute_angus_ult(game_window, sct)
                 STATE = "WAIT_FOR_OK" 
             else:
@@ -1355,6 +1383,7 @@ with mss.MSS() as sct:
                 
             if battle_confirmed:
                 START_FAILS = 0
+                RESULT_DONE = False  # новый бой: его окно результата обрабатывается как обычно
                 STATE = "WAIT_FOR_OK"
             else:
                 STATE = handle_failed_start("Авто", game_window, sct)

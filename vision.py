@@ -221,6 +221,15 @@ def get_image_data(image_name):
             
     return None
 
+# Какую часть картинки искать (доли ширины и высоты: x1, y1, x2, y2), если вся картинка похожа на соседнюю кнопку.
+# «Ещё раз» и «Инфо» на окне результата — одинаковые синие кнопки рядом. По всей картинке «Ещё раз» совпадала
+# с «Инфо» на 0,90 (с собой — на 0,91–0,93): сессия 10, бот нажал «Инфо» вместо «Ещё раз», открылось окно
+# «Статистика победы», и откат сорвался. Середина кнопки — надпись: с собой 0,88–0,94, с «Инфо» не больше 0,61.
+TEMPLATE_CROP = {
+    "btn_retry.png": (0.15, 0.2, 0.85, 0.8),
+}
+
+
 @lru_cache(maxsize=256)
 def get_scaled_template(image_name, scale):
     img_bytes = get_image_data(image_name)
@@ -229,6 +238,11 @@ def get_scaled_template(image_name, scale):
         
     chunk_arr = np.frombuffer(img_bytes, dtype=np.uint8)
     img = cv2.imdecode(chunk_arr, cv2.IMREAD_COLOR)
+
+    if img is not None and image_name in TEMPLATE_CROP:
+        x1, y1, x2, y2 = TEMPLATE_CROP[image_name]
+        h, w = img.shape[:2]
+        img = img[int(h * y1):int(h * y2), int(w * x1):int(w * x2)]
     
     if img is not None:
         if scale != 1.0 and 0.5 < scale < 2.0:
