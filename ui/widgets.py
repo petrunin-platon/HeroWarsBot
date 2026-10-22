@@ -1,0 +1,673 @@
+"""Общие виджеты нового интерфейса (задача 15, шаг 1): то, из чего собираются все экраны.
+
+Card — карточка; Button — кнопка нужного вида (второстепенная, синяя, сохранить, «Начать фарм», опасная);
+IconButton — квадратная кнопка с иконкой (шапка, сайдбар, док-плеер); Tooltip — подсказка при наведении;
+TitanAvatar — квадрат титана цветом стихии; Chip — фильтр-«таблетка»; Field — поле ввода с подписью и состояниями;
+DialogBody / ConfirmDialog — подтверждение опасного действия; ToastBody / Toast — короткое уведомление.
+
+Цвета, шрифты и размеры — только из ui/theme.py, иконки — ui/icons. Надписи передаёт тот, кто создаёт виджет (из i18n.py).
+Виджеты трогаем только из главного потока Tk.
+"""
+import tkinter as tk
+from functools import lru_cache
+
+import customtkinter as ctk
+from PIL import Image, ImageDraw
+
+from i18n import get_text
+from ui import theme
+from ui.icons import dot, icon
+
+C = theme.COLORS
+T = theme.TINTS
+F = theme.FONTS
+S = theme.SIZES
+
+# Цвет, который Windows делает прозрачным у окошек без рамки (подсказка, уведомление): так у них круглые углы.
+# В других системах он просто остаётся тёмным уголком.
+_TRANSPARENT_KEY = "#010203"
+
+
+def _frameless_window(root):
+    """Окошко без рамки поверх окна программы (не поверх всех окон: иначе оно может попасть на снимок игры)."""
+    top = tk.Toplevel(root)
+    top.withdraw()
+    top.overrideredirect(True)
+    top.configure(bg=_TRANSPARENT_KEY)
+    try:
+        top.wm_attributes("-transparentcolor", _TRANSPARENT_KEY)
+    except tk.TclError:
+        pass
+    top.transient(root)
+    return top
+
+
+def _pointer_inside(widget):
+    """Мышь над виджетом (или над его частями: у кнопок CustomTkinter внутри несколько виджетов)."""
+    try:
+        x, y = widget.winfo_pointerxy()
+        left, top = widget.winfo_rootx(), widget.winfo_rooty()
+        return left <= x < left + widget.winfo_width() and top <= y < top + widget.winfo_height()
+    except tk.TclError:
+        return False
+
+
+class Card(ctk.CTkFrame):
+    """Карточка: фон bg_surface, рамка 1 px, скругление 10."""
+
+    def __init__(self, master, fg_color=None, border_color=None, corner_radius=None, **kwargs):
+        super().__init__(master, fg_color=fg_color or C["bg_surface"], border_width=1,
+                         border_color=border_color or C["border"],
+                         corner_radius=S["radius_card"] if corner_radius is None else corner_radius, **kwargs)
+
+
+# Виды кнопок (design/README.md, «Компоненты»). icon — цвет иконки, disabled — цвет текста неактивной кнопки
+BUTTON_KINDS = {
+    "secondary": dict(fg_color=C["bg_elevated"], hover_color=T["hover_elevated"], border_width=1,
+                      border_color=C["border"], text_color=C["text"], font=F["button"], icon=C["text_secondary"]),
+    "blue": dict(fg_color=C["blue_button"], hover_color=T["hover_blue"], border_width=0,
+                 text_color=C["white"], font=F["button_bold"], icon=C["white"]),
+    "save": dict(fg_color=C["green_button"], hover_color=T["hover_green_button"], border_width=0,
+                 text_color=C["white"], font=F["button_bold"], icon=C["white"]),
+    "cta": dict(fg_color=C["green"], hover_color=C["green_hover"], border_width=0,
+                text_color=C["white"], font=F["cta"], icon=C["white"]),
+    "danger": dict(fg_color="transparent", hover_color=T["danger_badge_bg"], border_width=1,
+                   border_color=C["danger"], text_color=C["danger_text"], font=F["button"], icon=C["danger_text"]),
+    "danger_solid": dict(fg_color=C["danger_button"], hover_color=T["hover_danger_button"], border_width=0,
+                         text_color=C["white"], font=F["button_bold"], icon=C["white"]),
+    "ghost_danger": dict(fg_color="transparent", hover_color=C["bg_elevated"], border_width=0,
+                         text_color=C["danger_text"], font=F["button"], icon=C["danger_text"]),
+    "ghost": dict(fg_color="transparent", hover_color=C["bg_elevated"], border_width=0,
+                  text_color=C["text_secondary"], font=F["button"], icon=C["text_secondary"]),
+    "link": dict(fg_color="transparent", hover_color=C["bg_surface"], border_width=0,
+                 text_color=C["blue_text"], font=F["button"], icon=C["blue_text"]),
+}
+
+
+class Button(ctk.CTkButton):
+    """Кнопка с текстом нужного вида (BUTTON_KINDS). Ширина — по надписи: длинные немецкие тексты не обрезаются.
+    icon_name — иконка слева (имя файла из ui/icons). set_kind() меняет вид (пауза и стоп становятся яркими во время фарма)."""
+
+    def __init__(self, master, text="", kind="secondary", icon_name=None, icon_size=16, command=None, height=None,
+                 pad_x=14, **kwargs):
+        self._pad_x = pad_x
+        self._kind = kind
+        self._icon_name = icon_name
+        self._icon_size = icon_size
+        style = dict(BUTTON_KINDS[kind])
+        icon_color = style.pop("icon")
+        style.update(kwargs)
+        height = height or (S["cta_height"] if kind == "cta" else S["control_height"])
+        super().__init__(master, text=text, command=command, height=height, width=0,
+                         corner_radius=S["radius_control"] if kind != "cta" else 8, border_spacing=2,
+                         text_color_disabled=C["text_muted"], compound="left",
+                         image=icon(icon_name, icon_color, icon_size) if icon_name else None, **style)
+
+    def _create_grid(self):
+        # У CustomTkinter отступ слева и справа равен скруглению (6 px) — для надписи мало, как в макетах ставим pad_x
+        super()._create_grid()
+        pad = self._apply_widget_scaling(self._pad_x)
+        self.grid_columnconfigure(0, minsize=pad)
+        self.grid_columnconfigure(4, minsize=pad)
+
+    def set_kind(self, kind):
+        self._kind = kind
+        style = dict(BUTTON_KINDS[kind])
+        icon_color = style.pop("icon")
+        disabled = self.cget("state") == "disabled"
+        if disabled:
+            # Неактивная кнопка бледная (экран 4: «Внедрить золотые правила», пока нечего внедрять)
+            icon_color = C["text_muted"]
+            if style["fg_color"] != "transparent":
+                style["fg_color"] = theme.blend(style["fg_color"], C["bg_surface"], 0.3)
+            if style.get("border_width"):
+                style["border_color"] = theme.blend(style["border_color"], C["bg_surface"], 0.4)
+        if self._icon_name:
+            style["image"] = icon(self._icon_name, icon_color, self._icon_size)
+        self.configure(**style)
+
+    def set_icon(self, icon_name):
+        self._icon_name = icon_name
+        self.set_kind(self._kind)
+
+    def set_enabled(self, enabled):
+        self.configure(state="normal" if enabled else "disabled")
+        self.set_kind(self._kind)
+
+
+class IconButton(ctk.CTkButton):
+    """Квадратная кнопка с иконкой: шапка (34 px), сайдбар (44 px, kind="nav"), док-плеер (38 px).
+    tooltip — подсказка при наведении (у кнопок без текста она обязательна). set_active() — выбранный пункт сайдбара."""
+
+    def __init__(self, master, icon_name, command=None, size=None, icon_size=None, tooltip=None, tooltip_side="bottom",
+                 kind="default", icon_color=None, **kwargs):
+        self._icon_name = icon_name
+        self._kind = kind
+        self._icon_size = icon_size or (S["icon_nav"] if kind == "nav" else S["icon"])
+        self._icon_color = icon_color
+        self._active = False
+        size = size or (S["rail_button"] if kind == "nav" else S["header_button"])
+        if kind == "nav":
+            style = dict(fg_color="transparent", hover_color=T["hover_primary"], border_width=1,
+                         border_color=C["bg_primary"], corner_radius=8)
+        else:
+            style = dict(fg_color=C["bg_surface"], hover_color=C["bg_elevated"], border_width=1,
+                         border_color=C["border"], corner_radius=S["radius_control"])
+        style.update(kwargs)
+        super().__init__(master, text="", width=size, height=size, border_spacing=0, command=command,
+                         image=self._icon_image(), **style)
+        self.tooltip = Tooltip(self, tooltip, side=tooltip_side) if tooltip else None
+
+    def _icon_image(self):
+        if getattr(self, "_state", "normal") == "disabled":
+            color = C["text_muted"]
+        elif self._kind == "nav":
+            color = C["blue_text"] if self._active else C["text_secondary"]
+        else:
+            color = self._icon_color or C["text_secondary"]
+        return icon(self._icon_name, color, self._icon_size)
+
+    def set_active(self, active):
+        """Выбранный пункт сайдбара: синеватый фон, синяя рамка и иконка."""
+        self._active = active
+        self.configure(fg_color=T["nav_active_bg"] if active else "transparent",
+                       border_color=T["nav_active_border"] if active else C["bg_primary"],
+                       hover_color=T["nav_active_bg"] if active else T["hover_primary"], image=self._icon_image())
+
+    def set_icon(self, icon_name, color=None):
+        self._icon_name = icon_name
+        if color:
+            self._icon_color = color
+        self.configure(image=self._icon_image())
+
+    def set_enabled(self, enabled):
+        self.configure(state="normal" if enabled else "disabled")
+        self.configure(image=self._icon_image())
+
+    def set_tooltip(self, text):
+        if self.tooltip:
+            self.tooltip.text = text
+        elif text:
+            self.tooltip = Tooltip(self, text)
+
+
+class Tooltip:
+    """Подсказка при наведении: маленькое окошко без рамки рядом с виджетом (справа для сайдбара, снизу для шапки).
+    text — строка или функция без аргументов (тогда подсказка всегда на текущем языке)."""
+
+    def __init__(self, widget, text, side="bottom", delay=None):
+        self.widget = widget
+        self.text = text
+        self.side = side
+        self.delay = S["tooltip_delay_ms"] if delay is None else delay
+        self._after_id = None
+        self._top = None
+        self.attach(widget)
+
+    def attach(self, widget):
+        """Показывать подсказку и над этим виджетом (например, над картинкой внутри квадрата титана)."""
+        widget.bind("<Enter>", self._on_enter, add="+")
+        widget.bind("<Leave>", self._on_leave, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _current_text(self):
+        return self.text() if callable(self.text) else self.text
+
+    def _on_enter(self, _event=None):
+        self._cancel()
+        if self._top is None:
+            self._after_id = self.widget.after(self.delay, self._show)
+
+    def _on_leave(self, _event=None):
+        # Мышь могла перейти на часть того же виджета: проверяем чуть позже, где она
+        self.widget.after(30, self._hide_if_outside)
+
+    def _hide_if_outside(self):
+        if not _pointer_inside(self.widget):
+            self._hide()
+
+    def _cancel(self):
+        if self._after_id:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+            self._after_id = None
+
+    def _show(self):
+        self._after_id = None
+        text = self._current_text()
+        if not text or not _pointer_inside(self.widget):
+            return
+        top = _frameless_window(self.widget.winfo_toplevel())
+        ctk.CTkLabel(top, text=text, font=F["label"], text_color=C["text"], fg_color=C["bg_elevated"],
+                     bg_color=_TRANSPARENT_KEY, corner_radius=S["radius_control"], height=26,
+                     padx=8).pack()
+        top.update_idletasks()
+        w, h = top.winfo_reqwidth(), top.winfo_reqheight()
+        wx, wy = self.widget.winfo_rootx(), self.widget.winfo_rooty()
+        ww, wh = self.widget.winfo_width(), self.widget.winfo_height()
+        gap = 8
+        if self.side == "right":
+            x, y = wx + ww + gap, wy + (wh - h) // 2
+        elif self.side == "top":
+            x, y = wx + (ww - w) // 2, wy - h - gap
+        else:
+            x, y = wx + (ww - w) // 2, wy + wh + gap
+        screen_w = top.winfo_screenwidth()
+        x = max(0, min(x, screen_w - w))
+        top.geometry(f"+{x}+{max(0, y)}")
+        top.deiconify()
+        self._top = top
+
+    def _hide(self, _event=None):
+        self._cancel()
+        if self._top is not None:
+            try:
+                self._top.destroy()
+            except tk.TclError:
+                pass
+            self._top = None
+
+
+@lru_cache(maxsize=128)
+def _titan_picture(path, mtime, size, radius):
+    """Картинка титана: квадрат из середины, скруглённые углы (mtime в ключе — заменённая картинка перечитается)."""
+    img = Image.open(path).convert("RGBA")
+    side = min(img.size)
+    left, top = (img.width - side) // 2, (img.height - side) // 2
+    big = size * 4
+    img = img.crop((left, top, left + side, top + side)).resize((big, big), Image.LANCZOS)
+    mask = Image.new("L", (big, big), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, big - 1, big - 1), radius=radius * 4, fill=255)
+    img.putalpha(Image.composite(img.getchannel("A"), mask, mask))
+    return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
+
+
+def titan_name(lang, titan):
+    """Имя титана на языке окна; новый титан без перевода — по имени файла."""
+    name = get_text(lang, f"titan_{titan}")
+    return titan.capitalize() if name == f"titan_{titan}" else name
+
+
+class TitanAvatar(ctk.CTkFrame):
+    """Квадрат титана: рамка цветом стихии, фон — оттенок стихии, внутри картинка assets/icons/<титан>.png
+    или две буквы имени, пока картинки нет. Подсказка с именем при наведении. command(titan) — по клику."""
+
+    def __init__(self, master, titan, lang="RU", size=None, command=None, tooltip=True, **kwargs):
+        self.titan = titan
+        self.lang = lang
+        self.size = size or S["avatar"]
+        self.command = command
+        style = theme.element_style(theme.element_of(titan))
+        super().__init__(master, width=self.size, height=self.size, corner_radius=S["radius_control"],
+                         border_width=S["avatar_border"], border_color=style["color"], fg_color=style["tint"], **kwargs)
+        self.grid_propagate(False)
+        self.pack_propagate(False)
+        self.label = ctk.CTkLabel(self, text="", fg_color="transparent", text_color=C["text"],
+                                  font=(theme.FONT_FAMILY, 12 if self.size >= 32 else 10, "bold"))
+        self.label.place(relx=0.5, rely=0.5, anchor="center")
+        self.tooltip = Tooltip(self, lambda: titan_name(self.lang, self.titan)) if tooltip else None
+        if self.tooltip:
+            self.tooltip.attach(self.label)
+        for part in (self, self.label):
+            part.bind("<Button-1>", self._on_click, add="+")
+        self._render()
+
+    def _render(self):
+        path = theme.titan_icon_path(self.titan)
+        inner = self.size - 2 * S["avatar_border"] - 2
+        if path:
+            image = _titan_picture(str(path), path.stat().st_mtime, inner, 4)
+            self.label.configure(image=image, text="", width=inner, height=inner)
+        else:
+            self.label.configure(image=None, text=theme.initials(titan_name(self.lang, self.titan)),
+                                 width=inner, height=inner)
+
+    def _on_click(self, _event=None):
+        if self.command:
+            self.command(self.titan)
+
+    def set_language(self, lang):
+        self.lang = lang
+        self._render()
+
+    def set_titan(self, titan):
+        self.titan = titan
+        style = theme.element_style(theme.element_of(titan))
+        self.configure(border_color=style["color"], fg_color=style["tint"])
+        self._render()
+
+
+class Chip(ctk.CTkFrame):
+    """Фильтр-«таблетка» высотой 30: выбранный — фон bg_elevated и светлая рамка, невыбранный — прозрачный.
+    dot_color — цветная точка слева (фильтр стихии), count — красный счётчик справа («Ошибки 1»)."""
+
+    def __init__(self, master, text, selected=False, command=None, dot_color=None, count=None, **kwargs):
+        super().__init__(master, height=S["chip_height"], corner_radius=S["radius_chip"], border_width=1, **kwargs)
+        self.command = command
+        self.selected = selected
+        self._hovering = False
+        self._dot = ctk.CTkLabel(self, text="", image=dot(dot_color, 8), width=8) if dot_color else None
+        if self._dot:
+            self._dot.pack(side="left", padx=(12, 0), pady=2)
+        self._label = ctk.CTkLabel(self, text=text, height=24, font=F["label"], fg_color="transparent")
+        self._label.pack(side="left", pady=2)
+        self._count = ctk.CTkLabel(self, text="", height=18, width=18, corner_radius=9, font=F["small_bold"],
+                                   fg_color=T["danger_badge_bg"], text_color=C["danger_text"])
+        self.set_count(count)
+        for part in (self, self._label, self._count) + ((self._dot,) if self._dot else ()):
+            part.bind("<Button-1>", self._on_click, add="+")
+            part.bind("<Enter>", self._chip_enter, add="+")
+            part.bind("<Leave>", self._chip_leave, add="+")
+        self._paint()
+
+    def _paint(self):
+        if self.selected:
+            fg, border, text = C["bg_elevated"], C["border_focus"], C["text"]
+        else:
+            fg = C["bg_elevated"] if self._hovering else "transparent"
+            border, text = C["border"], C["text_secondary"]
+        self.configure(fg_color=fg, border_color=border)
+        self._label.configure(text_color=text, font=F["label_bold"] if self.selected else F["label"])
+
+    def _on_click(self, _event=None):
+        if self.command:
+            self.command()
+
+    def _chip_enter(self, _event=None):
+        self._hovering = True
+        self._paint()
+
+    def _chip_leave(self, _event=None):
+        self.after(30, self._leave_if_outside)
+
+    def _leave_if_outside(self):
+        if not _pointer_inside(self):
+            self._hovering = False
+            self._paint()
+
+    def set_selected(self, selected):
+        self.selected = selected
+        self._paint()
+
+    def set_text(self, text):
+        self._label.configure(text=text)
+
+    def set_count(self, count):
+        """Счётчик справа; 0 или None — счётчика нет."""
+        left = 6 if self._dot else 12
+        if count:
+            self._count.configure(text=str(count))
+            self._label.pack_configure(padx=(left, 6))
+            self._count.pack(side="left", padx=(0, 8), pady=2)
+        else:
+            self._label.pack_configure(padx=(left, 12))
+            self._count.pack_forget()
+
+
+class Field(ctk.CTkFrame):
+    """Поле ввода с подписью сверху и подсказкой снизу (экран 8). Состояния: обычное; в фокусе — рамка 2 px синяя;
+    ошибка (set_error) — рамка 2 px красная, текст ошибки под полем; недоступно (set_enabled(False)) — серый текст."""
+
+    def __init__(self, master, label="", hint="", value="", mono=True, width=None, **kwargs):
+        super().__init__(master, fg_color="transparent", **kwargs)
+        self.hint = hint
+        self.error = None
+        self.enabled = True
+        self.grid_columnconfigure(0, weight=1)
+        self.label = ctk.CTkLabel(self, text=label, font=F["label"], text_color=C["text_secondary"], anchor="w",
+                                  height=18)
+        self.label.grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.entry = ctk.CTkEntry(self, height=S["control_height"], width=width or 140,
+                                  corner_radius=S["radius_control"], border_width=1, border_color=C["border"],
+                                  fg_color=C["bg_elevated"], text_color=C["text"],
+                                  font=F["mono_field"] if mono else F["body"])
+        self.entry.grid(row=1, column=0, sticky="ew")
+        self.entry.insert(0, str(value))
+        self.note = ctk.CTkLabel(self, text=hint, font=F["label"], text_color=C["text_muted"], anchor="w", height=18,
+                                 compound="left")
+        self.note.grid(row=2, column=0, sticky="w", pady=(6, 0))
+        if not hint:
+            self.note.grid_remove()
+        self._focus = False
+        self.entry.bind("<FocusIn>", lambda _e: self._set_focus(True), add="+")
+        self.entry.bind("<FocusOut>", lambda _e: self._set_focus(False), add="+")
+
+    def _set_focus(self, focus):
+        self._focus = focus
+        self._paint(focus)
+
+    def _paint(self, focus=False):
+        if not self.enabled:
+            self.entry.configure(border_width=1, border_color=C["border"], fg_color=T["field_disabled_bg"],
+                                 text_color=C["text_muted"])
+        elif self.error:
+            self.entry.configure(border_width=2, border_color=C["danger"], fg_color=T["field_error_bg"],
+                                 text_color=C["text"])
+        elif focus:
+            self.entry.configure(border_width=2, border_color=C["blue"], fg_color=C["bg_elevated"],
+                                 text_color=C["text"])
+        else:
+            self.entry.configure(border_width=1, border_color=C["border"], fg_color=C["bg_elevated"],
+                                 text_color=C["text"])
+
+    def show_focus(self):
+        """Нарисовать поле «в фокусе», не забирая фокус (для витрины)."""
+        self._paint(focus=True)
+
+    def set_error(self, message):
+        """Показать ошибку под полем; None — убрать её и вернуть подсказку."""
+        self.error = message
+        if message:
+            # Пробел — зазор между значком и текстом (у CTkLabel нет своего отступа для картинки)
+            self.note.configure(text=" " + message, text_color=C["danger_text"],
+                                image=icon("triangle-alert", C["danger_text"], 13))
+            self.note.grid()
+        else:
+            self.note.configure(text=self.hint, text_color=C["text_muted"], image=None)
+            if self.hint:
+                self.note.grid()
+            else:
+                self.note.grid_remove()
+        self._paint(focus=self._focus)
+
+    def set_hint(self, hint):
+        self.hint = hint
+        if not self.error:
+            self.set_error(None)
+
+    def set_enabled(self, enabled, hint=None):
+        """Недоступное поле (например, во время фарма); hint — почему его нельзя менять."""
+        self.enabled = enabled
+        self.entry.configure(state="normal" if enabled else "disabled")
+        if hint is not None:
+            self.set_hint(hint)
+        self._paint()
+
+    def get(self):
+        return self.entry.get()
+
+    def set(self, value):
+        state = self.entry.cget("state")
+        self.entry.configure(state="normal")
+        self.entry.delete(0, "end")
+        self.entry.insert(0, str(value))
+        self.entry.configure(state=state)
+
+
+# Значок диалога: иконка, её цвет, цвет подложки; кнопка подтверждения по умолчанию (вид и иконка)
+DIALOG_KINDS = {
+    "danger": dict(icon="trash-2", color=C["danger_text"], bg=T["danger_on_surface"],
+                   button="danger_solid", button_icon="trash-2"),
+    "warning": dict(icon="triangle-alert", color=C["warning"], bg=T["warning_on_surface"],
+                    button="save", button_icon="save"),
+    "info": dict(icon="info", color=C["blue_text"], bg=T["blue_icon_bg"], button="blue", button_icon=None),
+}
+
+
+class DialogBody(ctk.CTkFrame):
+    """Содержимое диалога подтверждения (экран 8): значок 40×40 в цветной подложке, заголовок, текст, кнопки справа.
+    discard_text — третья кнопка слева красным текстом («Не сохранять»). Сам по себе не окно: окно — ConfirmDialog."""
+
+    def __init__(self, master, title, text, confirm_text, cancel_text, kind="danger", on_confirm=None,
+                 on_cancel=None, discard_text=None, on_discard=None, confirm_kind=None, confirm_icon=None,
+                 wraplength=380, **kwargs):
+        kwargs.setdefault("fg_color", C["bg_surface"])
+        kwargs.setdefault("corner_radius", S["radius_dialog"])
+        super().__init__(master, **kwargs)
+        look = DIALOG_KINDS[kind]
+        self.grid_columnconfigure(1, weight=1)
+
+        badge = ctk.CTkFrame(self, width=40, height=40, corner_radius=10, fg_color=look["bg"])
+        badge.grid(row=0, column=0, rowspan=2, sticky="n", padx=(20, 14), pady=(20, 0))
+        badge.grid_propagate(False)
+        ctk.CTkLabel(badge, text="", image=icon(look["icon"], look["color"], 20)).place(relx=0.5, rely=0.5,
+                                                                                     anchor="center")
+        ctk.CTkLabel(self, text=title, font=F["dialog_title"], text_color=C["text"], anchor="w",
+                     justify="left").grid(row=0, column=1, sticky="w", padx=(0, 20), pady=(20, 6))
+        ctk.CTkLabel(self, text=text, font=F["text"], text_color=C["text_secondary"], anchor="w", justify="left",
+                     wraplength=wraplength).grid(row=1, column=1, sticky="w", padx=(0, 20))
+
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=20, pady=20)
+        if discard_text:
+            Button(row, discard_text, kind="ghost_danger", height=S["button_height_footer"], pad_x=12,
+                   command=on_discard).pack(side="left")
+        self.confirm_button = Button(row, confirm_text, kind=confirm_kind or look["button"],
+                                     icon_name=confirm_icon if confirm_icon is not None else look["button_icon"],
+                                     icon_size=14, height=S["button_height_footer"], command=on_confirm)
+        self.confirm_button.pack(side="right")
+        self.cancel_button = Button(row, cancel_text, kind="secondary", height=S["button_height_footer"],
+                                    command=on_cancel)
+        self.cancel_button.pack(side="right", padx=(0, 10))
+
+
+class ConfirmDialog(ctk.CTkToplevel):
+    """Модальное окно подтверждения: «Удалить все правила?», «Сохранить изменения?» и т.п.
+    Закрытие крестиком или Esc — то же, что «Отмена». Обработчик вызывается после закрытия окна."""
+
+    def __init__(self, master, title, text, confirm_text, on_confirm=None, kind="danger", lang="RU",
+                 cancel_text=None, on_cancel=None, discard_text=None, on_discard=None, confirm_kind=None,
+                 confirm_icon=None):
+        root = master.winfo_toplevel()
+        super().__init__(root, fg_color=C["bg_surface"])
+        self.withdraw()
+        self.title(title)
+        self.resizable(False, False)
+        self.transient(root)
+        self._handlers = {"confirm": on_confirm, "cancel": on_cancel, "discard": on_discard}
+        self.body = DialogBody(self, title, text, confirm_text, cancel_text or get_text(lang, "btn_cancel"),
+                               kind=kind, discard_text=discard_text, confirm_kind=confirm_kind,
+                               confirm_icon=confirm_icon, on_confirm=lambda: self._finish("confirm"),
+                               on_cancel=lambda: self._finish("cancel"),
+                               on_discard=lambda: self._finish("discard"), corner_radius=0)
+        self.body.pack(fill="both", expand=True)
+        self.protocol("WM_DELETE_WINDOW", lambda: self._finish("cancel"))
+        self.bind("<Escape>", lambda _e: self._finish("cancel"))
+        self.after(10, self._show_centered, root)
+
+    def _show_centered(self, root):
+        self.update_idletasks()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        x = root.winfo_rootx() + (root.winfo_width() - w) // 2
+        y = root.winfo_rooty() + (root.winfo_height() - h) // 3
+        self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        self.deiconify()
+        self.lift()
+        try:
+            self.wait_visibility()
+            self.grab_set()
+        except tk.TclError:
+            pass
+        self.body.cancel_button.focus_set()
+
+    def _finish(self, result):
+        try:
+            self.grab_release()
+        except tk.TclError:
+            pass
+        self.destroy()
+        handler = self._handlers.get(result)
+        if handler:
+            handler()
+
+
+# Значки уведомлений: иконка и её цвет
+TOAST_KINDS = {
+    "success": ("check", C["success"]),
+    "deleted": ("trash-2", C["text_secondary"]),
+    "info": ("info", C["blue_text"]),
+    "warning": ("triangle-alert", C["warning"]),
+    "error": ("triangle-alert", C["danger_text"]),
+}
+
+
+class ToastBody(ctk.CTkFrame):
+    """Содержимое уведомления (экран 8): значок, текст, кнопка действия («Вернуть»), крестик."""
+
+    def __init__(self, master, text, kind="success", action_text=None, on_action=None, on_close=None, **kwargs):
+        kwargs.setdefault("bg_color", "transparent")
+        super().__init__(master, height=S["toast_height"], fg_color=C["bg_elevated"], border_width=1,
+                         border_color=C["border_strong"], corner_radius=8, **kwargs)
+        name, color = TOAST_KINDS[kind]
+        ctk.CTkLabel(self, text="", image=icon(name, color, 16), width=16).pack(side="left", padx=(14, 10), pady=4)
+        ctk.CTkLabel(self, text=text, font=F["text"], text_color=C["text"]).pack(side="left", pady=4)
+        if action_text:
+            Button(self, action_text, kind="link", height=28, pad_x=10, border_width=1,
+                   border_color=C["border_strong"], font=F["button_bold"], command=on_action).pack(
+                side="left", padx=(14, 0), pady=7)
+        IconButton(self, "x", size=28, icon_size=13, icon_color=C["text_muted"], fg_color="transparent",
+                   hover_color=C["bg_surface"], border_width=0, command=on_close).pack(side="left", padx=(6, 8))
+
+
+class Toast:
+    """Короткое уведомление в правом нижнем углу окна программы, на 4 с. Несколько уведомлений встают друг над другом.
+    Окно программы свёрнуто — уведомление не показывается (не закрывать им игру)."""
+
+    _open = []
+
+    def __init__(self, master, text, kind="success", action_text=None, on_action=None, duration=None):
+        self.root = master.winfo_toplevel()
+        self.on_action = on_action
+        self.top = None
+        if self.root.state() != "normal" and self.root.state() != "zoomed":
+            return
+        self.top = _frameless_window(self.root)
+        ToastBody(self.top, text, kind=kind, action_text=action_text, on_action=self._action,
+                  on_close=self.close, bg_color=_TRANSPARENT_KEY).pack()
+        Toast._open.append(self)
+        Toast._restack(self.root)
+        self.top.deiconify()
+        self.top.after(duration or S["toast_ms"], self.close)
+
+    def _action(self):
+        self.close()
+        if self.on_action:
+            self.on_action()
+
+    def close(self):
+        if self.top is None:
+            return
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            pass
+        self.top = None
+        if self in Toast._open:
+            Toast._open.remove(self)
+        Toast._restack(self.root)
+
+    @classmethod
+    def _restack(cls, root):
+        """Расставить открытые уведомления окна снизу вверх у правого нижнего угла."""
+        try:
+            right = root.winfo_rootx() + root.winfo_width() - 24
+            bottom = root.winfo_rooty() + root.winfo_height() - 24
+        except tk.TclError:
+            return
+        for toast in reversed([t for t in cls._open if t.root is root and t.top is not None]):
+            toast.top.update_idletasks()
+            w, h = toast.top.winfo_reqwidth(), toast.top.winfo_reqheight()
+            toast.top.geometry(f"+{right - w}+{bottom - h}")
+            bottom -= h + 10
