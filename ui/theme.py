@@ -219,7 +219,8 @@ SIZES = {
     "avatar_border": 2,
     "icon": 18,                   # иконка в кнопке
     "icon_nav": 20,
-    "hud_height": 60,             # док-плеер под окном scrcpy
+    "hud_height": 60,             # док-плеер под окном scrcpy (макет)
+    "hud_height_tall": 100,       # док-плеер на деле: выше макета, 4 строки (ваш ответ после проверки шага 4)
     "toast_height": 44,
     "toast_ms": 4000,             # уведомление видно 4 с
     "tooltip_delay_ms": 400,

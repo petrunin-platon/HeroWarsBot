@@ -97,11 +97,14 @@ def test_events_from_bot_lines_newest_first():
         "10:31:00.000 [ОТКАТ] Запускаю протокол отката боя...",
         "10:32:00.000 [SOS] Причина: SIGURD: ХП 18% (ниже порога 20%)",
     ])
-    newest, previous = feed.latest()
+    newest, previous, _oldest = feed.latest()
     assert hud_events.text(newest, "RU") == "Сигурд: ХП 18% (ниже порога 20%)"
     assert hud_events.badge(newest, "RU")[0] == "SOS"
     assert hud_events.text(previous, "RU") == "Откат боя, переигрываю комнату"
-    assert len(feed.latest()) == 2                              # только два последних
+
+    for n in range(4, 8):
+        feed.feed(f"10:4{n}:00.000 [СТАТИСТИКА] Этажей: {n}")
+    assert [e.data["n"] for e in feed.latest()] == [7, 6, 5, 4]  # только четыре последних, новое сверху
 
 
 @pytest.mark.parametrize("line, kind, text", [
@@ -130,6 +133,65 @@ def test_ordinary_lines_are_not_events():
     assert feed.latest() == []
 
 
+@pytest.mark.parametrize("line, phase", [
+    ("10:00:00.000 [НАВИГАЦИЯ] Сканирую коридор (динамическое ожидание)...", "corridor"),
+    ("10:00:00.000 [НАВИГАЦИЯ] Этаж пройден! Активируем точку сохранения...", "checkpoint"),
+    ("10:00:00.000 [УСПЕХ] Окно выбора комнат открылось.", "doors"),
+    ("10:00:00.000 [КОМБАТ] Успешный вход. Комната: FIRE | Враги: ['angus']", "team"),
+    ("10:00:00.000 [ТАКТИКА] Выполняю быстрый старт боя...", "battle"),
+    ("10:00:00.000 [АНАЛИЗАТОР] Окно результата (через 1.2 с после появления «ОК»):", "result"),
+    ("10:00:00.000 [ОТКАТ] Запускаю протокол отката боя...", "rollback"),
+    ("10:00:00.000 [МЯГКАЯ ПАУЗА] Бот ждет в коридоре...", "paused"),
+    ("10:00:00.000 [SOS] Причина: ARAJI: ХП 10%", "sos"),
+    ("10:00:00.000 [ТАКТИКА] Ручной режим: бот ничего не нажимает и ждёт", "manual"),
+])
+def test_what_bot_is_doing_now(line, phase):
+    feed = feed_lines([line])
+    assert feed.phase == phase and hud_events.phase_text(feed, "RU")
+
+
+def test_phase_text_with_room_and_seconds_and_focus_comes_back():
+    now = [100.0]
+    feed = hud_events.HudFeed(clock=lambda: "12:00:00", monotonic=lambda: now[0])
+    feed.feed("10:00:00.000 [КОМБАТ] Успешный вход. Комната: FIRE | Враги: ['angus']")
+    feed.feed("10:00:05.000 [ТАКТИКА] Выполняю быстрый старт боя...")
+    now[0] += 12
+    assert hud_events.phase_text(feed, "RU") == "Бой · Огонь · 12 с"
+    feed.feed("10:00:06.000 [ВНИМАНИЕ] Окно игры перекрыто (Chrome...). Бот ждет фокуса...")
+    assert hud_events.phase_text(feed, "RU") == "Ждёт окно игры · 0 с"
+    feed.feed("10:00:09.000 [ИНФО] Окно снова активно. Продолжаем работу.")
+    assert hud_events.phase_text(feed, "RU") == "Бой · Огонь · 12 с"     # вернулся к тому, что делал
+
+
+def test_team_hp_after_battle_keeps_order_and_missing_icon():
+    feed = feed_lines(["10:00:00.000 [КОМБАТ] Успешный вход. Комната: MIX | Враги: []",
+                       "10:00:20.000  ---> RIGEL: ХП 95%, Энергия 80%",
+                       "10:00:20.000  ---> IYARI: [МЕРТВ] (ХП = 0%, сходство иконки 0.80)",
+                       "10:00:20.000  ---> AMON: [ОТСУТСТВУЕТ] (иконка не найдена: сходство 0.40, порог 0.62)"])
+    assert feed.team == [("rigel", 95), ("iyari", 0), ("amon", None)]
+    feed.feed("10:01:00.000 [КОМБАТ] Успешный вход. Комната: WATER | Враги: []")
+    assert feed.team == [("rigel", 95), ("iyari", 0), ("amon", None)]  # до нового окна результата — прошлый бой
+    feed.feed("10:01:20.000  ---> SIGURD: ХП 70%, Энергия 80%")
+    assert feed.team == [("sigurd", 70)]
+
+
+@pytest.mark.parametrize("goal, progress, elapsed, expected", [
+    (("titanite", 7500), (2838, 7500, 0.38), 4360, (7500 - 2838) * 4360 / 2838),
+    (("time", 120), (60.0, 120, 0.5), 3600, 3600),
+    (("rooms", 100), (100, 100, 1.0), 4000, 0),
+    (("rooms", 100), (0, 100, 0.0), 30, None),
+    (None, None, 100, None),
+])
+def test_eta(goal, progress, elapsed, expected):
+    assert hud_events.eta_seconds(goal, progress, elapsed) == expected
+
+
+def test_duration_text():
+    assert hud_events.duration_text(30, "RU") == "меньше минуты"
+    assert hud_events.duration_text(25 * 60, "RU") == "25 мин"
+    assert hud_events.duration_text(70 * 60 + 5, "RU") == "1 ч 10 мин"
+
+
 def test_session_07_log():
     feed = hud_events.HudFeed()
     rooms, kinds = 0, set()
@@ -148,7 +210,8 @@ def test_hud_texts_in_all_languages():
     keys = set()
     for path in ("ui/hud.py", "ui/hud_events.py"):
         keys |= set(re.findall(r'"(hud_[a-z0-9_]+)"', (ROOT / path).read_text(encoding="utf-8")))
-    keys.discard("hud_height")                                  # это размер (ui/theme.py), а не надпись
+    keys -= {"hud_height", "hud_height_tall"}                   # это размеры (ui/theme.py), а не надписи
+    keys |= {f"hud_now_{phase}" for _marker, phase in hud_events.PHASES} | {"hud_now_focus"}
     keys |= {"main_note_ready"}
     assert len(keys) > 25
     ru, english = i18n.TRANSLATIONS["RU"], i18n.TRANSLATIONS["EN"]
@@ -188,7 +251,7 @@ class Locator:
     """Вместо поиска окна scrcpy в Windows: тест сам двигает «окно игры» или убирает его."""
 
     def __init__(self):
-        self.game = game_at(left=40, top=70, width=960, height=432, work=Rect(0, 0, 1280, 1000))
+        self.game = game_at(left=5, top=70, width=1270, height=432, work=Rect(0, 0, 1280, 1000))
         self.calls = 0
 
     def __call__(self):
@@ -251,12 +314,27 @@ def test_bot_start_collapses_into_hud_under_game(app):
     assert pump(app, 2, until=lambda: app.hud.shown and hud_rect(app)[1] > 0)
     x, y, w, h = hud_rect(app)
     client = app.locator.game.client
-    assert (x, w) == (client.left, client.width) and y == client.bottom and h == 60
+    assert (x, w) == (client.left, client.width) and y == client.bottom and h == 100
     assert app.hud.status.cget("text") == "ФАРМ ИДЁТ"
-    assert app.hud.event_text.cget("text") == "Бот запущен"
-    dash.add_bot_line("10:00:00.000 [СТАТИСТИКА] Этажей: 2")
+    assert app.hud.event_rows[0][2].cget("text") == "Бот запущен"
+    assert app.hud.team_empty.cget("text") == "боёв ещё не было"
+    for line in ("10:00:00.000 [КОМБАТ] Успешный вход. Комната: WATER | Враги: ['araji']",
+                 "10:00:20.000  ---> HYPERION: ХП 100%, Энергия 79%",
+                 "10:00:20.100  ---> SIGURD: ХП 18%, Энергия 69%",
+                 "10:00:21.000 [СТАТИСТИКА] Комнат: 1 | Титанит: 12",
+                 "10:00:22.000 [СТАТИСТИКА] Этажей: 2",
+                 "10:00:23.000 [НАВИГАЦИЯ] Сканирую коридор (динамическое ожидание)..."):
+        dash.add_bot_line(line)
     dash.refresh()
-    assert app.hud.floors.cget("text") == "Этажей: 2"
+    hud = app.hud
+    assert hud.counters.cget("text") == "Комнат: 1 · этажей: 2"
+    assert hud.now.cget("text").startswith("Коридор · ")
+    assert hud.clock.cget("text").startswith("Время 00:00:")
+    shown = [(avatar.titan, hp.cget("text"), hp.cget("text_color")) for cell, avatar, hp in hud.team_slots
+             if cell.winfo_manager()]
+    assert shown == [("hyperion", "100%", "#E8EAF0"), ("sigurd", "18%", "#F87171")]   # ниже порога паники — красным
+    assert hud.event_rows[0][2].cget("text") == "Этаж пройден, всего 2"
+    assert hud.event_rows[1][2].cget("text").startswith("Комната 1 пройдена")
 
 
 @gui
@@ -324,7 +402,8 @@ def test_hud_language(app):
     start_fake_bot(app)
     app.set_language("DE")
     assert app.hud.status.cget("text") == "FARMEN LÄUFT"
-    assert app.hud.event_text.cget("text") == "Bot gestartet"
+    assert app.hud.event_rows[0][2].cget("text") == "Bot gestartet"
+    assert app.hud.team_title.cget("text") == "LP nach dem Kampf"
 
 
 @gui
