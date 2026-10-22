@@ -41,7 +41,7 @@ from ui.sos_telegram import SOS as TG_SOS
 from ui.sos_telegram import TEST as TG_TEST
 from ui.sos_telegram import TelegramQuestion, telegram_ready
 from ui.titan_picker import TitanPicker
-from ui.widgets import Button, Card, Chip, ClickFrame, ConfirmDialog, KeyButton, Tooltip
+from ui.widgets import Button, Card, Chip, ClickFrame, ConfirmDialog, KeyButton, Tooltip, present_window
 
 C = theme.COLORS
 T = theme.TINTS
@@ -283,18 +283,13 @@ class SummaryWindow(ctk.CTkToplevel):
         Button(self, get_text(lang, "main_close"), kind="secondary", height=S["button_height_footer"],
                command=self.destroy).grid(row=1, column=0, sticky="e", padx=20, pady=(0, 20))
         self.bind("<Escape>", lambda _e: self.destroy())
-        self.after(10, self._show, root)
+        present_window(self, lambda: self._place(root), hidden=lambda: not self.winfo_exists())
 
-    def _show(self, root):
-        try:
-            w, h = 760, 440
-            x = root.winfo_rootx() + (root.winfo_width() - w) // 2
-            y = root.winfo_rooty() + (root.winfo_height() - h) // 3
-            self.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
-            self.deiconify()
-            self.lift()
-        except tk.TclError:
-            pass
+    def _place(self, root):
+        w, h = 760, 440
+        x = root.winfo_rootx() + (root.winfo_width() - w) // 2
+        y = root.winfo_rooty() + (root.winfo_height() - h) // 3
+        self.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
 
 
 class MainPage(ctk.CTkFrame):
@@ -345,11 +340,13 @@ class MainPage(ctk.CTkFrame):
         top.grid(row=0, column=0, sticky="ew", pady=(0, S["gap_l"]))
         top.grid_columnconfigure(0, weight=1)
         self.top = top
-        self.left = ctk.CTkFrame(top, fg_color="transparent")
+        self.left = ctk.CTkFrame(top, fg_color="transparent", width=10, height=10)
         self.left.grid(row=0, column=0, sticky="nsew", padx=(20, 20), pady=20)
         self.left.grid_columnconfigure(0, weight=1)
-        ctk.CTkFrame(top, width=1, corner_radius=0, fg_color=C["border"]).grid(row=0, column=1, sticky="ns", pady=20)
-        right = ctk.CTkFrame(top, fg_color="transparent")
+        # Разделитель во всю высоту содержимого, как border-left правой колонки в макете (рамка CustomTkinter
+        # толщиной 1 px не рисуется — обычная рамка Tk, как в шапке окна)
+        tk.Frame(top, width=1, bg=C["border"]).grid(row=0, column=1, sticky="ns", pady=20)
+        right = ctk.CTkFrame(top, fg_color="transparent", width=10, height=10)
         right.grid(row=0, column=2, sticky="nsew", padx=20, pady=20)
         right.grid_columnconfigure(0, minsize=RIGHT_WIDTH, weight=1)
         right.grid_rowconfigure(1, weight=1)
@@ -365,7 +362,7 @@ class MainPage(ctk.CTkFrame):
         return row, title
 
     def _tiles(self, master, row=1):
-        grid = ctk.CTkFrame(master, fg_color="transparent")
+        grid = ctk.CTkFrame(master, fg_color="transparent", width=10, height=10)
         grid.grid(row=row, column=0, sticky="ew", pady=(14, 0))
         grid.grid_columnconfigure((0, 1), weight=1, uniform="tile")
         tiles = []
@@ -379,12 +376,12 @@ class MainPage(ctk.CTkFrame):
     def _build_left_views(self):
         views = {}
         # С чего начать
-        first = ctk.CTkFrame(self.left, fg_color="transparent")
+        first = ctk.CTkFrame(self.left, fg_color="transparent", width=10, height=10)
         first.grid_columnconfigure(0, weight=1)
         row, self.first_title = self._title_row(first)
         self.first_meta = ctk.CTkLabel(row, text="", font=F["label"], text_color=C["text_muted"], height=22)
         self.first_meta.grid(row=0, column=1, sticky="e")
-        steps = ctk.CTkFrame(first, fg_color="transparent")
+        steps = ctk.CTkFrame(first, fg_color="transparent", width=10, height=10)
         steps.grid(row=1, column=0, sticky="ew", pady=(14, 0))
         steps.grid_columnconfigure(0, weight=1)
         self.steps = [StepRow(steps, 1), StepRow(steps, 2, lambda: self.controller.select_frame("rules")),
@@ -393,7 +390,7 @@ class MainPage(ctk.CTkFrame):
             step.grid(row=i, column=0, sticky="ew", pady=(0 if i == 0 else 8, 0))
         views["first"] = first
         # Конфигурация запуска
-        config = ctk.CTkFrame(self.left, fg_color="transparent")
+        config = ctk.CTkFrame(self.left, fg_color="transparent", width=10, height=10)
         config.grid_columnconfigure(0, weight=1)
         row, self.config_title = self._title_row(config)
         self.config_edit = Button(row, "", kind="link", height=24, pad_x=4,
@@ -402,7 +399,7 @@ class MainPage(ctk.CTkFrame):
         self.config_tiles = self._tiles(config)
         views["config"] = config
         # Текущая сессия
-        session = ctk.CTkFrame(self.left, fg_color="transparent")
+        session = ctk.CTkFrame(self.left, fg_color="transparent", width=10, height=10)
         session.grid_columnconfigure(0, weight=1)
         row, self.session_title = self._title_row(session)
         self.session_status = ctk.CTkLabel(row, text="", font=F["button_bold"], height=22, compound="left")
@@ -410,7 +407,7 @@ class MainPage(ctk.CTkFrame):
         self.session_tiles = self._tiles(session)
         views["session"] = session
         # Итог сессии
-        summary = ctk.CTkFrame(self.left, fg_color="transparent")
+        summary = ctk.CTkFrame(self.left, fg_color="transparent", width=10, height=10)
         summary.grid_columnconfigure(0, weight=1)
         row, self.summary_title = self._title_row(summary)
         self.summary_more = Button(row, "", kind="ghost", icon_name="file-text", icon_size=14, height=26, pad_x=8,
@@ -445,13 +442,13 @@ class MainPage(ctk.CTkFrame):
         self.note = ctk.CTkLabel(right, text="", font=F["label"], text_color=C["text_muted"], wraplength=RIGHT_WIDTH - 8,
                                  justify="center")
         self.note.grid(row=1, column=0, sticky="ew", pady=10)
-        controls = ctk.CTkFrame(right, fg_color="transparent")
+        controls = ctk.CTkFrame(right, fg_color="transparent", width=10, height=10)
         controls.grid(row=2, column=0, sticky="ew")
         controls.grid_columnconfigure((0, 1), weight=1, uniform="ctl")
-        self.pause_button = KeyButton(controls, "", "F9", kind="pause", command=self.pause_or_continue,
+        self.pause_button = KeyButton(controls, "", "F9", kind="pause", command=self.pause_or_continue, height=42,
                                       tooltip=lambda: get_text(self.lang, self._pause_tip))
         self.pause_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self.stop_button = KeyButton(controls, "", "F10", kind="stop", command=self.stop_bot,
+        self.stop_button = KeyButton(controls, "", "F10", kind="stop", command=self.stop_bot, height=42,
                                      tooltip=lambda: get_text(self.lang, "main_tip_stop"))
         self.stop_button.grid(row=0, column=1, sticky="ew", padx=(4, 0))
         self._pause_tip = "main_tip_pause"
@@ -476,8 +473,7 @@ class MainPage(ctk.CTkFrame):
             chip = Chip(chips, "", selected=key == self.filter, command=lambda k=key: self.set_filter(k))
             chip.pack(side="left", padx=(0 if i == 0 else 6, 0))
             self.chips[key] = chip
-        ctk.CTkFrame(card, height=1, corner_radius=0, fg_color=C["border"]).grid(row=1, column=0, sticky="new",
-                                                                                padx=1)
+        tk.Frame(card, height=1, bg=C["border"]).grid(row=1, column=0, sticky="ew", padx=1)
         body = ctk.CTkFrame(card, fg_color="transparent")
         body.grid(row=2, column=0, sticky="nsew", padx=10, pady=10)
         body.grid_columnconfigure(0, weight=1)
@@ -1127,8 +1123,12 @@ class MainPage(ctk.CTkFrame):
         self._update_empty()
 
     def _insert(self, entry):
+        """Строка журнала. Перенос — перед строкой, а не после: иначе под последней строкой пустая строка,
+        и при прокрутке вниз внизу журнала остаётся пустое место."""
         line, _category, color, time_end, span = entry
         box = self.log_box
+        if box.compare("end-1c", "!=", "1.0"):
+            box.insert("end", "\n", ("line",))
         if time_end:
             box.insert("end", line[:time_end], ("time", "line"))
         pos = time_end
@@ -1137,7 +1137,7 @@ class MainPage(ctk.CTkFrame):
                 box.insert("end", line[pos:span[0]], ("line",))
             box.insert("end", line[span[0]:span[1]], (f"c_{color}", "line"))
             pos = span[1]
-        box.insert("end", line[pos:] + "\n", ("line",))
+        box.insert("end", line[pos:], ("line",))
 
     def _render_log(self):
         """Заново показать строки выбранной таблетки (последние MAX_SHOWN)."""
