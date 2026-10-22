@@ -1,8 +1,8 @@
 @echo off
-:: Новое окно программы (задача 15). Старое окно по-прежнему открывает start.bat
+:: Старое окно программы (на всякий случай). Обычный запуск start.bat открывает новое окно (задача 15)
 chcp 65001 >nul
 
-echo [SYSTEM] Initializing Hero Wars: Knowledge Engine (new window)...
+echo [SYSTEM] Initializing Hero Wars: Knowledge Engine (old window)...
 
 :: Check if the virtual environment exists by looking for the activation script
 IF NOT EXIST "venv\Scripts\activate.bat" (
@@ -20,8 +20,8 @@ IF NOT EXIST "venv\Scripts\activate.bat" (
 )
 
 echo.
-echo [SYSTEM] Launching the new window (gui.py --new-ui)...
-python gui.py --new-ui
+echo [SYSTEM] Launching the old window (gui.py --old-ui)...
+python gui.py --old-ui
 
 :: Keep the console window open if the GUI crashes unexpectedly
 pause
