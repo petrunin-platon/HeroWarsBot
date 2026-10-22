@@ -47,7 +47,8 @@ def test_colors_match_design():
 
 def test_no_hex_outside_theme():
     """Цвета пишутся только в ui/theme.py (design/README.md: «не писать hex руками в виджетах»)."""
-    for path in ("ui/widgets.py", "ui/demo.py", "ui/icons/__init__.py", "ui/freeze_guard.py"):
+    for path in ("ui/widgets.py", "ui/demo.py", "ui/icons/__init__.py", "ui/freeze_guard.py", "ui/app.py",
+                 "ui/hotkeys.py", "ui/status.py", "ui/window_fit.py", "ui/ui_settings.py", "ui/phone.py"):
         text = (ROOT / path).read_text(encoding="utf-8")
         found = set(re.findall(r'"#[0-9A-Fa-f]{6}"', text))
         assert not found, f"{path}: {found}"

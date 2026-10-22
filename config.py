@@ -37,3 +37,6 @@ PAUSE_FLAG_FILE = "pause.flag"
 
 # Системный заголовок окна трансляции (scrcpy / эмулятор)
 GAME_WINDOW_TITLE = "HeroWarsBot_Arena"
+
+# Версия программы (показывается в окне программы)
+APP_VERSION = "1.6.1"
