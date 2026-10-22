@@ -802,7 +802,8 @@ class MainPage(ctk.CTkFrame):
             pass
 
     def hud_view(self):
-        """Что показать в мини-баре: состояние, этажи, цель сессии с полоской (как на главной), события."""
+        """Что показать в мини-баре: состояние, комнаты и этажи, время, цель сессии с полоской (как на главной),
+        среднее время комнаты и прогноз до цели, ХП пака (пороги — как у бота при запуске), события."""
         if self.questions:
             state = "sos"
         elif self.link.debug_wait:
@@ -825,8 +826,13 @@ class MainPage(ctk.CTkFrame):
             else:
                 done_text, target_text = log_lines.group_digits(done), log_lines.group_digits(target)
             goal_view = (goal[0], done_text, target_text, share)
-        return {"state": state, "floors": stats.floors, "goal": goal_view,
-                "titanite": log_lines.group_digits(stats.titanite), "feed": self.hud_feed}
+        elapsed = stats.elapsed()
+        settings = (self.run_config or self.config)["settings"]
+        per_hour = round(stats.titanite * 3600 / elapsed) if stats.titanite and elapsed >= 60 else None
+        return {"state": state, "rooms": stats.rooms, "floors": stats.floors, "elapsed": elapsed, "goal": goal_view,
+                "titanite": log_lines.group_digits(stats.titanite), "avg": stats.avg_room(),
+                "eta": hud_events.eta_seconds(goal, progress, elapsed), "per_hour": per_hour,
+                "panic": settings.panic_hp, "heal_hp": settings.heal_hp, "feed": self.hud_feed}
 
     def raise_questions(self, open_missing=False):
         """Поднять открытые окна SOS (и «Собери состав», «Остановить бота?») над игрой: кнопка мини-бара на SOS.
