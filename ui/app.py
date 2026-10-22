@@ -177,7 +177,8 @@ class App(ctk.CTk):
             self.nav[name] = button
 
         bottom = ctk.CTkFrame(rail, fg_color="transparent")
-        bottom.pack(side="bottom", pady=(0, 12))
+        # Низ кнопки языка — вровень с низом страницы (журнала главной): тот же отступ, что у содержимого
+        bottom.pack(side="bottom", pady=(0, S["content_padding"]))
         self.tg_button = DotIconButton(bottom, "send", C["text_muted"], icon_size=18, tooltip_side="right",
                                        tooltip=self._telegram_tip, command=self.open_telegram)
         self.tg_button.pack(pady=(0, 8))

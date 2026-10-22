@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw
 from i18n import get_text
 from ui import theme
 from ui.icons import dot, icon
-from ui.widgets import Button, ClickFrame, TitanAvatar, titan_name
+from ui.widgets import Button, ClickFrame, TitanAvatar, present_window, titan_name
 
 C = theme.COLORS
 T = theme.TINTS
@@ -176,7 +176,7 @@ class TitanPicker(ctk.CTkToplevel):
         self._build_columns()
         self._build_footer(apply_text or get_text(lang, "pick_apply"), apply_kind)
         self._refresh()
-        self.after(10, self._show_centered, root)
+        present_window(self, lambda: self._place_centered(root), hidden=lambda: self._done)
 
     # ── Части окна ──────────────────────────────────────────────────────────
     def _build_header(self):
@@ -316,23 +316,13 @@ class TitanPicker(ctk.CTkToplevel):
         self.apply_button.set_enabled(ok)
 
     # ── Показ и закрытие ────────────────────────────────────────────────────
-    def _show_centered(self, root):
-        if self._done:
-            return
-        try:
-            self.geometry(f"{WINDOW[0]}x{WINDOW[1]}")
-            self.update_idletasks()
-            w, h = WINDOW
-            x = root.winfo_rootx() + (root.winfo_width() - w) // 2
-            y = root.winfo_rooty() + (root.winfo_height() - h) // 3
-            x = max(0, min(x, self.winfo_screenwidth() - w))
-            y = max(0, min(y, self.winfo_screenheight() - h - 40))
-            self.geometry(f"{w}x{h}+{x}+{y}")
-            self.deiconify()
-            self.lift()
-            self.focus_set()
-        except Exception:
-            pass
+    def _place_centered(self, root):
+        w, h = WINDOW
+        x = root.winfo_rootx() + (root.winfo_width() - w) // 2
+        y = root.winfo_rooty() + (root.winfo_height() - h) // 3
+        x = max(0, min(x, self.winfo_screenwidth() - w))
+        y = max(0, min(y, self.winfo_screenheight() - h - 40))
+        self.geometry(f"{w}x{h}+{x}+{y}")
 
     def apply(self):
         if self._done or not (MIN_TITANS <= len(self.chosen) <= MAX_TITANS):

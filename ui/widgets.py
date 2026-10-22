@@ -50,6 +50,51 @@ def _frameless_window(root, inactive=False):
     return top
 
 
+SHOW_DELAY_MS = 50       # окно показывается не сразу: сначала CustomTkinter перекрашивает заголовок (см. present_window)
+
+
+def present_window(window, place, hidden=lambda: False, on_shown=None):
+    """Показать готовое окно (CTkToplevel): place() ставит размер и место, потом окно появляется сверху.
+
+    В Windows CustomTkinter после создания окна и после resizable() перекрашивает заголовок в тёмный: прячет окно
+    и через миг возвращает в то состояние, какое было ДО перекраски. Показали окно в этот миг — оно снова пропадает
+    (шаг 3: окно «Собери состав» появлялось и сразу исчезало), а показанное раньше моргает и дорисовывается на глазах.
+    Поэтому ждём, пока перекраска кончится (её флаг в CustomTkinter), и только потом показываем; через 0,3 с проверяем,
+    что окно правда на экране. hidden() — окно закрыли или спрятали нарочно: тогда не показываем."""
+    def attempt(left):
+        if hidden():
+            return
+        try:
+            if getattr(window, "_windows_set_titlebar_color_called", False) and left > 0:
+                window.after(20, attempt, left - 1)
+                return
+            place()
+            window.deiconify()
+            window.lift()
+            window.focus_set()
+            window.after(300, check, 3)
+        except tk.TclError:
+            return
+        if on_shown:
+            on_shown()
+
+    def check(left):
+        if hidden():
+            return
+        try:
+            if window.state() == "withdrawn" and left > 0:
+                window.deiconify()
+                window.lift()
+                window.after(300, check, left - 1)
+        except tk.TclError:
+            pass
+
+    try:
+        window.after(SHOW_DELAY_MS, attempt, 100)
+    except tk.TclError:
+        pass
+
+
 def _pointer_inside(widget):
     """Мышь над виджетом (или над его частями: у кнопок CustomTkinter внутри несколько виджетов)."""
     try:
@@ -752,22 +797,15 @@ class ConfirmDialog(ctk.CTkToplevel):
         self._done = False
         self.protocol("WM_DELETE_WINDOW", lambda: self._finish("cancel"))
         self.bind("<Escape>", lambda _e: self._finish("cancel"))
-        self.after(10, self._show_centered, root)
+        present_window(self, lambda: self._place_centered(root), hidden=lambda: self._done,
+                       on_shown=lambda: self._grab_when_visible(20))
 
-    def _show_centered(self, root):
-        if self._done:
-            return
-        try:
-            self.update_idletasks()
-            w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-            x = root.winfo_rootx() + (root.winfo_width() - w) // 2
-            y = root.winfo_rooty() + (root.winfo_height() - h) // 3
-            self.geometry(f"+{max(0, x)}+{max(0, y)}")
-            self.deiconify()
-            self.lift()
-        except tk.TclError:
-            return
-        self._grab_when_visible(20)
+    def _place_centered(self, root):
+        self.update_idletasks()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        x = root.winfo_rootx() + (root.winfo_width() - w) // 2
+        y = root.winfo_rooty() + (root.winfo_height() - h) // 3
+        self.geometry(f"+{max(0, x)}+{max(0, y)}")
 
     def _grab_when_visible(self, tries):
         """Сделать окно модальным, когда оно уже на экране. Без wait_visibility: в Windows оно может не дождаться

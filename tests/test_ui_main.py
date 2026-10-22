@@ -372,3 +372,29 @@ def test_new_buttons_hover_changes_colors_only(app):
         widget._paint()
         assert not any(set(c) & {"font", "text", "image"} for c in calls), calls
     picker.cancel()
+
+
+@gui
+def test_window_is_shown_after_windows_titlebar_repaint(app):
+    """Замечание к шагу 3: «Собери состав» появлялось и тут же пропадало. В Windows CustomTkinter перекрашивает заголовок
+    нового окна: прячет его и возвращает прежнее состояние. Окно показывается только после перекраски, и если его всё же
+    спрятали — показывается снова."""
+    from ui.titan_picker import TitanPicker
+    picker = TitanPicker(app, "RU", on_apply=lambda team: None, room="fire")
+    picker._windows_set_titlebar_color_called = True        # идёт перекраска заголовка (как в Windows)
+    pump(app, 0.4)
+    assert picker.state() == "withdrawn"                    # пока перекраска не кончилась — не показываем
+    picker._windows_set_titlebar_color_called = False
+    assert pump(app, 1, until=lambda: picker.state() == "normal")
+    picker.withdraw()                                       # CustomTkinter вернул «как было до перекраски» — спрятал
+    assert pump(app, 1.5, until=lambda: picker.state() == "normal")  # окно показалось снова
+    picker.cancel()
+
+
+@gui
+def test_last_log_line_has_no_empty_line_below(app):
+    dash = app.frames["dash"]
+    for i in range(3):
+        app.events.put(("bot_line", f"10:00:0{i}.000 [НАВИГАЦИЯ] строка {i}\n"))
+    assert pump(app, 2, until=lambda: len(shown_lines(dash)) == 3)
+    assert dash.log_box.get("end-2c", "end-1c") == "2"      # после последней строки нет переноса
