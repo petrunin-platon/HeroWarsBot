@@ -57,6 +57,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Пройдено комнат: {n}",
         "al_stuck_pause": "⏸ Умный старт не помог. Бот на мягкой паузе: верните игру в коридор подземелья и снимите паузу в окне программы.",
         "al_stuck_retry": "Пробую умный старт.",
+        "check_title": "Проверка связи: всё работает",
+        "check_text": "Сюда будут приходить окна SOS, тревоги бота и итог сессии.",
     },
     "EN": {
         "not_read": "not read",
@@ -108,6 +110,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Rooms cleared: {n}",
         "al_stuck_pause": "⏸ Smart start did not help. The bot is on soft pause: bring the game back to the dungeon corridor and lift the pause in the program window.",
         "al_stuck_retry": "Trying smart start.",
+        "check_title": "Connection test: everything works",
+        "check_text": "SOS windows, bot alerts and the session summary will arrive here.",
     },
     "UK": {
         "not_read": "не прочитано",
@@ -159,6 +163,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Пройдено кімнат: {n}",
         "al_stuck_pause": "⏸ Розумний старт не допоміг. Бот на м'якій паузі: поверніть гру в коридор підземелля і зніміть паузу у вікні програми.",
         "al_stuck_retry": "Пробую розумний старт.",
+        "check_title": "Перевірка зв'язку: все працює",
+        "check_text": "Сюди надходитимуть вікна SOS, тривоги бота та підсумок сесії.",
     },
     "DE": {
         "not_read": "nicht gelesen",
@@ -210,6 +216,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Geschaffte Räume: {n}",
         "al_stuck_pause": "⏸ Der Smart-Start hat nicht geholfen. Der Bot ist in der sanften Pause: Bring das Spiel zurück in den Dungeon-Korridor und hebe die Pause im Programmfenster auf.",
         "al_stuck_retry": "Versuche Smart-Start.",
+        "check_title": "Verbindungstest: alles funktioniert",
+        "check_text": "Hier kommen SOS-Fenster, Bot-Warnungen und die Sitzungsbilanz an.",
     },
     "ES": {
         "not_read": "no leído",
@@ -261,6 +269,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Salas pasadas: {n}",
         "al_stuck_pause": "⏸ El inicio inteligente no ayudó. El bot está en pausa suave: devuelve el juego al pasillo de la mazmorra y quita la pausa en la ventana del programa.",
         "al_stuck_retry": "Probando el inicio inteligente.",
+        "check_title": "Prueba de conexión: todo funciona",
+        "check_text": "Aquí llegarán las ventanas SOS, las alertas del bot y el resumen de la sesión.",
     },
     "FR": {
         "not_read": "non lu",
@@ -312,6 +322,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Salles terminées : {n}",
         "al_stuck_pause": "⏸ Le démarrage intelligent n'a pas aidé. Le bot est en pause douce : ramenez le jeu dans le couloir du donjon et levez la pause dans la fenêtre du programme.",
         "al_stuck_retry": "J'essaie le démarrage intelligent.",
+        "check_title": "Test de connexion : tout fonctionne",
+        "check_text": "Les fenêtres SOS, les alertes du bot et le bilan de session arriveront ici.",
     },
     "PL": {
         "not_read": "nie odczytano",
@@ -363,6 +375,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Przebyte komnaty: {n}",
         "al_stuck_pause": "⏸ Inteligentny start nie pomógł. Bot jest na miękkiej pauzie: przywróć grę do korytarza lochu i zdejmij pauzę w oknie programu.",
         "al_stuck_retry": "Próbuję inteligentnego startu.",
+        "check_title": "Test połączenia: wszystko działa",
+        "check_text": "Tu będą przychodzić okna SOS, alarmy bota i podsumowanie sesji.",
     },
     "PT": {
         "not_read": "não lido",
@@ -414,6 +428,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Salas concluídas: {n}",
         "al_stuck_pause": "⏸ O início inteligente não ajudou. O bot está em pausa suave: leve o jogo de volta ao corredor da masmorra e tire a pausa na janela do programa.",
         "al_stuck_retry": "Tentando o início inteligente.",
+        "check_title": "Teste de conexão: tudo funciona",
+        "check_text": "Aqui vão chegar as janelas SOS, os alertas do bot e o resumo da sessão.",
     },
     "TR": {
         "not_read": "okunamadı",
@@ -465,6 +481,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Geçilen oda: {n}",
         "al_stuck_pause": "⏸ Akıllı başlatma işe yaramadı. Bot yumuşak duraklatmada: oyunu zindan koridoruna geri getir ve duraklatmayı program penceresinden kaldır.",
         "al_stuck_retry": "Akıllı başlatma deneniyor.",
+        "check_title": "Bağlantı testi: her şey çalışıyor",
+        "check_text": "SOS pencereleri, bot uyarıları ve oturum özeti buraya gelecek.",
     },
     "ZH": {
         "not_read": "未读取",
@@ -516,6 +534,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "已通过房间：{n}",
         "al_stuck_pause": "⏸ 智能重启没有帮助。机器人处于软暂停：请把游戏带回地下城走廊，并在程序窗口中解除暂停。",
         "al_stuck_retry": "正在尝试智能重启。",
+        "check_title": "连接测试：一切正常",
+        "check_text": "SOS 窗口、机器人警报和会话总结会发送到这里。",
     },
     "KO": {
         "not_read": "읽지 못함",
@@ -567,6 +587,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "통과한 방: {n}",
         "al_stuck_pause": "⏸ 스마트 재시작이 소용없었습니다. 봇이 소프트 일시정지 상태입니다: 게임을 던전 복도로 돌려놓고 프로그램 창에서 일시정지를 해제하세요.",
         "al_stuck_retry": "스마트 재시작을 시도합니다.",
+        "check_title": "연결 확인: 모두 정상입니다",
+        "check_text": "SOS 창, 봇 경고, 세션 요약이 여기로 옵니다.",
     },
     "JA": {
         "not_read": "読み取れず",
@@ -618,6 +640,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "クリアした部屋: {n}",
         "al_stuck_pause": "⏸ スマート再開は効きませんでした。ボットはソフト一時停止中です: ゲームをダンジョンの通路に戻し、プログラムの画面で一時停止を解除してください。",
         "al_stuck_retry": "スマート再開を試します。",
+        "check_title": "接続テスト：問題ありません",
+        "check_text": "SOS ウィンドウ、ボットの警告、セッションのまとめがここに届きます。",
     },
     "KK": {
         "not_read": "оқылмады",
@@ -669,6 +693,8 @@ TG_TEXTS = {
         "al_stuck_rooms": "Өтілген бөлмелер: {n}",
         "al_stuck_pause": "⏸ Ақылды іске қосу көмектеспеді. Бот жұмсақ кідірісте: ойынды зындан дәлізіне қайтарып, кідірісті бағдарлама терезесінде алыңыз.",
         "al_stuck_retry": "Ақылды іске қосуды байқап көрем.",
+        "check_title": "Байланысты тексеру: бәрі жұмыс істейді",
+        "check_text": "SOS терезелері, бот дабылдары және сессия қорытындысы осында келеді.",
     },
 }
 

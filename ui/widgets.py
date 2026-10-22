@@ -923,32 +923,52 @@ class Switch(ctk.CTkSwitch):
 class Dropdown(ClickFrame):
     """Выпадающий список в цветах поля ввода (макет 03a: «Титанит ▾», «05:00»): высота 36, слева значок (по желанию),
     надпись, справа стрелка. Пункты — (ключ, надпись); command(ключ) — после выбора. icons — {ключ: (иконка, цвет)}.
-    Список — меню CustomTkinter (как выбор языка в полоске)."""
+    Список — меню CustomTkinter (как выбор языка в полоске).
+    Шаг 5б (макет 03b): badge — номер места в кружке слева («1» в «Приоритете дверей»), colors — {ключ: цвет надписи}
+    (стихия своим цветом), breaks — с каких пунктов начинать новую колонку меню (длинный список титанов — по стихиям)."""
 
-    def __init__(self, master, items, value, command=None, icons=None, width=140, mono=False, **kwargs):
+    def __init__(self, master, items, value, command=None, icons=None, width=140, mono=False, badge=None,
+                 colors=None, breaks=(), **kwargs):
         super().__init__(master, command=self.open, width=width, height=S["control_height"],
                          corner_radius=S["radius_control"], border_width=1, border_color=C["border"],
                          fg_color=C["bg_elevated"], **kwargs)
         self.items = list(items)
         self.value = value
         self.icons = icons or {}
+        self.colors = colors or {}
+        self.breaks = set(breaks)
         self.on_choose = command
         self._look = None
         self.grid_propagate(False)
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=1)
+        self._badge = None
+        if badge is not None:
+            self._badge = ctk.CTkLabel(self, text=str(badge), width=22, height=22, corner_radius=11,
+                                       fg_color=C["bg_primary"], text_color=C["text_secondary"], font=F["label"])
+            self._badge.grid(row=0, column=0, padx=(8, 0))
+            self.bind_parts(self._badge)
         self._icon_label = ctk.CTkLabel(self, text="", width=15, height=20)
         self._label = ctk.CTkLabel(self, text="", height=20, anchor="w", text_color=C["text"],
                                    font=F["mono_field"] if mono else F["body"])
-        self._label.grid(row=0, column=1, sticky="ew", padx=(10, 4))
+        self._label.grid(row=0, column=2, sticky="ew", padx=(10, 4))
         self._arrow = ctk.CTkLabel(self, text="", image=icon("chevron-down", C["text_muted"], 16), width=16, height=20)
-        self._arrow.grid(row=0, column=2, padx=(0, 10))
+        self._arrow.grid(row=0, column=3, padx=(0, 10))
         self.bind_parts(self._icon_label, self._label, self._arrow)
         self.menu = DropdownMenu(self.winfo_toplevel(), values=[text for _k, text in self.items],
                                  command=self._chosen, fg_color=C["bg_elevated"], hover_color=C["blue_button"],
                                  text_color=C["text"], font=F["text"], min_character_width=6)
+        self._break_columns()
         self._show_value()
         self._paint()
+
+    def _break_columns(self):
+        for i, (key, _text) in enumerate(self.items):
+            if key in self.breaks:
+                try:
+                    self.menu.entryconfigure(i, columnbreak=1)
+                except tk.TclError:
+                    pass
 
     def _paint(self):
         look = T["hover_elevated"] if self._hovering and self.enabled else C["bg_elevated"]
@@ -960,10 +980,13 @@ class Dropdown(ClickFrame):
         text = next((t for k, t in self.items if k == self.value), str(self.value))
         if self._label.cget("text") != text:
             self._label.configure(text=text)
+        color = self.colors.get(self.value, C["text"])
+        if self._label.cget("text_color") != color:
+            self._label.configure(text_color=color)
         if self.value in self.icons:
             name, color = self.icons[self.value]
             self._icon_label.configure(image=icon(name, color, 15))
-            self._icon_label.grid(row=0, column=0, padx=(10, 0))
+            self._icon_label.grid(row=0, column=1, padx=(10, 0))
             self._label.grid_configure(padx=(8, 4))
         else:
             self._icon_label.grid_forget()
@@ -991,6 +1014,7 @@ class Dropdown(ClickFrame):
         """Новые надписи (другой язык)."""
         self.items = list(items)
         self.menu.configure(values=[text for _k, text in self.items])
+        self._break_columns()
         self._show_value()
 
     def destroy(self):

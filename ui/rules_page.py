@@ -1,7 +1,7 @@
 """Страница «Мастер правил» нового окна (задача 15, шаг 5а; макеты 03a–03c, экран 8).
 
-Сверху три вкладки (сегменты): «База и комнаты» (ui/rules_base.py), «Авто-тактика и ХП» (шаг 5б), «Правила и перехваты»
-(шаг 5в) — две последние пока пустые (ваш ответ 22.10.2026: заглушки не нужны). Ниже — прокручиваемая вкладка,
+Сверху три вкладки (сегменты): «База и комнаты» (ui/rules_base.py), «Авто-тактика и ХП» (ui/rules_tactics.py, шаг 5б),
+«Правила и перехваты» (шаг 5в) — последняя пока пустая (ваш ответ 22.10.2026: заглушки не нужны). Ниже — прокручиваемая вкладка,
 внизу общий футер: «Все изменения сохранены» / «Есть несохранённые изменения», «Восстановить / Сброс» (с подтверждением),
 «Сохранить настройки». Пока бот работает, в футере подсказка «Бот возьмёт новые настройки при следующем запуске»
 (менять можно, как в старом окне: бот читает настройки при запуске).
@@ -9,7 +9,8 @@
 Все значения — в форме страницы (form — profile.yml, teams — основные паки), пишет их только «Сохранить настройки»
 (ваш ответ, сверка 4.1), и только то, что поменялось (ui/rules_store.py; ваше замечание: беречь диск).
 Уйти со страницы (или закрыть окно) с несохранёнными изменениями — окно «Сохранить изменения?» (ask_leave).
-Для старого кода страница по-прежнему frames["rules"] с open_tg_dialog() (точка Telegram в полоске).
+Для старого кода страница по-прежнему frames["rules"] с open_tg_dialog() (точка Telegram в полоске): с шага 5б —
+новое окно Telegram (ui/telegram_window.py) с кнопкой «Проверить Telegram».
 """
 import copy
 
@@ -21,6 +22,7 @@ from i18n import get_text
 from ui import rules_store, theme
 from ui.icons import icon
 from ui.rules_base import BaseTab
+from ui.rules_tactics import TacticsTab
 from ui.widgets import Button, ConfirmDialog, Toast
 
 C = theme.COLORS
@@ -44,6 +46,7 @@ class RulesPage(ctk.CTkFrame):
         self.field_errors = {}     # поля с ошибкой: что в них введено
         self.bot_running = False
         self._dialog = None
+        self._tg_window = None
         self.load()
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -76,6 +79,16 @@ class RulesPage(ctk.CTkFrame):
         self.saved_teams = copy.deepcopy(self.teams)
         self.field_errors = {}
 
+    def dirty_tab(self):
+        """На какой вкладке несохранённое (для «Сохранить изменения?»): открытая, если на ней, иначе первая."""
+        keys = set(rules_store.changed_keys(self.saved, self.form)) | set(self.field_errors)
+        tabs = []
+        if keys & set(rules_store.BASE_KEYS) or self.teams != self.saved_teams:
+            tabs.append("base")
+        if keys & set(rules_store.TACTICS_KEYS):
+            tabs.append("tactics")
+        return self.tab if self.tab in tabs else (tabs[0] if tabs else "base")
+
     def dirty(self):
         """Есть несохранённые изменения (в том числе поле с ошибкой)."""
         return bool(rules_store.changed_keys(self.saved, self.form) or self.teams != self.saved_teams
@@ -100,6 +113,7 @@ class RulesPage(ctk.CTkFrame):
         self.body.grid_rowconfigure(0, weight=1)
         self.body.grid_columnconfigure(0, weight=1)
         self.base = None
+        self.tactics = None
         self._show_tab()
 
         tk.Frame(self, height=1, bg=C["border"]).grid(row=2, column=0, sticky="ew")
@@ -144,19 +158,30 @@ class RulesPage(ctk.CTkFrame):
                     button.configure(text_color=color)
 
     def _show_tab(self):
-        """«База и комнаты» строится один раз; две другие вкладки пока пустые (шаги 5б и 5в)."""
+        """Вкладка строится один раз, при первом показе; «Правила и перехваты» пока пустая (шаг 5в).
+        «Авто-тактику» при каждом показе обновляем: «Бот решает сам» и общий порог живут на «Базе и комнатах»."""
         if self.tab == "base":
             if self.base is None:
                 self.base = BaseTab(self.body, self)
             self.base.grid(row=0, column=0, sticky="nsew")
         elif self.base is not None:
             self.base.grid_forget()
+        if self.tab == "tactics":
+            if self.tactics is None:
+                self.tactics = TacticsTab(self.body, self)
+            else:
+                self.tactics.refresh()
+            self.tactics.grid(row=0, column=0, sticky="nsew")
+        elif self.tactics is not None:
+            self.tactics.grid_forget()
 
     def rebuild_base(self):
-        """Построить вкладку заново из формы (язык, «Восстановить», «Не сохранять»)."""
-        if self.base is not None:
-            self.base.destroy()
-            self.base = None
+        """Построить вкладки заново из формы («Восстановить», «Не сохранять»)."""
+        for name in ("base", "tactics"):
+            tab = getattr(self, name)
+            if tab is not None:
+                tab.destroy()
+                setattr(self, name, None)
         self._show_tab()
 
     def rebuild_room(self, room):
@@ -212,9 +237,12 @@ class RulesPage(ctk.CTkFrame):
         self.changed()
 
     def open_tg_dialog(self):
-        """«Настроить Telegram» (и точка Telegram в полоске). Пока — старое окно (новое — шаг 5б); его «Применить»
+        """«Настроить Telegram» (и точка Telegram в полоске) — окно ui/telegram_window.py (шаг 5б). Его «Применить»
         меняет форму, в profile.yml пишет «Сохранить настройки»."""
-        from ui.telegram_dialog import TelegramDialog
+        from ui.telegram_window import TelegramWindow
+        if self._tg_window is not None and not self._tg_window.done:
+            self._tg_window.lift()
+            return
 
         def on_save(data):
             self.form["telegram"] = {"active": bool(data.get("active")), "token": str(data.get("token", "")),
@@ -223,7 +251,7 @@ class RulesPage(ctk.CTkFrame):
                 self.base.show_telegram()
             self.changed()
             self.log("[GUI] Настройки Telegram обновлены — нажмите «Сохранить настройки» в «Мастере правил».\n")
-        TelegramDialog(self.controller, self.controller, dict(self.form["telegram"]), on_save)
+        self._tg_window = TelegramWindow(self, self.lang, dict(self.form["telegram"]), on_save)
 
     def add_condition(self, room):
         """«+ Условие» — окно нового правила с этой стихией. Пока старое (новое — шаг 5в); правило оно пишет само."""
@@ -319,7 +347,7 @@ class RulesPage(ctk.CTkFrame):
             self.discard()
             proceed()
 
-        tab = self.text(TAB_KEYS["base"])
+        tab = self.text(TAB_KEYS[self.dirty_tab()])
         self._dialog = ConfirmDialog(self, self.text("rb_leave_title"), self.text("rb_leave_text").format(tab=tab),
                                      self.text("rb_leave_save"), on_confirm=save_and_go, kind="warning",
                                      lang=self.lang, discard_text=self.text("rb_leave_discard"),
@@ -333,4 +361,5 @@ class RulesPage(ctk.CTkFrame):
         for child in self.winfo_children():
             child.destroy()
         self.base = None
+        self.tactics = None
         self._build()

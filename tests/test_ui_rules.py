@@ -166,7 +166,8 @@ def test_first_save_creates_profile(workdir):
     state, keys = rules_store.save_profile(saved, dict(saved))
     assert state == rules_store.OK and set(keys) == set(rules_store.PROFILE_KEYS)
     profile = read_yaml(workdir / "profile.yml")
-    assert profile["global_thresholds"] == {"critical_hp": 40, "max_hp_delta": 30}
+    assert profile["global_thresholds"] == {"critical_hp": 40, "max_hp_delta": 30, "group_loss_titans": 3,
+                                            "group_loss_percent": 40, "titan_critical_hp": {}}  # и вкладка 5б
     assert profile["settings"]["target_titanite"] == 120 and profile["settings"]["auto_rollback"] is False
 
 
@@ -400,11 +401,11 @@ def test_close_window_asks_to_save(app):
 
 @needs_gui
 def test_telegram_dialog_changes_form_only(app, workdir, monkeypatch):
-    import ui.telegram_dialog
+    import ui.telegram_window
     calls = []
-    monkeypatch.setattr(ui.telegram_dialog, "TelegramDialog",
-                        lambda master, controller, data, callback: calls.append((data, callback)))
-    app.tg_button.invoke()                               # точка Telegram в полоске — окно настроек
+    monkeypatch.setattr(ui.telegram_window, "TelegramWindow",
+                        lambda master, lang, data, callback: calls.append((data, callback)))
+    app.tg_button.invoke()                               # точка Telegram в полоске — окно настроек (шаг 5б — новое)
     assert app.page == "rules" and calls[0][0]["chat_id"] == "42"
     calls[0][1]({"active": False, "token": "123:abc", "chat_id": "42"})
     page = app.frames["rules"]
