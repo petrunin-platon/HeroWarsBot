@@ -46,10 +46,12 @@ class StatusWatcher:
     def check(self):
         """Одна проверка: новое состояние кладётся в очередь, только если оно поменялось."""
         try:
-            phone = bool(self.window_exists(self.game_title))
-        except Exception:  # окна Windows не перечислились — считаем, что телефона нет
-            phone = False
-        self._report("phone", phone)
+            self._report("phone", bool(self.window_exists(self.game_title)))
+        except Exception:
+            # Окна Windows не перечислились — не знаем. Прежнее состояние оставляем: с шага 3 «телефона нет» во время
+            # фарма останавливает бота (как старое окно), а случайный сбой поиска окон фарм прерывать не должен
+            if "phone" not in self.state:
+                self._report("phone", False)
         try:
             mtime = os.path.getmtime(self.profile_path)
         except OSError:

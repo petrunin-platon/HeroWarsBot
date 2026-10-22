@@ -211,16 +211,17 @@ def sos_report(titans, info=None, is_manual=False, can_rollback=True, lang="RU")
 
 
 def sos_keyboard(is_manual=False, can_rollback=True, lang="RU"):
-    """Кнопки SOS: зелёная «Откатить» (или красная «Остановить»), синяя «Пройти руками», серая «Продолжить»."""
+    """Кнопки SOS: зелёная «Откатить» (или красная «Остановить»), синяя «Пройти руками», серая «Продолжить».
+    «Нет подходящего пака» (откатить нельзя, бой не ручной) — без «Продолжить»: в этом окне бот ждёт только
+    MANUAL, NEW_PACK или STOP (сверка нового окна, ошибка 3.1)."""
     if is_manual or not can_rollback:
         middle = button("🛑 " + get_text(lang, "tg_bot_stop"), "stop", RED)
     else:
         middle = button("🔄 " + get_text(lang, "tg_bot_rollback"), "rollback", GREEN)
-    return keyboard(
-        [middle],
-        [button("🎮 " + get_text(lang, "tg_bot_manual"), "manual", BLUE)],
-        [button("➡️ " + get_text(lang, "tg_bot_ignore"), "ignore")],
-    )
+    rows = [[middle], [button("🎮 " + get_text(lang, "tg_bot_manual"), "manual", BLUE)]]
+    if is_manual or can_rollback:
+        rows.append([button("➡️ " + get_text(lang, "tg_bot_ignore"), "ignore")])
+    return keyboard(*rows)
 
 
 def test_report(titans, lang="RU"):

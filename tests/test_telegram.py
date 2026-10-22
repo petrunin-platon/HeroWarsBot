@@ -192,6 +192,8 @@ def styles(markup):
 def test_buttons_are_colored():
     assert styles(tr.sos_keyboard()) == {"rollback": "success", "manual": "primary", "ignore": None}
     assert styles(tr.sos_keyboard(is_manual=True))["stop"] == "danger"
+    # «Нет подходящего пака»: «Продолжить» боту там непонятно (ошибка 3.1 сверки нового окна)
+    assert styles(tr.sos_keyboard(can_rollback=False)) == {"stop": "danger", "manual": "primary"}
     assert styles(tr.test_keyboard()) == {"test_confirm": "success", "test_retry": "primary"}
     assert styles(tr.pack_confirm_keyboard()) == {"confirm_pack": "success", "retry_pack": "primary"}
 

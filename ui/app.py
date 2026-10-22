@@ -3,15 +3,16 @@
 Запуск: start.bat или python gui.py (обычный запуск). Старое окно на всякий случай — start_old.bat или python gui.py --old-ui.
 
 Каркас — по design/README.md («Каркас окна»): слева полоска 64 px (логотип, 6 разделов с подсказками, Telegram, язык),
-сверху шапка 56 px (название раздела, плашка телефона, три кнопки), ниже — страница. Страницы пока — старые вкладки
-(ui/dashboard.py и другие), их заменят следующие шаги. Для них окно — прежний controller: current_lang, frames, select_frame.
+сверху шапка 56 px (название раздела, плашка телефона, три кнопки), ниже — страница. С шага 3 главная новая
+(ui/main_page.py), остальные страницы пока — старые вкладки, их заменят следующие шаги. Для них окно — прежний
+controller: current_lang, frames, select_frame; главная для них — frames["dash"] с append_log().
 
-Связь с ботом не меняется: бота запускает, читает и останавливает старая главная (frames["dash"]).
+Связь с ботом не меняется (протокол тот же): бота запускает, читает и останавливает главная через ui/bot_link.py.
 Кнопки шапки и F9/F10 вызывают её же: та же пауза (pause.flag), тот же стоп, те же строки в журнале.
 
 Чтобы окно не зависало и закрывалось крестиком (правила — в начале ui/widgets.py):
-- всё, что ждёт (окно scrcpy, клавиши, profile.yml, кнопки шапки), работает в фоновых потоках; в окно — через очередь
-  self.events, её окно разбирает раз в 100 мс (after);
+- всё, что ждёт (окно scrcpy, клавиши, profile.yml, кнопки шапки, строки бота, Telegram), работает в фоновых потоках;
+  в окно — через очередь self.events, её окно разбирает раз в 100 мс (after);
 - крестик: если бот работает — вопрос «Остановить бота?»; потом остановить потоки и свои after, спрятать окно,
   остановить бота и scrcpy (как старое окно) и закрыть окно — mainloop кончается, процесс выходит сам;
 - сторож ui/freeze_guard.py пишет bot_data/debug/ui_freeze_*.txt, если окно не отвечает 5 с.
@@ -29,11 +30,11 @@ from i18n import LANGUAGES, get_text
 from ui import phone, theme, ui_settings
 from ui.about_tab import AboutFrame
 from ui.analytics_tab import AnalyticsFrame
-from ui.dashboard import DashboardFrame
 from ui.freeze_guard import FreezeGuard
 from ui.guide_tab import GuideFrame
 from ui.hotkeys import HotkeyWatcher
 from ui.icons import dot, icon, icon_with_dot
+from ui.main_page import MainPage
 from ui.rules_tab import RulesFrame
 from ui.statistics_tab import StatisticsFrame
 from ui.status import StatusWatcher
@@ -47,7 +48,7 @@ S = theme.SIZES
 
 # Разделы: имя (как в старом окне), старая вкладка, иконка, подсказка в полоске, заголовок в шапке
 PAGES = (
-    ("dash", DashboardFrame, "house", "btn_main", "page_title_main"),
+    ("dash", MainPage, "house", "btn_main", "page_title_main"),
     ("rules", RulesFrame, "sliders-vertical", "btn_rules", "btn_rules"),
     ("analytics", AnalyticsFrame, "activity", "btn_analytics", "btn_analytics"),
     ("stats", StatisticsFrame, "chart-no-axes-column", "btn_stats", "page_title_stats"),
@@ -140,8 +141,6 @@ class App(ctk.CTk):
         self.content.grid_columnconfigure(0, weight=1)
 
         self.frames = {name: page(self.content, self) for name, page, *_ in PAGES}
-        # Заголовок, «Устройство» и три кнопки старой главной теперь в шапке нового окна (те же действия) — прячем
-        self.frames["dash"].lbl_title.master.grid_remove()
         self.plate.show(False, self.current_lang)
         self.select_frame("dash")
         self.set_language(self.current_lang, force=True)
@@ -254,7 +253,8 @@ class App(ctk.CTk):
         if lang == self.current_lang and not force:
             return
         self.current_lang = lang
-        self.frames["dash"].append_log(f"[GUI] Язык интерфейса изменен: {LANGUAGES[lang]} ({lang})\n")
+        if not force:  # при запуске журнал пустой: язык окна не новость (макет первого запуска)
+            self.frames["dash"].append_log(f"[GUI] Язык интерфейса изменен: {LANGUAGES[lang]} ({lang})\n")
         self.title(get_text(lang, "app_title"))
         self.lang_button.configure(text=lang)
         self._show_title()
@@ -279,21 +279,27 @@ class App(ctk.CTk):
                 except queue.Empty:
                     break
                 self._handle_event(kind, value)
+            self.frames["dash"].flush_log()
         finally:
             if not self._closing:
                 self._timers["drain"] = self.after(DRAIN_MS, self._drain)
 
     def _handle_event(self, kind, value):
+        dash = self.frames["dash"]
         if kind == "log":
-            self.frames["dash"].append_log(value)
+            dash.append_log(value)
         elif kind == "phone":
             self.phone_connected = value
             self.plate.show(value, self.current_lang)
+            dash.set_phone(value)
         elif kind == "telegram":
             self.telegram_on = value
             self.tg_button.set_dot(C["success"] if value else C["text_muted"])
+            dash.set_telegram(value)
         elif kind == "hotkey":
             self.on_hotkey(value)
+        else:  # строки и события бота, ответ scrcpy, ответ из Telegram — главной
+            dash.on_event(kind, value)
 
     # ── Кнопки шапки, Telegram, F9/F10 ──────────────────────────────────────
     def sleep_phone(self):
@@ -324,18 +330,18 @@ class App(ctk.CTk):
         self.frames["rules"].open_tg_dialog()
 
     def bot_running(self):
-        proc = self.frames["dash"].bot_process
-        return proc is not None and proc.poll() is None
+        return self.frames["dash"].bot_running()
 
     def on_hotkey(self, name):
-        """F9 — мягкая пауза / снять паузу, F10 — экстренный стоп: как кнопки старой главной."""
+        """F9 — как кнопка «Пауза» главной (мягкая пауза, снять паузу, «Продолжить» после паузы отладки),
+        F10 — как «СТОП»."""
         dash = self.frames["dash"]
         if not self.bot_running():
             dash.append_log(f"[GUI] Нажата {name}, но бот не запущен.\n")
             return
         dash.append_log(f"[GUI] Нажата {name}.\n")
         if name == "F9":
-            dash.toggle_pause()
+            dash.pause_or_continue()
         elif name == "F10":
             dash.stop_bot()
 

@@ -71,7 +71,7 @@ def test_titans_same_as_old_ui_and_game_pictures():
 def test_used_icons_exist():
     """Каждая иконка, которую называет код интерфейса, лежит в ui/icons; набор тот же, что в design/icons."""
     ours = {p.stem for p in (ROOT / "ui" / "icons").glob("*.png")}
-    assert ours == {p.stem for p in (ROOT / "design" / "icons").glob("*.png")}
+    assert ours == {p.stem for p in (ROOT / "design" / "icons").glob("*.png")} | theme.EXTRA_ICONS
     pattern = re.compile(r'(?:icon\(|icon_name=|IconButton\([^,]+, |"icon": |icon=)"([a-z0-9-]+)"')
     used = set()
     for path in (ROOT / "ui").glob("*.py"):
