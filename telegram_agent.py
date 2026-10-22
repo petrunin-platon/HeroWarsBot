@@ -164,6 +164,9 @@ class TelegramAgent:
         self.temp_pack = []
         self.main_msg_id = None
         self.prompt_msg_id = None
+        # Почему не ушло последнее окно SOS / проверки пака (None — ушло). По нему окно программы решает, повторять ли:
+        # повторяет, только если не было связи (NETWORK_ERROR), как тревоги бота (задача 15, шаг 3)
+        self.last_error = None
         
         # 🛡 Убиваем старые клики при каждом запуске агента!
         self._clear_history()
@@ -222,6 +225,7 @@ class TelegramAgent:
         """Скриншот с подписью (HTML) и цветными кнопками. Возвращает номер сообщения или None."""
         if not self.token or not self.chat_id: return None
         result, error = _post_text_or_photo(self.token, self.chat_id, caption, image_path, reply_markup, html=True)
+        self.last_error = error
         if error:
             print(f"[TELEGRAM] Сбой отправки: {error}")
             return None

@@ -370,6 +370,17 @@ class TitanAvatar(ctk.CTkFrame):
         self.configure(border_color=style["color"], fg_color=style["tint"])
         self._render()
 
+    def set_dim(self, dim):
+        """Бледный квадрат: титана нельзя выбрать (чужая стихия, уже выбрано 5). Только цвета — без перестройки."""
+        style = theme.element_style(theme.element_of(self.titan))
+        if dim:
+            self.configure(border_color=theme.blend(style["color"], C["bg_surface"], 0.4),
+                           fg_color=theme.blend(style["tint"], C["bg_surface"], 0.4))
+            self.label.configure(text_color=C["text_muted"])
+        else:
+            self.configure(border_color=style["color"], fg_color=style["tint"])
+            self.label.configure(text_color=C["text"])
+
 
 class Chip(ctk.CTkFrame):
     """Фильтр-«таблетка» высотой 30: выбранный — фон bg_elevated и светлая рамка, невыбранный — прозрачный.
@@ -457,6 +468,126 @@ class Chip(ctk.CTkFrame):
         else:
             self._label.pack_configure(padx=(left, 12))
             self._count.pack_forget()
+
+
+class ClickFrame(ctk.CTkFrame):
+    """Рамка, которая ведёт себя как кнопка: щелчок по ней или по любой её части — command(), наведение — _paint().
+    Наследник рисует себя в _paint() по self._hovering и сам решает, что перекрасить (только цвета и только если вид
+    поменялся — правило в начале файла). Части, добавленные после создания, подключает bind_parts()."""
+
+    def __init__(self, master, command=None, **kwargs):
+        super().__init__(master, **kwargs)
+        self.command = command
+        self.enabled = True
+        self._hovering = False
+        self._leave_id = None
+        self.bind_parts(self)
+
+    def bind_parts(self, *parts):
+        for part in parts:
+            part.bind("<Button-1>", self._frame_click, add="+")
+            part.bind("<Enter>", self._frame_enter, add="+")
+            part.bind("<Leave>", self._frame_leave, add="+")
+
+    def _paint(self):
+        pass
+
+    def _frame_click(self, _event=None):
+        if self.enabled and self.command:
+            self.command()
+
+    def _frame_enter(self, _event=None):
+        if not self._hovering:
+            self._hovering = True
+            self._paint()
+
+    def _frame_leave(self, _event=None):
+        if self._leave_id:
+            try:
+                self.after_cancel(self._leave_id)
+            except tk.TclError:
+                pass
+        try:
+            self._leave_id = self.after(30, self._leave_if_outside)
+        except tk.TclError:
+            self._leave_id = None
+
+    def _leave_if_outside(self):
+        self._leave_id = None
+        if not _pointer_inside(self):
+            self._hovering = False
+            self._paint()
+
+    def set_enabled(self, enabled):
+        if enabled != self.enabled:
+            self.enabled = enabled
+            self._paint()
+
+
+# Кнопки «Пауза F9», «Продолжить F9», «СТОП F10» (главная, макет 01_main): цвет рамки, цвет текста, иконка
+KEY_BUTTON_KINDS = {
+    "pause": (C["warning"], C["warning"], "pause-filled"),
+    "continue": (C["success"], C["success"], "play-filled"),
+    "stop": (C["danger"], C["danger_text"], "square-filled"),
+}
+
+
+class KeyButton(ClickFrame):
+    """Контурная кнопка с подписью клавиши справа (рамочка «F9»): высота 38, прозрачная, рамка и текст цвета вида.
+    Неактивная — бледная (пока бот не работает). set_kind() меняет вид и надпись («Пауза» ⇄ «Продолжить»)."""
+
+    def __init__(self, master, text, key, kind="pause", command=None, tooltip=None, height=38, width=100, **kwargs):
+        # width — наименьшая ширина: в сетке кнопка растягивается по колонке (у рамки CustomTkinter по умолчанию 200)
+        super().__init__(master, command=command, width=width, height=height, corner_radius=S["radius_control"],
+                         border_width=1, fg_color="transparent", **kwargs)
+        self.kind = kind
+        self._look = None
+        self.grid_propagate(False)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure((0, 4), weight=1)
+        self._icon_label = ctk.CTkLabel(self, text="", width=14, height=14)
+        self._icon_label.grid(row=0, column=1, padx=(0, 6))
+        self._label = ctk.CTkLabel(self, text=text, font=F["button"], height=20)
+        self._label.grid(row=0, column=2)
+        self._kbd = ctk.CTkFrame(self, corner_radius=3, border_width=1, fg_color="transparent", height=16)
+        self._kbd.grid(row=0, column=3, padx=(6, 0))
+        self._kbd_label = ctk.CTkLabel(self._kbd, text=key, font=(theme.MONO_FAMILY, 10), height=12, width=14)
+        self._kbd_label.pack(padx=4, pady=1)
+        self.bind_parts(self._icon_label, self._label, self._kbd, self._kbd_label)
+        self.tooltip = Tooltip(self, tooltip) if tooltip else None
+        if self.tooltip:
+            for part in (self._icon_label, self._label, self._kbd, self._kbd_label):
+                self.tooltip.attach(part)
+        self._paint()
+
+    def _paint(self):
+        border, text, icon_name = KEY_BUTTON_KINDS[self.kind]
+        if not self.enabled:
+            border, text = theme.blend(border, C["bg_surface"], 0.4), theme.blend(text, C["bg_surface"], 0.4)
+        fg = theme.blend(border, C["bg_surface"], 0.12) if self._hovering and self.enabled else "transparent"
+        look = (border, text, icon_name, fg)
+        if look == self._look:
+            return
+        old = self._look or (None, None, None, None)
+        self._look = look
+        if (border, fg) != (old[0], old[3]):
+            self.configure(border_color=border, fg_color=fg)
+        if (text, icon_name) != old[1:3]:
+            # Цвет текста и иконка меняются только при смене вида или выключении, не при наведении
+            self._label.configure(text_color=text)
+            self._kbd_label.configure(text_color=text)
+            self._kbd.configure(border_color=theme.blend(text, C["bg_surface"], 0.5))
+            self._icon_label.configure(image=icon(icon_name, text, 14))
+
+    def set_kind(self, kind, text=None):
+        self.kind = kind
+        if text is not None and text != self._label.cget("text"):
+            self._label.configure(text=text)
+        self._paint()
+
+    def set_text(self, text):
+        if text != self._label.cget("text"):
+            self._label.configure(text=text)
 
 
 class Field(ctk.CTkFrame):
@@ -651,6 +782,21 @@ class ConfirmDialog(ctk.CTkToplevel):
                 self.after(50, self._grab_when_visible, tries - 1)
         except tk.TclError:
             pass
+
+    def close(self):
+        """Закрыть без ответа (вопрос устарел: например, бот уже решил сам)."""
+        if self._done:
+            return
+        self._done = True
+        try:
+            self.grab_release()
+            self.destroy()
+        except tk.TclError:
+            pass
+
+    @property
+    def done(self):
+        return self._done
 
     def _finish(self, result):
         if self._done:  # двойной щелчок или Esc после кнопки — второй раз не обрабатываем

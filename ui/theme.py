@@ -120,6 +120,22 @@ TITANS = {
 }
 TITAN_ELEMENT = {name: el for el, names in TITANS.items() for name in names}
 
+# Эларитовые титаны (ответ пользователя 22.10.2026, шаг 3). Паллант, Орм и Алекто — эларитовые, но встают и в комнату
+# своей стихии (поэтому они в TITANS выше). Метида — только эларит: её ставят лишь в смешанную комнату.
+# Цвет — как у смешанной комнаты (другой комнаты у неё нет), значок — кристалл. Название — i18n.py, elem_elarite
+ELARITE_ONLY = ["metida"]
+ELEMENTS["elarite"] = {**ELEMENTS["mix"], "icon": "gem"}
+TITAN_ELEMENT.update({name: "elarite" for name in ELARITE_ONLY})
+
+
+def room_titans(room):
+    """Кого можно поставить в комнату: в комнату земли, воды и огня — только титанов этой стихии,
+    в смешанную — всех, и Метиду. Комната неизвестна — всех."""
+    if room in ("earth", "water", "fire"):
+        return list(TITANS[room])
+    return [name for names in TITANS.values() for name in names] + ELARITE_ONLY
+
+
 # Цвета тегов журнала
 LOG_TAGS = {
     "СИСТЕМА": "#5BC0EB",
@@ -129,6 +145,28 @@ LOG_TAGS = {
     "ОШИБКА": COLORS["danger_text"],
     "SOS": COLORS["danger_text"],
     "ML": "#BF8CF0",
+}
+
+# Журнал нового окна (шаг 3): бот пишет свои теги ([ТАКТИКА], [НАВИГАЦИЯ] ...), поэтому тег красится цветом своей
+# «таблетки» (ui/log_lines.py): бои — зелёным, правила — жёлтым (как [ПЕРЕХВАТ] в макете), система — голубым, ошибки — красным.
+# Строки самого окна ([GUI]) — серым, время в начале строки — серым
+LOG_CATEGORY_COLORS = {
+    "fights": LOG_TAGS["БОЙ"],
+    "rules": LOG_TAGS["ПЕРЕХВАТ"],
+    "system": LOG_TAGS["СИСТЕМА"],
+    "errors": LOG_TAGS["ОШИБКА"],
+    "gui": LOG_TAGS["GUI"],
+}
+
+# Иконки ui/icons, которых нет в design/icons: нарисованы по контуру Lucide тем же размером (ui/icons/__init__.py)
+EXTRA_ICONS = {"minimize-2"}
+
+# Цель сессии на главной: значок и его цвет (кристалл титанита — фиолетовый, как в макете 01_main)
+GOAL_ICONS = {
+    "titanite": ("gem", "#9D4EDD"),
+    "rooms": ("door-open", COLORS["blue_text"]),
+    "floors": ("layers", COLORS["blue_text"]),
+    "time": ("gauge", COLORS["blue_text"]),
 }
 
 # ── Шрифты ───────────────────────────────────────────────────────────────────

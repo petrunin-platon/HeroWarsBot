@@ -48,7 +48,9 @@ def test_colors_match_design():
 def test_no_hex_outside_theme():
     """Цвета пишутся только в ui/theme.py (design/README.md: «не писать hex руками в виджетах»)."""
     for path in ("ui/widgets.py", "ui/demo.py", "ui/icons/__init__.py", "ui/freeze_guard.py", "ui/app.py",
-                 "ui/hotkeys.py", "ui/status.py", "ui/window_fit.py", "ui/ui_settings.py", "ui/phone.py"):
+                 "ui/hotkeys.py", "ui/status.py", "ui/window_fit.py", "ui/ui_settings.py", "ui/phone.py",
+                 "ui/main_page.py", "ui/sos_dialogs.py", "ui/titan_picker.py", "ui/bot_link.py", "ui/log_lines.py",
+                 "ui/launch_config.py", "ui/sos_telegram.py"):
         text = (ROOT / path).read_text(encoding="utf-8")
         found = set(re.findall(r'"#[0-9A-Fa-f]{6}"', text))
         assert not found, f"{path}: {found}"
@@ -71,7 +73,7 @@ def test_titans_same_as_old_ui_and_game_pictures():
 def test_used_icons_exist():
     """Каждая иконка, которую называет код интерфейса, лежит в ui/icons; набор тот же, что в design/icons."""
     ours = {p.stem for p in (ROOT / "ui" / "icons").glob("*.png")}
-    assert ours == {p.stem for p in (ROOT / "design" / "icons").glob("*.png")}
+    assert ours == {p.stem for p in (ROOT / "design" / "icons").glob("*.png")} | theme.EXTRA_ICONS
     pattern = re.compile(r'(?:icon\(|icon_name=|IconButton\([^,]+, |"icon": |icon=)"([a-z0-9-]+)"')
     used = set()
     for path in (ROOT / "ui").glob("*.py"):
