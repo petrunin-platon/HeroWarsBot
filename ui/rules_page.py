@@ -163,6 +163,9 @@ class RulesPage(ctk.CTkFrame):
         if self.base is not None:
             self.base.rooms[room].build()
 
+    def _room(self, room):
+        return self.base.rooms[room] if self.base is not None else None
+
     # ── Состояние футера ────────────────────────────────────────────────────
     def changed(self):
         """Любая правка формы: обновить надпись футера (только если она правда поменялась)."""
@@ -189,7 +192,8 @@ class RulesPage(ctk.CTkFrame):
     # ── Правки из вкладки ───────────────────────────────────────────────────
     def set_team(self, room, team):
         self.teams[room] = list(team)
-        self.rebuild_room(room)
+        if self._room(room):
+            self._room(room).show_team()    # только квадраты пака, не вся строка
         self.changed()
 
     def add_backup(self, room, team):
@@ -197,12 +201,14 @@ class RulesPage(ctk.CTkFrame):
             Toast(self, self.text("rb_pack_exists"), kind="info")
             return
         self.expanded[room] = True
-        self.rebuild_room(room)
+        if self._room(room):
+            self._room(room).backups.refresh(expand=True)
         self.changed()
 
     def remove_backup(self, room, index):
         rules_store.remove_backup(self.form, room, index)
-        self.rebuild_room(room)
+        if self._room(room):
+            self._room(room).backups.refresh()
         self.changed()
 
     def open_tg_dialog(self):

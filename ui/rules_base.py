@@ -17,7 +17,8 @@ from i18n import get_text
 from ui import rules_store, theme
 from ui.icons import dot, icon
 from ui.titan_picker import TitanPicker
-from ui.widgets import Button, Card, ClickFrame, Dropdown, Field, IconButton, Switch, TitanAvatar
+from ui.widgets import (Button, Card, ClickFrame, Dropdown, Field, IconButton, PlainLabel, Switch, TitanTile,
+                        plain_icon)
 
 C = theme.COLORS
 T = theme.TINTS
@@ -27,6 +28,7 @@ S = theme.SIZES
 GOAL_TEXT_KEYS = {"titanite": "main_goal_titanite", "rooms": "main_goal_rooms", "floors": "main_goal_floors",
                   "time": "main_goal_time"}
 LEFT_WIDTH = 300   # левая колонка строки комнаты (макет: grid-template-columns: 300px 1fr auto)
+PREPARE_MS = 150  # списки запасных паков строятся заранее, по одному раз в столько мс (BaseTab._prepare_lists)
 TOP_GAP = 24       # «Запасные паки» и «Условие» — вровень с квадратами пака (под названием стихии)
 
 
@@ -230,10 +232,31 @@ class BaseTab(ctk.CTkScrollableFrame):
             row = RoomRow(self, self.page, room)
             row.grid(row=3 + i, column=0, sticky="ew", padx=(24, 12), pady=(0, 12 if i < 3 else 20))
             self.rooms[room] = row
+        self._prepare_id = self.after(PREPARE_MS, self._prepare_lists)
+
+    def _prepare_lists(self):
+        """Списки запасных паков — заранее, по одному за раз, когда вкладка уже на экране: первое раскрытие
+        тогда тоже мгновенное, а окно между ними успевает отвечать."""
+        self._prepare_id = None
+        box = next((r.backups for r in self.rooms.values() if not r.backups._filled), None)
+        if box is not None:
+            box.prepare()
+            self._prepare_id = self.after(PREPARE_MS, self._prepare_lists)
+
+    def destroy(self):
+        if getattr(self, "_prepare_id", None):
+            try:
+                self.after_cancel(self._prepare_id)
+            except tk.TclError:
+                pass
+            self._prepare_id = None
+        super().destroy()
 
 
 class RoomRow(Card):
-    """Строка комнаты: значок и название стихии, основной пак и карандаш; «Запасные паки N шт.»; «+ Условие»."""
+    """Строка комнаты: значок и название стихии, основной пак и карандаш; «Запасные паки N шт.»; «+ Условие».
+    Внутри — лёгкие надписи и рамки Tk (PlainLabel, tk.Frame, TitanTile): у элементов CustomTkinter свой холст
+    на каждый, и в Windows строки дорисовывались с задержкой при прокрутке и раскрытии (проверка шага 5а)."""
 
     def __init__(self, master, page, room):
         super().__init__(master, width=10, height=10)
@@ -251,31 +274,21 @@ class RoomRow(Card):
         for child in self.winfo_children():
             child.destroy()
         style = theme.element_style(self.room)
-        left = ctk.CTkFrame(self, fg_color="transparent", width=10, height=10)
+        bg = C["bg_surface"]
+        left = tk.Frame(self, bg=bg)
         left.grid(row=0, column=0, sticky="nw", padx=(16, 0), pady=14)
-        badge = ctk.CTkFrame(left, width=40, height=40, corner_radius=8, fg_color=style["tint"])
-        badge.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 12))
-        badge.grid_propagate(False)
-        ctk.CTkLabel(badge, text="", image=icon(style["icon"], style["color"], 20)).place(relx=0.5, rely=0.5,
-                                                                                       anchor="center")
-        title = ctk.CTkFrame(left, fg_color="transparent", width=10, height=10)
+        self.badge_image = plain_icon(self, style["icon"], style["color"], 20, box=40, tint=style["tint"], bg=bg)
+        tk.Label(left, image=self.badge_image, bg=bg, bd=0, highlightthickness=0).grid(
+            row=0, column=0, rowspan=2, sticky="w", padx=(0, 12))
+        title = tk.Frame(left, bg=bg)
         title.grid(row=0, column=1, sticky="w")
-        ctk.CTkLabel(title, text=theme.plain_text(self.text(f"elem_{self.room}")), font=F["card_title"],
-                     text_color=style["text"], height=18).pack(side="left")
-        ctk.CTkLabel(title, text=self.text("rb_main_pack"), font=F["label"], text_color=C["text_muted"],
-                     height=18).pack(side="left", padx=(8, 0))
-        pack = ctk.CTkFrame(left, fg_color="transparent", width=10, height=10)
-        pack.grid(row=1, column=1, sticky="w", pady=(6, 0))
-        team = self.page.teams[self.room]
-        for titan in team:
-            TitanAvatar(pack, titan, lang=self.lang).pack(side="left", padx=(0, 6))
-        if not team:
-            ctk.CTkLabel(pack, text=theme.plain_text(self.text("rules_no_pack")), font=F["label"],
-                         text_color=C["text_muted"], height=36).pack(side="left", padx=(0, 10))
-        self.edit = IconButton(pack, "pencil", size=32, icon_size=14, fg_color="transparent",
-                               hover_color=C["bg_elevated"], tooltip=lambda: self.text("rb_edit_pack"),
-                               command=self.edit_main)
-        self.edit.pack(side="left")
+        PlainLabel(title, theme.plain_text(self.text(f"elem_{self.room}")), font=F["card_title"],
+                   color=style["text"], bg=bg).pack(side="left")
+        PlainLabel(title, self.text("rb_main_pack"), font=F["label"], color=C["text_muted"], bg=bg).pack(
+            side="left", padx=(8, 0))
+        self.pack_frame = tk.Frame(left, bg=bg)
+        self.pack_frame.grid(row=1, column=1, sticky="w", pady=(6, 0))
+        self.show_team()
 
         self.backups = BackupBox(self, self.page, self.room)
         self.backups.grid(row=0, column=1, sticky="new", padx=(20, 0), pady=(14 + TOP_GAP, 14))
@@ -284,81 +297,159 @@ class RoomRow(Card):
                                 command=lambda: self.page.add_condition(self.room))
         self.condition.grid(row=0, column=2, sticky="ne", padx=(20, 16), pady=(14 + TOP_GAP, 14))
 
+    def show_team(self):
+        """Основной пак: квадраты титанов и карандаш. Новый пак перестраивает только их, а не всю строку."""
+        for child in self.pack_frame.winfo_children():
+            child.destroy()
+        team = self.page.teams[self.room]
+        for titan in team:
+            TitanTile(self.pack_frame, titan, lang=self.lang).pack(side="left", padx=(0, 6))
+        if not team:
+            PlainLabel(self.pack_frame, theme.plain_text(self.text("rules_no_pack")), font=F["label"],
+                       color=C["text_muted"]).pack(side="left", padx=(0, 10), pady=9)
+        self.edit = IconButton(self.pack_frame, "pencil", size=32, icon_size=14, fg_color="transparent",
+                               hover_color=C["bg_elevated"], tooltip=lambda: self.text("rb_edit_pack"),
+                               command=self.edit_main)
+        self.edit.pack(side="left")
+
     def edit_main(self):
         """Карандаш — окно «Собери состав» (только титаны этой стихии; в смешанную — все)."""
         TitanPicker(self, self.lang, on_apply=lambda team: self.page.set_team(self.room, team), room=self.room,
                     selected=self.page.teams[self.room])
 
 
-class BackupBox(ctk.CTkFrame):
-    """«Запасные паки N шт.»: щелчок раскрывает список (номер, пак, ✕ удалить) и «Добавить пак» (до 5 паков)."""
+class BackupBox(tk.Frame):
+    """«Запасные паки N шт.»: щелчок раскрывает список (номер, пак, ✕ удалить) и «Добавить пак» (до 5 паков).
+    Список строится заранее (prepare — сразу после показа вкладки) или при первом раскрытии, дальше щелчок только
+    показывает и прячет его: раньше раскрытие перестраивало всю строку комнаты, и в Windows элементы дорисовывались
+    с задержкой (проверка шага 5а). Пак добавили или удалили — перестраивается только список (refresh)."""
 
     def __init__(self, master, page, room):
-        super().__init__(master, fg_color="transparent", width=10, height=10)
+        super().__init__(master, bg=C["bg_surface"])
         self.page = page
         self.room = room
         self.lang = page.lang
         self.grid_columnconfigure(0, weight=1)
-        packs = page.form["backup_teams"].get(room, [])
-        expanded = page.expanded.get(room, False)
-        self.toggle = BackupToggle(self, get_text(self.lang, "rb_backups"),
-                                   get_text(self.lang, "rb_pcs").format(n=len(packs)), expanded, self.flip)
+        self.expanded = page.expanded.get(room, False)
+        self.toggle = BackupToggle(self, get_text(self.lang, "rb_backups"), "", self.expanded, self.flip)
         self.toggle.grid(row=0, column=0, sticky="ew")
+        self.list = tk.Frame(self, bg=C["bg_surface"])
+        self.list.grid_columnconfigure(0, weight=1)
         self.rows = []
-        if not expanded:
-            return
+        self.add = None
+        self._filled = False
+        self._show_count()
+        if self.expanded:
+            self._show_list()
+
+    def packs(self):
+        return self.page.form["backup_teams"].get(self.room, [])
+
+    def _show_count(self):
+        self.toggle.set_count(get_text(self.lang, "rb_pcs").format(n=len(self.packs())))
+
+    def prepare(self):
+        """Построить список заранее (он скрыт): первое раскрытие тогда тоже мгновенное."""
+        if not self._filled:
+            self._fill()
+
+    def _fill(self):
+        """Строки паков и «Добавить пак» — заново (только содержимое списка)."""
+        for child in self.list.winfo_children():
+            child.destroy()
+        self.rows = []
+        self.add = None
+        packs = self.packs()
+        row_bg = C["bg_primary"]
         for i, pack in enumerate(packs):
-            row = ctk.CTkFrame(self, fg_color=C["bg_primary"], border_width=1, border_color=C["border"],
-                               corner_radius=S["radius_control"], width=10, height=10)
-            row.grid(row=1 + i, column=0, sticky="ew", pady=(8, 0))
-            ctk.CTkLabel(row, text=f"#{i + 1}", font=F["mono"], text_color=C["text_muted"], width=22,
-                         anchor="w").pack(side="left", padx=(10, 6), pady=6)
+            row = ctk.CTkFrame(self.list, fg_color=row_bg, bg_color=C["bg_surface"], border_width=1,
+                               border_color=C["border"], corner_radius=S["radius_control"], width=10, height=10)
+            row.grid(row=i, column=0, sticky="ew", pady=(8, 0))
+            PlainLabel(row, f"#{i + 1}", font=F["mono"], color=C["text_muted"], bg=row_bg, width=3,
+                       anchor="w").pack(side="left", padx=(10, 6), pady=6)
             for titan in pack:
-                TitanAvatar(row, titan, lang=self.lang).pack(side="left", padx=(0, 6), pady=6)
-            IconButton(row, "x", size=32, icon_size=14, fg_color="transparent", hover_color=C["bg_elevated"],
-                       border_width=0, icon_color=C["text_muted"],
+                TitanTile(row, titan, lang=self.lang, bg=row_bg).pack(side="left", padx=(0, 6), pady=6)
+            IconButton(row, "x", size=32, icon_size=14, fg_color=row_bg, bg_color=row_bg,
+                       hover_color=C["bg_elevated"], border_width=0, icon_color=C["text_muted"],
                        tooltip=lambda: get_text(self.lang, "rb_remove_pack"),
                        command=lambda i=i: self.page.remove_backup(self.room, i)).pack(side="right", padx=6)
             self.rows.append(row)
         if len(packs) < rules_store.MAX_BACKUPS:
-            self.add = Button(self, get_text(self.lang, "rb_add_pack"), kind="secondary", icon_name="plus",
+            self.add = Button(self.list, get_text(self.lang, "rb_add_pack"), kind="secondary", icon_name="plus",
                               icon_size=14, height=34, fg_color="transparent", hover_color=C["bg_elevated"],
                               border_color=C["border_focus"], text_color=C["text_secondary"], command=self.add_pack)
-            self.add.grid(row=1 + len(packs), column=0, sticky="ew", pady=(8, 0))
+            self.add.grid(row=len(packs), column=0, sticky="ew", pady=(8, 0))
+        self._filled = True
+
+    def _show_list(self):
+        if not self._filled:
+            self._fill()
+        self.list.grid(row=1, column=0, sticky="ew")
 
     def flip(self):
-        self.page.expanded[self.room] = not self.page.expanded.get(self.room, False)
-        self.page.rebuild_room(self.room)
+        self.expanded = not self.expanded
+        self.page.expanded[self.room] = self.expanded
+        self.toggle.set_expanded(self.expanded)
+        if self.expanded:
+            self._show_list()
+        else:
+            self.list.grid_remove()
+
+    def refresh(self, expand=False):
+        """Паки поменялись: новое число и новый список. expand — раскрыть (добавили пак — его видно сразу)."""
+        self._show_count()
+        self._filled = False
+        if expand and not self.expanded:
+            self.flip()
+        elif self.expanded:
+            self._show_list()
+        else:
+            self._fill()
 
     def add_pack(self):
         TitanPicker(self, self.lang, on_apply=lambda team: self.page.add_backup(self.room, team), room=self.room)
 
 
 class BackupToggle(ClickFrame):
-    """Кнопка «Запасные паки [N шт.] ▾» (раскрыта — рамка светлее и стрелка вверх). Наведение — только цвет фона."""
+    """Кнопка «Запасные паки [N шт.] ▾» (раскрыта — рамка светлее и стрелка вверх). Наведение — только цвет фона
+    (и у надписей Tk внутри: свой фон они не берут от рамки); рамка, стрелка и число — только по щелчку."""
 
     def __init__(self, master, text, count, expanded, command):
         super().__init__(master, command=command, height=S["control_height"], width=10,
-                         corner_radius=S["radius_control"], border_width=1,
-                         border_color=C["border_focus"] if expanded else C["border"], fg_color=C["bg_elevated"])
+                         corner_radius=S["radius_control"], border_width=1, border_color=C["border"],
+                         fg_color=C["bg_elevated"], bg_color=C["bg_surface"])
         self._look = None
+        self.expanded = None
         self.grid_propagate(False)
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(2, weight=1)
-        label = ctk.CTkLabel(self, text=text, font=F["button"], text_color=C["text"], height=20)
-        label.grid(row=0, column=0, padx=(12, 8))
-        pill = ctk.CTkLabel(self, text=count, font=F["label"], text_color=C["text_secondary"], height=18,
-                            corner_radius=9, fg_color=C["bg_primary"])
-        pill.grid(row=0, column=1)
-        arrow = ctk.CTkLabel(self, text="", image=icon("chevron-up" if expanded else "chevron-down",
-                                                       C["text_muted"], 16), width=16, height=20)
-        arrow.grid(row=0, column=3, padx=(0, 10))
-        self.bind_parts(label, pill, arrow)
+        self.label = PlainLabel(self, text, font=F["button"], color=C["text"], bg=C["bg_elevated"])
+        self.label.grid(row=0, column=0, padx=(12, 8))
+        self.pill = ctk.CTkLabel(self, text=count, font=F["label"], text_color=C["text_secondary"], height=18,
+                                 corner_radius=9, fg_color=C["bg_primary"])
+        self.pill.grid(row=0, column=1)
+        self.arrows = {key: plain_icon(self, key, C["text_muted"], 16) for key in ("chevron-up", "chevron-down")}
+        self.arrow = tk.Label(self, bg=C["bg_elevated"], bd=0, highlightthickness=0)
+        self.arrow.grid(row=0, column=3, padx=(0, 10))
+        self.bind_parts(self.label, self.pill, self.arrow)
+        self.set_expanded(expanded)
         self._paint()
+
+    def set_expanded(self, expanded):
+        if expanded == self.expanded:
+            return
+        self.expanded = expanded
+        self.configure(border_color=C["border_focus"] if expanded else C["border"])
+        self.arrow.configure(image=self.arrows["chevron-up" if expanded else "chevron-down"])
+
+    def set_count(self, text):
+        if self.pill.cget("text") != text:
+            self.pill.configure(text=text)
 
     def _paint(self):
         look = T["hover_elevated"] if self._hovering else C["bg_elevated"]
         if look != self._look:
             self._look = look
             self.configure(fg_color=look)
-
+            for part in (self.label, self.arrow):
+                part.configure(bg=look)
