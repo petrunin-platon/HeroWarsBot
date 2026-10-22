@@ -10,6 +10,7 @@ import customtkinter as ctk
 
 from i18n import get_text
 from ui import theme
+from ui.freeze_guard import FreezeGuard
 from ui.icons import icon
 from ui.widgets import (Button, Card, Chip, ConfirmDialog, DialogBody, Field, IconButton, TitanAvatar, Toast,
                         ToastBody, titan_name)
@@ -72,6 +73,7 @@ class Demo(ctk.CTk):
         self.title(SAMPLE["title"])
         self.geometry("1100x720")
         self.minsize(*S["window_min"])
+        self.protocol("WM_DELETE_WINDOW", self.close)
         self.scroll = ctk.CTkScrollableFrame(self, fg_color=C["bg_primary"])
         self.scroll.pack(fill="both", expand=True)
         body = self.scroll
@@ -203,6 +205,11 @@ class Demo(ctk.CTk):
         ctk.CTkLabel(body, text=text, font=(theme.FONT_FAMILY, 13, "bold"), text_color=C["text_secondary"],
                      anchor="w").grid(row=self._next(), column=0, sticky="w", padx=40, pady=(32, 10))
 
+    def close(self):
+        """Крестик окна: убрать уведомления и подсказки, потом закрыть окно (mainloop кончится, процесс выйдет)."""
+        Toast.close_all(self)
+        self.destroy()
+
     def select_nav(self, chosen):
         for button in self.nav:
             button.set_active(button is chosen)
@@ -226,4 +233,7 @@ class Demo(ctk.CTk):
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("Dark")
-    Demo(sys.argv[1].upper() if len(sys.argv) > 1 else "RU").mainloop()
+    app = Demo(sys.argv[1].upper() if len(sys.argv) > 1 else "RU")
+    guard = FreezeGuard(app).start()  # окно зависло — записать в bot_data/debug/ui_freeze_*.txt, где застрял код
+    app.mainloop()
+    guard.stop()

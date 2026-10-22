@@ -7,6 +7,13 @@ DialogBody / ConfirmDialog — подтверждение опасного де�
 
 Цвета, шрифты и размеры — только из ui/theme.py, иконки — ui/icons. Надписи передаёт тот, кто создаёт виджет (из i18n.py).
 Виджеты трогаем только из главного потока Tk.
+
+Чтобы окно в Windows не зависало (на этом уже обжигались):
+- обработчики наведения (<Enter>/<Leave>) меняют только цвета и только если вид правда поменялся. Шрифт, текст и картинку
+  в них не трогаем: CustomTkinter при этом убирает и заново ставит часть виджета под мышкой, Windows снова шлёт
+  «мышь вошла» — и окно крутится в этом круге;
+- никаких вложенных ожиданий (wait_visibility, wait_window): окно подтверждения ждёт показа через after;
+- окошки без рамки (подсказка, уведомление) — обычные окна Tk, без особых режимов Windows (прозрачный цвет).
 """
 import tkinter as tk
 from functools import lru_cache
@@ -23,22 +30,23 @@ T = theme.TINTS
 F = theme.FONTS
 S = theme.SIZES
 
-# Цвет, который Windows делает прозрачным у окошек без рамки (подсказка, уведомление): так у них круглые углы.
-# В других системах он просто остаётся тёмным уголком.
-_TRANSPARENT_KEY = "#010203"
+# Уголки окошек без рамки: в цвет фона окна программы, поэтому скругление карточки внутри не видно как «квадрат»
+_CORNER_COLOR = C["bg_primary"]
 
 
-def _frameless_window(root):
-    """Окошко без рамки поверх окна программы (не поверх всех окон: иначе оно может попасть на снимок игры)."""
+def _frameless_window(root, inactive=False):
+    """Окошко без рамки поверх окна программы (не поверх всех окон: иначе оно может попасть на снимок игры).
+    inactive — окошко не берёт фокус и не принимает нажатия (подсказка): окно программы не теряет активность."""
     top = tk.Toplevel(root)
     top.withdraw()
     top.overrideredirect(True)
-    top.configure(bg=_TRANSPARENT_KEY)
-    try:
-        top.wm_attributes("-transparentcolor", _TRANSPARENT_KEY)
-    except tk.TclError:
-        pass
+    top.configure(bg=_CORNER_COLOR)
     top.transient(root)
+    if inactive:
+        try:
+            top.wm_attributes("-disabled", True)  # есть только в Windows
+        except tk.TclError:
+            pass
     return top
 
 
@@ -111,9 +119,13 @@ class Button(ctk.CTkButton):
         self.grid_columnconfigure(4, minsize=pad)
 
     def set_kind(self, kind):
+        changed = kind != self._kind
         self._kind = kind
         style = dict(BUTTON_KINDS[kind])
         icon_color = style.pop("icon")
+        if not changed:
+            # Тот же вид (кнопку просто выключили или включили): шрифт не трогаем — смена шрифта перестраивает кнопку
+            style.pop("font")
         disabled = self.cget("state") == "disabled"
         if disabled:
             # Неактивная кнопка бледная (экран 4: «Внедрить золотые правила», пока нечего внедрять)
@@ -201,8 +213,10 @@ class Tooltip:
         self.side = side
         self.delay = S["tooltip_delay_ms"] if delay is None else delay
         self._after_id = None
+        self._leave_id = None
         self._top = None
         self.attach(widget)
+        widget.bind("<Destroy>", self._hide, add="+")  # виджет убрали, пока подсказка видна, — убрать и её
 
     def attach(self, widget):
         """Показывать подсказку и над этим виджетом (например, над картинкой внутри квадрата титана)."""
@@ -214,17 +228,33 @@ class Tooltip:
         return self.text() if callable(self.text) else self.text
 
     def _on_enter(self, _event=None):
-        self._cancel()
-        if self._top is None:
-            self._after_id = self.widget.after(self.delay, self._show)
+        self._cancel_leave()
+        if self._top is None and self._after_id is None:
+            try:
+                self._after_id = self.widget.after(self.delay, self._show)
+            except tk.TclError:
+                pass
 
     def _on_leave(self, _event=None):
-        # Мышь могла перейти на часть того же виджета: проверяем чуть позже, где она
-        self.widget.after(30, self._hide_if_outside)
+        # Мышь могла перейти на часть того же виджета: проверяем чуть позже, где она (одна проверка, не очередь)
+        self._cancel_leave()
+        try:
+            self._leave_id = self.widget.after(30, self._hide_if_outside)
+        except tk.TclError:
+            pass
 
     def _hide_if_outside(self):
+        self._leave_id = None
         if not _pointer_inside(self.widget):
             self._hide()
+
+    def _cancel_leave(self):
+        if self._leave_id:
+            try:
+                self.widget.after_cancel(self._leave_id)
+            except tk.TclError:
+                pass
+            self._leave_id = None
 
     def _cancel(self):
         if self._after_id:
@@ -237,11 +267,11 @@ class Tooltip:
     def _show(self):
         self._after_id = None
         text = self._current_text()
-        if not text or not _pointer_inside(self.widget):
+        if not text or self._top is not None or not _pointer_inside(self.widget):
             return
-        top = _frameless_window(self.widget.winfo_toplevel())
+        top = _frameless_window(self.widget.winfo_toplevel(), inactive=True)
         ctk.CTkLabel(top, text=text, font=F["label"], text_color=C["text"], fg_color=C["bg_elevated"],
-                     bg_color=_TRANSPARENT_KEY, corner_radius=S["radius_control"], height=26,
+                     bg_color=_CORNER_COLOR, corner_radius=S["radius_control"], height=26,
                      padx=8).pack()
         top.update_idletasks()
         w, h = top.winfo_reqwidth(), top.winfo_reqheight()
@@ -262,6 +292,7 @@ class Tooltip:
 
     def _hide(self, _event=None):
         self._cancel()
+        self._cancel_leave()
         if self._top is not None:
             try:
                 self._top.destroy()
@@ -348,6 +379,8 @@ class Chip(ctk.CTkFrame):
         self.command = command
         self.selected = selected
         self._hovering = False
+        self._look = None        # что нарисовано сейчас: перекрашиваем, только если вид поменялся
+        self._leave_id = None
         self._dot = ctk.CTkLabel(self, text="", image=dot(dot_color, 8), width=8) if dot_color else None
         if self._dot:
             self._dot.pack(side="left", padx=(12, 0), pady=2)
@@ -364,25 +397,44 @@ class Chip(ctk.CTkFrame):
 
     def _paint(self):
         if self.selected:
-            fg, border, text = C["bg_elevated"], C["border_focus"], C["text"]
+            look = (C["bg_elevated"], C["border_focus"], C["text"], True)
         else:
-            fg = C["bg_elevated"] if self._hovering else "transparent"
-            border, text = C["border"], C["text_secondary"]
-        self.configure(fg_color=fg, border_color=border)
-        self._label.configure(text_color=text, font=F["label_bold"] if self.selected else F["label"])
+            look = (C["bg_elevated"] if self._hovering else "transparent", C["border"], C["text_secondary"], False)
+        if look == self._look:
+            return
+        fg, border, text, bold = look
+        old = self._look or (None, None, None, None)
+        self._look = look
+        if (fg, border) != old[:2]:
+            self.configure(fg_color=fg, border_color=border)
+        if text != old[2]:
+            self._label.configure(text_color=text)
+        if bold != old[3]:
+            # Шрифт меняется только при выборе (не при наведении): смена шрифта перестраивает надпись
+            self._label.configure(font=F["label_bold"] if bold else F["label"])
 
     def _on_click(self, _event=None):
         if self.command:
             self.command()
 
     def _chip_enter(self, _event=None):
-        self._hovering = True
-        self._paint()
+        if not self._hovering:
+            self._hovering = True
+            self._paint()
 
     def _chip_leave(self, _event=None):
-        self.after(30, self._leave_if_outside)
+        if self._leave_id:
+            try:
+                self.after_cancel(self._leave_id)
+            except tk.TclError:
+                pass
+        try:
+            self._leave_id = self.after(30, self._leave_if_outside)
+        except tk.TclError:
+            self._leave_id = None
 
     def _leave_if_outside(self):
+        self._leave_id = None
         if not _pointer_inside(self):
             self._hovering = False
             self._paint()
@@ -415,6 +467,7 @@ class Field(ctk.CTkFrame):
         self.hint = hint
         self.error = None
         self.enabled = True
+        self._look = (1, C["border"], C["bg_elevated"], C["text"])  # так поле создаётся ниже
         self.grid_columnconfigure(0, weight=1)
         self.label = ctk.CTkLabel(self, text=label, font=F["label"], text_color=C["text_secondary"], anchor="w",
                                   height=18)
@@ -440,17 +493,18 @@ class Field(ctk.CTkFrame):
 
     def _paint(self, focus=False):
         if not self.enabled:
-            self.entry.configure(border_width=1, border_color=C["border"], fg_color=T["field_disabled_bg"],
-                                 text_color=C["text_muted"])
+            look = (1, C["border"], T["field_disabled_bg"], C["text_muted"])
         elif self.error:
-            self.entry.configure(border_width=2, border_color=C["danger"], fg_color=T["field_error_bg"],
-                                 text_color=C["text"])
+            look = (2, C["danger"], T["field_error_bg"], C["text"])
         elif focus:
-            self.entry.configure(border_width=2, border_color=C["blue"], fg_color=C["bg_elevated"],
-                                 text_color=C["text"])
+            look = (2, C["blue"], C["bg_elevated"], C["text"])
         else:
-            self.entry.configure(border_width=1, border_color=C["border"], fg_color=C["bg_elevated"],
-                                 text_color=C["text"])
+            look = (1, C["border"], C["bg_elevated"], C["text"])
+        if look == self._look:  # толщина рамки перестраивает поле — только если вид правда поменялся
+            return
+        self._look = look
+        width, border, fg, text = look
+        self.entry.configure(border_width=width, border_color=border, fg_color=fg, text_color=text)
 
     def show_focus(self):
         """Нарисовать поле «в фокусе», не забирая фокус (для витрины)."""
@@ -563,26 +617,44 @@ class ConfirmDialog(ctk.CTkToplevel):
                                on_cancel=lambda: self._finish("cancel"),
                                on_discard=lambda: self._finish("discard"), corner_radius=0)
         self.body.pack(fill="both", expand=True)
+        self._done = False
         self.protocol("WM_DELETE_WINDOW", lambda: self._finish("cancel"))
         self.bind("<Escape>", lambda _e: self._finish("cancel"))
         self.after(10, self._show_centered, root)
 
     def _show_centered(self, root):
-        self.update_idletasks()
-        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-        x = root.winfo_rootx() + (root.winfo_width() - w) // 2
-        y = root.winfo_rooty() + (root.winfo_height() - h) // 3
-        self.geometry(f"+{max(0, x)}+{max(0, y)}")
-        self.deiconify()
-        self.lift()
+        if self._done:
+            return
         try:
-            self.wait_visibility()
-            self.grab_set()
+            self.update_idletasks()
+            w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+            x = root.winfo_rootx() + (root.winfo_width() - w) // 2
+            y = root.winfo_rooty() + (root.winfo_height() - h) // 3
+            self.geometry(f"+{max(0, x)}+{max(0, y)}")
+            self.deiconify()
+            self.lift()
+        except tk.TclError:
+            return
+        self._grab_when_visible(20)
+
+    def _grab_when_visible(self, tries):
+        """Сделать окно модальным, когда оно уже на экране. Без wait_visibility: в Windows оно может не дождаться
+        события и держать вложенный цикл. Не стало видно за 1 с — окно просто остаётся немодальным."""
+        if self._done:
+            return
+        try:
+            if self.winfo_viewable():
+                self.grab_set()
+                self.body.cancel_button.focus_set()
+            elif tries > 0:
+                self.after(50, self._grab_when_visible, tries - 1)
         except tk.TclError:
             pass
-        self.body.cancel_button.focus_set()
 
     def _finish(self, result):
+        if self._done:  # двойной щелчок или Esc после кнопки — второй раз не обрабатываем
+            return
+        self._done = True
         try:
             self.grab_release()
         except tk.TclError:
@@ -635,11 +707,18 @@ class Toast:
             return
         self.top = _frameless_window(self.root)
         ToastBody(self.top, text, kind=kind, action_text=action_text, on_action=self._action,
-                  on_close=self.close, bg_color=_TRANSPARENT_KEY).pack()
+                  on_close=self.close, bg_color=_CORNER_COLOR).pack()
         Toast._open.append(self)
         Toast._restack(self.root)
         self.top.deiconify()
         self.top.after(duration or S["toast_ms"], self.close)
+
+    @classmethod
+    def close_all(cls, root=None):
+        """Закрыть все уведомления (при закрытии окна программы)."""
+        for toast in list(cls._open):
+            if root is None or toast.root is root:
+                toast.close()
 
     def _action(self):
         self.close()
@@ -667,7 +746,10 @@ class Toast:
         except tk.TclError:
             return
         for toast in reversed([t for t in cls._open if t.root is root and t.top is not None]):
-            toast.top.update_idletasks()
-            w, h = toast.top.winfo_reqwidth(), toast.top.winfo_reqheight()
-            toast.top.geometry(f"+{right - w}+{bottom - h}")
+            try:
+                toast.top.update_idletasks()
+                w, h = toast.top.winfo_reqwidth(), toast.top.winfo_reqheight()
+                toast.top.geometry(f"+{right - w}+{bottom - h}")
+            except tk.TclError:
+                continue
             bottom -= h + 10
