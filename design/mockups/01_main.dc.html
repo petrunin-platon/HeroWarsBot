@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Главная — Фарм</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#12131A}
+a{color:#6EA8FF}a:hover{color:#9CC3FF}
+button,input{font-family:inherit}
+.rail{position:relative}
+.rail:not(.on):hover{background:#1B1D26 !important;color:#E8EAF0 !important}
+.rail .tip{display:none;position:absolute;left:54px;top:50%;transform:translateY(-50%);white-space:nowrap;padding:6px 10px;border-radius:6px;background:#2A2E3D;border:1px solid #3A3F55;color:#E8EAF0;font-size:12px;font-weight:500;z-index:30;pointer-events:none;box-shadow:0 6px 16px rgba(0,0,0,0.45)}
+.rail:hover .tip,.rail:focus-visible .tip{display:block}
+.scroll{overflow-y:auto;scrollbar-width:thin;scrollbar-color:#3A3F55 transparent}
+@keyframes pulseG{0%{box-shadow:0 0 0 0 rgba(74,222,128,0.55)}70%{box-shadow:0 0 0 7px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+.pulse-g{animation:pulseG 1.6s ease-out infinite}
+@media (prefers-reduced-motion: reduce){.pulse-g{animation:none}}
+</style>
+</helmet>
+<div style="width: 1100px; height: 720px; display: flex; background: #12131A; color: #E8EAF0; font-family: Roboto, 'Segoe UI', system-ui, sans-serif; font-size: 14px; color-scheme: dark; overflow: hidden">
+
+<nav aria-label="Разделы" style="width: 64px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; border-right: 1px solid #2E3244; position: relative; z-index: 5">
+<div title="RPA BOT v1.6.1" style="width: 40px; height: 40px; border-radius: 10px; background: #242734; border: 1px solid #2E3244; display: flex; align-items: center; justify-content: center; color: #3B8E26"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="m9 12 2 2 4-4"></path></svg></div>
+<span style="font-family: 'Roboto Mono', monospace; font-size: 10px; color: #8A90A6">v1.6.1</span>
+<div style="width: 28px; height: 1px; margin: 4px 0; background: #2E3244"></div>
+<a class="rail on" href="Main.dc.html" aria-label="Главная (Фарм)" aria-current="page" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; background: rgba(41,121,255,0.16); border: 1px solid rgba(41,121,255,0.45); color: #6EA8FF; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M9 22V12h6v10"></path></svg><span class="tip" aria-hidden="true">Главная (Фарм)</span></a>
+<a class="rail" href="Rules_Base.dc.html" aria-label="Мастер правил" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"></path></svg><span class="tip" aria-hidden="true">Мастер правил</span></a>
+<a class="rail" href="Analytics.dc.html" aria-label="Аналитика" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg><span class="tip" aria-hidden="true">Аналитика</span></a>
+<a class="rail" href="Stats.dc.html" aria-label="Статистика" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20V10M18 20V4M6 20v-4"></path></svg><span class="tip" aria-hidden="true">Статистика</span></a>
+<a class="rail" href="Guide.dc.html" aria-label="Руководство" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg><span class="tip" aria-hidden="true">Руководство</span></a>
+<a class="rail" href="About.dc.html" aria-label="О программе" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 16v-4M12 8h.01"></path></svg><span class="tip" aria-hidden="true">О программе</span></a>
+<div style="margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 8px">
+<button class="rail" aria-label="Telegram: {{ tgText }}" style="width: 44px; height: 44px; padding: 0; border-radius: 10px; background: transparent; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg><span style="position: absolute; top: 9px; right: 9px; width: 8px; height: 8px; border-radius: 50%; background: {{ tgDot }}; box-shadow: 0 0 0 2px #12131A"></span><span class="tip" aria-hidden="true">Telegram: {{ tgText }}</span></button>
+<button class="rail" aria-label="Язык интерфейса: Русский" aria-haspopup="listbox" style="width: 44px; height: 34px; padding: 0; border-radius: 8px; background: #1B1D26; border: 1px solid #2E3244; color: #E8EAF0; display: flex; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 600">RU<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8A90A6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg><span class="tip" aria-hidden="true">Язык: Русский · всего 13</span></button>
+</div>
+</nav>
+
+<main style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<header style="height: 56px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 16px; padding: 0 24px; border-bottom: 1px solid #2E3244">
+<h1 style="margin: 0; font-size: 18px; font-weight: 600">Главная — Фарм</h1>
+<div style="margin-left: auto; display: flex; align-items: center; gap: 8px">
+<sc-if value="{{ connected }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 6px; background: #1B1D26; border: 1px solid #2E3244; font-size: 13px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80; box-shadow: 0 0 0 3px rgba(74,222,128,0.18)"></span><span style="font-family: 'Roboto Mono', monospace; font-size: 12px">HeroWarsBot_Arena</span><span style="color: #4ADE80">подключено</span></div>
+</sc-if>
+<sc-if value="{{ disconnected }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 6px; background: #1B1D26; border: 1px solid #2E3244; font-size: 13px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #EF4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.18)"></span><span style="color: #F87171">Ожидание телефона…</span></div>
+</sc-if>
+<button aria-label="Выключить экран телефона" title="Выкл. экран" style="width: 34px; height: 34px; border-radius: 6px; background: #1B1D26; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></button>
+<button aria-label="Перезапустить scrcpy" title="Перезапуск scrcpy" style="width: 34px; height: 34px; border-radius: 6px; background: #1B1D26; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg></button>
+<button aria-label="Сбросить размер окна трансляции" title="Сброс размера окна" style="width: 34px; height: 34px; border-radius: 6px; background: #1B1D26; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></button>
+</div>
+</header>
+
+<div style="flex: 1; min-height: 0; box-sizing: border-box; padding: 24px; display: flex; flex-direction: column; gap: 16px">
+
+<section aria-label="Запуск фарма" style="flex-shrink: 0; display: flex; align-items: stretch; gap: 20px; padding: 20px; border-radius: 10px; background: #1B1D26; border: 1px solid #2E3244">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{ isFirst }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600">С чего начать</h2>
+<span style="font-size: 12px; color: #8A90A6">3 шага · около 5 минут</span>
+</div>
+<ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px">
+<li style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; background: #242734; border: 1px solid rgba(41,121,255,0.55)">
+<span style="width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; background: #1F6FEB; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700">1</span>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">Подключи телефон</span><span style="font-size: 12px; color: #A9AFC2">Кабель USB и включённая отладка по USB</span></div>
+<span style="font-size: 12px; font-weight: 500; color: #6EA8FF">сейчас</span>
+</li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244">
+<span style="width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; background: #12131A; border: 1px solid #3A3F55; box-sizing: border-box; color: #A9AFC2; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700">2</span>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">Проверь паки по комнатам</span><span style="font-size: 12px; color: #A9AFC2">Какими титанами бот заходит в каждую дверь</span></div>
+<a href="Rules_Base.dc.html" style="font-size: 13px; text-decoration: none">Открыть →</a>
+</li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244">
+<span style="width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; background: #12131A; border: 1px solid #3A3F55; box-sizing: border-box; color: #A9AFC2; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700">3</span>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">Настрой Telegram для SOS <span style="font-weight: 400; color: #8A90A6">· по желанию</span></span><span style="font-size: 12px; color: #A9AFC2">Бот напишет, если ему понадобится помощь</span></div>
+<a href="Rules_Base.dc.html" style="font-size: 13px; text-decoration: none">Настроить →</a>
+</li>
+</ol>
+</sc-if>
+
+<sc-if value="{{ showConfig }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600">Конфигурация запуска</h2>
+<a href="Rules_Base.dc.html" style="font-size: 13px; text-decoration: none">Изменить в мастере правил →</a>
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244"><dt style="font-size: 12px; color: #8A90A6">Цель сессии</dt><dd style="margin: 0; display: flex; align-items: center; gap: 6px; font-weight: 500"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9D4EDD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l4 6-10 13L2 9Z"></path><path d="M11 3 8 9l4 13 4-13-3-6M2 9h20"></path></svg>Титанит — 0<span style="font-weight: 400; color: #8A90A6">(без лимита)</span></dd></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244"><dt style="font-size: 12px; color: #8A90A6">Режим</dt><dd style="margin: 0; display: flex; align-items: center; gap: 8px; font-weight: 500">Бот решает сам<span style="font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: rgba(74,222,128,0.14); color: #4ADE80">ВКЛ</span></dd></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244"><dt style="font-size: 12px; color: #8A90A6">Порог паники ХП</dt><dd style="margin: 0; font-family: 'Roboto Mono', monospace; font-weight: 500">30%</dd></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244"><dt style="font-size: 12px; color: #8A90A6">Сброс дня</dt><dd style="margin: 0; font-family: 'Roboto Mono', monospace; font-weight: 500">05:00</dd></div>
+</dl>
+</sc-if>
+
+<sc-if value="{{ isRunning }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600">Текущая сессия</h2>
+<span style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: #4ADE80"><span class="pulse-g" style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80"></span>Фарм идёт</span>
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244"><dt style="display: flex; justify-content: space-between; font-size: 12px; color: #8A90A6"><span>Титанит за сегодня</span><span>38%</span></dt><dd style="margin: 0; display: flex; flex-direction: column; gap: 6px"><span style="font-family: 'Roboto Mono', monospace; font-weight: 500">2 838 <span style="color: #8A90A6">/ 7 500</span></span><span role="progressbar" aria-label="Титанит за сегодня" aria-valuemin="0" aria-valuemax="7500" aria-valuenow="2838" style="height: 4px; border-radius: 2px; background: #12131A; overflow: hidden; display: flex"><span style="width: 37.8%; background: #2979FF; border-radius: 2px"></span></span></dd></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244"><dt style="font-size: 12px; color: #8A90A6">Этаж</dt><dd style="margin: 0; font-family: 'Roboto Mono', monospace; font-weight: 500">14436 <span style="font-family: Roboto, sans-serif; font-weight: 400; color: #8A90A6">· дверь: Вода</span></dd></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244"><dt style="font-size: 12px; color: #8A90A6">Бои за сессию</dt><dd style="margin: 0; font-weight: 500"><span style="font-family: 'Roboto Mono', monospace">44</span> побед из <span style="font-family: 'Roboto Mono', monospace">46</span></dd></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #242734; border: 1px solid #2E3244"><dt style="font-size: 12px; color: #8A90A6">Время сессии</dt><dd style="margin: 0; font-family: 'Roboto Mono', monospace; font-weight: 500">00:42:17</dd></div>
+</dl>
+</sc-if>
+
+</div>
+
+<div style="width: 308px; flex-shrink: 0; box-sizing: border-box; padding-left: 20px; border-left: 1px solid #2E3244; display: flex; flex-direction: column; justify-content: space-between; gap: 10px">
+<sc-if value="{{ needPhone }}" hint-placeholder-val="{{ false }}">
+<button style="height: 56px; border-radius: 8px; background: #1F6FEB; border: 0; color: #FFFFFF; display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 19px; font-weight: 700"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM12 18h.01"></path></svg>Подключить телефон</button>
+<span style="font-size: 12px; color: #8A90A6; text-align: center">Кабель USB и включённая отладка по USB</span>
+</sc-if>
+<sc-if value="{{ isReady }}" hint-placeholder-val="{{ true }}">
+<a href="HUD.dc.html" style="height: 56px; border-radius: 8px; background: #3B8E26; color: #FFFFFF; display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none; font-size: 19px; font-weight: 700"><svg width="20" height="20" viewBox="0 0 24 24" fill="#FFFFFF" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"></path></svg>Начать фарм</a>
+<span style="font-size: 12px; color: #8A90A6; text-align: center">Окно свернётся в мини-бар под игрой</span>
+</sc-if>
+<sc-if value="{{ isRunning }}" hint-placeholder-val="{{ false }}">
+<a href="HUD.dc.html" style="height: 56px; box-sizing: border-box; border-radius: 8px; background: #242734; border: 1px solid #3A3F55; color: #E8EAF0; display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none; font-size: 16px; font-weight: 600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6EA8FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"></path></svg>Свернуть в мини-бар</a>
+<span style="font-size: 12px; color: #8A90A6; text-align: center">Бот работает, окно можно свернуть</span>
+</sc-if>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<button disabled="{{ notRunning }}" title="Мягкая пауза (F9)" style="height: 38px; border-radius: 6px; background: transparent; border: 1px solid #FACC15; color: #FACC15; opacity: {{ ctrlOpacity }}; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 500"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"></path></svg>Пауза<kbd style="font-family: 'Roboto Mono', monospace; font-size: 10px; padding: 1px 4px; border-radius: 3px; border: 1px solid rgba(250,204,21,0.5)">F9</kbd></button>
+<button disabled="{{ notRunning }}" title="Экстренный СТОП (F10)" style="height: 38px; border-radius: 6px; background: transparent; border: 1px solid #EF4444; color: #F87171; opacity: {{ ctrlOpacity }}; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 500"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"></path></svg>СТОП<kbd style="font-family: 'Roboto Mono', monospace; font-size: 10px; padding: 1px 4px; border-radius: 3px; border: 1px solid rgba(248,113,113,0.5)">F10</kbd></button>
+</div>
+</div>
+</section>
+
+<section aria-label="Журнал работы" style="flex: 1; min-height: 0; display: flex; flex-direction: column; border-radius: 10px; background: #1B1D26; border: 1px solid #2E3244">
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 16px; border-bottom: 1px solid #2E3244">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A90A6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6M12 19h8"></path></svg>
+<h2 style="margin: 0; font-size: 15px; font-weight: 600">Журнал работы</h2>
+<div role="group" aria-label="Фильтр журнала" style="margin-left: auto; display: flex; gap: 6px">
+<button aria-pressed="true" style="height: 28px; padding: 0 12px; border-radius: 14px; background: #242734; border: 1px solid #4A5068; color: #E8EAF0; font-size: 12px; font-weight: 500">Все</button>
+<button aria-pressed="false" style="height: 28px; padding: 0 12px; border-radius: 14px; background: transparent; border: 1px solid #2E3244; color: #A9AFC2; font-size: 12px">Бои</button>
+<button aria-pressed="false" style="height: 28px; padding: 0 12px; border-radius: 14px; background: transparent; border: 1px solid #2E3244; color: #A9AFC2; font-size: 12px">Правила</button>
+<button aria-pressed="false" style="height: 28px; padding: 0 12px; border-radius: 14px; background: transparent; border: 1px solid #2E3244; color: #A9AFC2; font-size: 12px">Система</button>
+<button aria-pressed="false" style="height: 28px; padding: 0 12px; border-radius: 14px; background: transparent; border: 1px solid #2E3244; color: #A9AFC2; font-size: 12px; display: flex; align-items: center; gap: 6px">Ошибки<span style="font-size: 11px; padding: 0 5px; border-radius: 8px; background: rgba(239,68,68,0.18); color: #F87171">1</span></button>
+</div>
+</div>
+
+<sc-if value="{{ isFirst }}" hint-placeholder-val="{{ false }}">
+<div style="flex: 1; min-height: 0; margin: 10px; border-radius: 8px; background: #12131A; border: 1px dashed #3A3F55; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8A90A6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6M12 19h8"></path></svg>
+<span style="font-size: 14px; font-weight: 500">Журнал пока пуст</span>
+<span style="font-size: 13px; color: #A9AFC2">Здесь появятся события бота после подключения телефона</span>
+</div>
+</sc-if>
+<sc-if value="{{ hasLog }}" hint-placeholder-val="{{ true }}">
+<div class="scroll" role="log" aria-label="Строки журнала" style="flex: 1; min-height: 0; margin: 10px; padding: 10px 14px; border-radius: 8px; background: #12131A; border: 1px solid #2E3244; font-family: 'Roboto Mono', Consolas, monospace; font-size: 12.5px; line-height: 1.75">
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:41:52 </span><span style="color: #5BC0EB">[СИСТЕМА]</span> Интерфейс загружен, настройки применены.</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:41:53 </span><span style="color: #8A90A6">[GUI]</span> Окно настроек открыто, язык: RU.</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:41:55 </span><span style="color: #5BC0EB">[СИСТЕМА]</span> ADB: устройство найдено, запускаю scrcpy…</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:41:58 </span><span style="color: #5BC0EB">[СИСТЕМА]</span> Окно HeroWarsBot_Arena подключено.</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:42:04 </span><span style="color: #4ADE80">[БОЙ]</span> Этаж 14436 · Вода · основной пак</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:42:31 </span><span style="color: #4ADE80">[БОЙ]</span> Победа · ХП Сигурда 85%</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:42:36 </span><span style="color: #4ADE80">[БОЙ]</span> Этаж 14436 · Смешанная · основной пак</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:42:52 </span><span style="color: #FACC15">[ПЕРЕХВАТ]</span> «Авто-отхил»: ХП Араджи ниже 65% → смена пака</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:43:20 </span><span style="color: #4ADE80">[БОЙ]</span> Победа · все титаны в норме</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:43:24 </span><span style="color: #F87171">[ОШИБКА]</span> Кнопка «В бой!» не найдена на экране, повтор 1/3</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:43:26 </span><span style="color: #4ADE80">[БОЙ]</span> Этаж 14437 · Огонь · основной пак</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:43:51 </span><span style="color: #4ADE80">[БОЙ]</span> Победа · ХП Молоха 72%</div>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #8A90A6">10:43:55 </span><span style="color: #5BC0EB">[СИСТЕМА]</span> Переход к следующей двери: Вода</div>
+</div>
+</sc-if>
+
+<div style="display: flex; align-items: center; gap: 8px; padding: 0 12px 12px">
+<button style="height: 34px; padding: 0 12px; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #E8EAF0; display: flex; align-items: center; gap: 8px; font-size: 13px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A9AFC2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"></path><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7M7 3v4a1 1 0 0 0 1 1h7"></path></svg>Сохранить лог</button>
+<button style="height: 34px; padding: 0 12px; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #E8EAF0; display: flex; align-items: center; gap: 8px; font-size: 13px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A9AFC2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg>Отправить лог автору</button>
+<a href="States.dc.html" style="margin-left: auto; height: 34px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; color: #A9AFC2; display: flex; align-items: center; gap: 8px; font-size: 13px; text-decoration: none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>Очистить</a>
+</div>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["Первый запуск","Не подключён","Готов к старту","Фарм идёт"],"default":"Готов к старту","section":"Состояние"},"$preview":{"width":1100,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const m = this.props.mode ?? 'Готов к старту';
+    const first = m === 'Первый запуск';
+    const offline = m === 'Не подключён';
+    const ready = m === 'Готов к старту';
+    const running = m === 'Фарм идёт';
+    return {
+      isFirst: first,
+      isReady: ready,
+      isRunning: running,
+      notRunning: !running,
+      needPhone: first || offline,
+      connected: ready || running,
+      disconnected: first || offline,
+      showConfig: offline || ready,
+      hasLog: !first,
+      ctrlOpacity: running ? 1 : 0.4,
+      tgDot: first ? '#8A90A6' : '#4ADE80',
+      tgText: first ? 'не настроен' : 'подключен'
+    };
+  }
+}
+</script>
+</body>
+</html>

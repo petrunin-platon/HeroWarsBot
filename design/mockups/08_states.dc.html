@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Диалоги и состояния</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#0B0C10}
+a{color:#6EA8FF}a:hover{color:#9CC3FF}
+button,input{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 1040px; height: 600px; box-sizing: border-box; padding: 40px; display: flex; flex-direction: column; gap: 32px; background: #0B0C10; color: #E8EAF0; font-family: Roboto, 'Segoe UI', system-ui, sans-serif; font-size: 14px; color-scheme: dark">
+
+<section aria-labelledby="dlg-cap" style="display: flex; flex-direction: column; gap: 10px">
+<h2 id="dlg-cap" style="margin: 0; font-size: 13px; font-weight: 500; color: #A9AFC2">Подтверждения · «Очистить все правила», «Восстановить / Сброс», «Очистить журнал» и уход с несохранёнными изменениями</h2>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px">
+
+<div role="alertdialog" aria-labelledby="d1-h" aria-describedby="d1-t" style="display: flex; flex-direction: column; gap: 20px; padding: 20px; border-radius: 12px; background: #1B1D26; border: 1px solid #2E3244; box-shadow: 0 20px 48px rgba(0,0,0,0.5)">
+<div style="display: flex; gap: 14px">
+<div style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 10px; background: rgba(239,68,68,0.16); color: #F87171; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg></div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h3 id="d1-h" style="margin: 0; font-size: 16px; font-weight: 600">Удалить все правила?</h3>
+<p id="d1-t" style="margin: 0; font-size: 13px; line-height: 1.55; color: #A9AFC2">Будут удалены все 8 правил. Это действие нельзя отменить. Если правило мешает лишь временно, его можно просто выключить.</p>
+</div>
+</div>
+<div style="display: flex; justify-content: flex-end; gap: 10px">
+<a href="Rules_Intercepts.dc.html" style="height: 38px; box-sizing: border-box; padding: 0 16px; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #E8EAF0; display: flex; align-items: center; font-size: 13px; text-decoration: none">Отмена</a>
+<a href="Rules_Intercepts.dc.html" style="height: 38px; box-sizing: border-box; padding: 0 16px; border-radius: 6px; background: #DC2626; color: #FFFFFF; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; text-decoration: none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>Удалить все</a>
+</div>
+</div>
+
+<div role="alertdialog" aria-labelledby="d2-h" aria-describedby="d2-t" style="display: flex; flex-direction: column; gap: 20px; padding: 20px; border-radius: 12px; background: #1B1D26; border: 1px solid #2E3244; box-shadow: 0 20px 48px rgba(0,0,0,0.5)">
+<div style="display: flex; gap: 14px">
+<div style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 10px; background: rgba(250,204,21,0.14); color: #FACC15; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3ZM12 9v4M12 17h.01"></path></svg></div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h3 id="d2-h" style="margin: 0; font-size: 16px; font-weight: 600">Сохранить изменения?</h3>
+<p id="d2-t" style="margin: 0; font-size: 13px; line-height: 1.55; color: #A9AFC2">Ты поменял настройки на вкладке «Авто-тактика и ХП», но не сохранил их. Если уйти сейчас, изменения пропадут.</p>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 10px">
+<button style="height: 38px; padding: 0 12px; border-radius: 6px; background: transparent; border: 1px solid transparent; color: #F87171; font-size: 13px">Не сохранять</button>
+<a href="Rules_Tactics.dc.html" style="margin-left: auto; height: 38px; box-sizing: border-box; padding: 0 16px; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #E8EAF0; display: flex; align-items: center; font-size: 13px; text-decoration: none">Отмена</a>
+<button style="height: 38px; padding: 0 16px; border-radius: 6px; background: #2F7A1E; border: 1px solid #2F7A1E; color: #FFFFFF; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"></path><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7M7 3v4a1 1 0 0 0 1 1h7"></path></svg>Сохранить</button>
+</div>
+</div>
+
+</div>
+</section>
+
+<section aria-labelledby="fld-cap" style="display: flex; flex-direction: column; gap: 10px">
+<h2 id="fld-cap" style="margin: 0; font-size: 13px; font-weight: 500; color: #A9AFC2">Состояния полей ввода · ошибка пишется прямо под полем</h2>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding: 20px; border-radius: 10px; background: #1B1D26; border: 1px solid #2E3244">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: #8A90A6">ОБЫЧНОЕ</span>
+<label for="f1" style="font-size: 12px; color: #A9AFC2">Порог паники ХП, %</label>
+<input id="f1" value="30" style="height: 36px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #E8EAF0; font-family: 'Roboto Mono', monospace; font-size: 14px">
+<span style="font-size: 12px; color: #8A90A6">От 0 до 100</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: #8A90A6">В ФОКУСЕ</span>
+<label for="f2" style="font-size: 12px; color: #A9AFC2">Порог паники ХП, %</label>
+<input id="f2" value="35" style="height: 36px; box-sizing: border-box; padding: 0 9px; border-radius: 6px; background: #242734; border: 2px solid #2979FF; color: #E8EAF0; font-family: 'Roboto Mono', monospace; font-size: 14px">
+<span style="font-size: 12px; color: #8A90A6">От 0 до 100</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: #8A90A6">ОШИБКА</span>
+<label for="f3" style="font-size: 12px; color: #A9AFC2">Порог паники ХП, %</label>
+<input id="f3" value="130" aria-invalid="true" aria-describedby="f3-e" style="height: 36px; box-sizing: border-box; padding: 0 9px; border-radius: 6px; background: #2A1F27; border: 2px solid #EF4444; color: #E8EAF0; font-family: 'Roboto Mono', monospace; font-size: 14px">
+<span id="f3-e" style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #F87171"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 8v4M12 16h.01"></path></svg>Введи число от 0 до 100</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: #8A90A6">НЕДОСТУПНО</span>
+<label for="f4" style="font-size: 12px; color: #A9AFC2">Порог паники ХП, %</label>
+<input id="f4" value="30" disabled style="height: 36px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; background: #1F2129; border: 1px solid #2E3244; color: #8A90A6; font-family: 'Roboto Mono', monospace; font-size: 14px">
+<span style="font-size: 12px; color: #8A90A6">Нельзя менять во время фарма</span>
+</div>
+</div>
+</section>
+
+<section aria-labelledby="toast-cap" style="display: flex; flex-direction: column; gap: 10px">
+<h2 id="toast-cap" style="margin: 0; font-size: 13px; font-weight: 500; color: #A9AFC2">Короткие уведомления · появляются в правом нижнем углу на 4 секунды</h2>
+<div style="display: flex; gap: 20px">
+<div role="status" style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; border-radius: 8px; background: #242734; border: 1px solid #3A3F55; box-shadow: 0 12px 32px rgba(0,0,0,0.45); font-size: 13px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Настройки сохранены
+<button aria-label="Закрыть уведомление" style="width: 28px; height: 28px; padding: 0; margin-left: 8px; border-radius: 6px; background: transparent; border: 0; color: #8A90A6; display: flex; align-items: center; justify-content: center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+</div>
+<div role="status" style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; border-radius: 8px; background: #242734; border: 1px solid #3A3F55; box-shadow: 0 12px 32px rgba(0,0,0,0.45); font-size: 13px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A9AFC2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>Правило «Араджи ранен» удалено
+<button style="height: 28px; padding: 0 10px; margin-left: 6px; border-radius: 6px; background: transparent; border: 1px solid #3A3F55; color: #6EA8FF; font-size: 13px; font-weight: 500">Вернуть</button>
+<button aria-label="Закрыть уведомление" style="width: 28px; height: 28px; padding: 0; border-radius: 6px; background: transparent; border: 0; color: #8A90A6; display: flex; align-items: center; justify-content: center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+</div>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1040,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

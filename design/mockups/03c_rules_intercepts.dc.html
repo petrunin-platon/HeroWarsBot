@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Мастер правил — правила и перехваты</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#12131A}
+a{color:#6EA8FF}a:hover{color:#9CC3FF}
+button,input{font-family:inherit}
+.rail{position:relative}
+.rail:not(.on):hover{background:#1B1D26 !important;color:#E8EAF0 !important}
+.rail .tip{display:none;position:absolute;left:54px;top:50%;transform:translateY(-50%);white-space:nowrap;padding:6px 10px;border-radius:6px;background:#2A2E3D;border:1px solid #3A3F55;color:#E8EAF0;font-size:12px;font-weight:500;z-index:30;pointer-events:none;box-shadow:0 6px 16px rgba(0,0,0,0.45)}
+.rail:hover .tip,.rail:focus-visible .tip{display:block}
+.scroll{overflow-y:auto;scrollbar-width:thin;scrollbar-color:#3A3F55 transparent}
+.rule:hover{border-color:#4A5068 !important}
+</style>
+</helmet>
+<div style="width: 1100px; height: 720px; display: flex; background: #12131A; color: #E8EAF0; font-family: Roboto, 'Segoe UI', system-ui, sans-serif; font-size: 14px; color-scheme: dark; overflow: hidden">
+
+<nav aria-label="Разделы" style="width: 64px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; border-right: 1px solid #2E3244; position: relative; z-index: 5">
+<div title="RPA BOT v1.6.1" style="width: 40px; height: 40px; border-radius: 10px; background: #242734; border: 1px solid #2E3244; display: flex; align-items: center; justify-content: center; color: #3B8E26"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="m9 12 2 2 4-4"></path></svg></div>
+<span style="font-family: 'Roboto Mono', monospace; font-size: 10px; color: #8A90A6">v1.6.1</span>
+<div style="width: 28px; height: 1px; margin: 4px 0; background: #2E3244"></div>
+<a class="rail" href="Main.dc.html" aria-label="Главная (Фарм)" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M9 22V12h6v10"></path></svg><span class="tip" aria-hidden="true">Главная (Фарм)</span></a>
+<a class="rail on" href="Rules_Base.dc.html" aria-label="Мастер правил" aria-current="page" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; background: rgba(41,121,255,0.16); border: 1px solid rgba(41,121,255,0.45); color: #6EA8FF; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"></path></svg><span class="tip" aria-hidden="true">Мастер правил</span></a>
+<a class="rail" href="Analytics.dc.html" aria-label="Аналитика" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg><span class="tip" aria-hidden="true">Аналитика</span></a>
+<a class="rail" href="Stats.dc.html" aria-label="Статистика" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20V10M18 20V4M6 20v-4"></path></svg><span class="tip" aria-hidden="true">Статистика</span></a>
+<a class="rail" href="Guide.dc.html" aria-label="Руководство" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg><span class="tip" aria-hidden="true">Руководство</span></a>
+<a class="rail" href="About.dc.html" aria-label="О программе" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 16v-4M12 8h.01"></path></svg><span class="tip" aria-hidden="true">О программе</span></a>
+<div style="margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 8px">
+<button class="rail" aria-label="Telegram: подключен" style="width: 44px; height: 44px; padding: 0; border-radius: 10px; background: transparent; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg><span style="position: absolute; top: 9px; right: 9px; width: 8px; height: 8px; border-radius: 50%; background: #4ADE80; box-shadow: 0 0 0 2px #12131A"></span><span class="tip" aria-hidden="true">Telegram: подключен</span></button>
+<button class="rail" aria-label="Язык интерфейса: Русский" aria-haspopup="listbox" style="width: 44px; height: 34px; padding: 0; border-radius: 8px; background: #1B1D26; border: 1px solid #2E3244; color: #E8EAF0; display: flex; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 600">RU<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8A90A6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg><span class="tip" aria-hidden="true">Язык: Русский · всего 13</span></button>
+</div>
+</nav>
+
+<main style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<header style="height: 56px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 16px; padding: 0 24px; border-bottom: 1px solid #2E3244">
+<h1 style="margin: 0; font-size: 18px; font-weight: 600">Мастер правил</h1>
+<div style="margin-left: auto; display: flex; align-items: center; gap: 8px">
+<div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 6px; background: #1B1D26; border: 1px solid #2E3244; font-size: 13px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80; box-shadow: 0 0 0 3px rgba(74,222,128,0.18)"></span><span style="font-family: 'Roboto Mono', monospace; font-size: 12px">HeroWarsBot_Arena</span><span style="color: #4ADE80">подключено</span></div>
+<button aria-label="Выключить экран телефона" title="Выкл. экран" style="width: 34px; height: 34px; border-radius: 6px; background: #1B1D26; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></button>
+<button aria-label="Перезапустить scrcpy" title="Перезапуск scrcpy" style="width: 34px; height: 34px; border-radius: 6px; background: #1B1D26; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg></button>
+<button aria-label="Сбросить размер окна трансляции" title="Сброс размера окна" style="width: 34px; height: 34px; border-radius: 6px; background: #1B1D26; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></button>
+</div>
+</header>
+
+<div style="flex-shrink: 0; padding: 14px 24px 0">
+<div role="tablist" aria-label="Разделы мастера правил" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 8px; background: #1B1D26; border: 1px solid #2E3244">
+<a role="tab" aria-selected="false" href="Rules_Base.dc.html" style="height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: #A9AFC2; font-size: 13px; text-decoration: none">База и комнаты</a>
+<a role="tab" aria-selected="false" href="Rules_Tactics.dc.html" style="height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: #A9AFC2; font-size: 13px; text-decoration: none">Авто-тактика и ХП</a>
+<a role="tab" aria-selected="true" href="Rules_Intercepts.dc.html" style="height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: #1F6FEB; color: #FFFFFF; font-size: 13px; font-weight: 500; text-decoration: none">Правила и перехваты</a>
+</div>
+</div>
+
+<div style="flex: 1; min-height: 0; box-sizing: border-box; padding: 18px 24px 20px; display: flex; flex-direction: column">
+<section aria-labelledby="list-h" style="flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 10px; background: #1B1D26; border: 1px solid #2E3244">
+
+<div style="display: flex; align-items: center; gap: 10px">
+<h2 id="list-h" style="margin: 0; font-size: 15px; font-weight: 600">Активные правила</h2>
+<span style="padding: 1px 8px; border-radius: 9px; background: #242734; color: #A9AFC2; font-size: 12px">8</span>
+<span style="margin-left: auto; font-size: 12px; color: #8A90A6">Правило выше в списке проверяется первым</span>
+</div>
+<div style="display: flex; align-items: center; gap: 6px">
+<div role="group" aria-label="Фильтр по стихии" style="display: flex; gap: 6px">
+<button aria-pressed="true" style="height: 30px; padding: 0 12px; border-radius: 15px; background: #242734; border: 1px solid #4A5068; color: #E8EAF0; font-size: 12px; font-weight: 500">Все</button>
+<button aria-pressed="false" style="height: 30px; padding: 0 12px; border-radius: 15px; background: transparent; border: 1px solid #2E3244; color: #A9AFC2; font-size: 12px; display: flex; align-items: center; gap: 6px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #52B788"></span>Земля</button>
+<button aria-pressed="false" style="height: 30px; padding: 0 12px; border-radius: 15px; background: transparent; border: 1px solid #2E3244; color: #A9AFC2; font-size: 12px; display: flex; align-items: center; gap: 6px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #00B4D8"></span>Вода</button>
+<button aria-pressed="false" style="height: 30px; padding: 0 12px; border-radius: 15px; background: transparent; border: 1px solid #2E3244; color: #A9AFC2; font-size: 12px; display: flex; align-items: center; gap: 6px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #F77F00"></span>Огонь</button>
+<button aria-pressed="false" style="height: 30px; padding: 0 12px; border-radius: 15px; background: transparent; border: 1px solid #2E3244; color: #A9AFC2; font-size: 12px; display: flex; align-items: center; gap: 6px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #9D4EDD"></span>Смешанная</button>
+</div>
+<a href="Rule_Editor.dc.html" style="margin-left: auto; height: 30px; box-sizing: border-box; padding: 0 12px 0 10px; border-radius: 6px; background: #242734; border: 1px solid #3A3F55; color: #E8EAF0; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; text-decoration: none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6EA8FF" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M12 5v14"></path></svg>Новое правило</a>
+</div>
+
+<div style="display: grid; grid-template-columns: 34px minmax(0, 1fr) 280px 40px 66px; gap: 14px; padding: 0 12px 0 10px; font-size: 12px; color: #8A90A6">
+<span>№</span><span>Условие</span><span>Действие</span><span>Вкл.</span><span></span>
+</div>
+
+<ol class="scroll" style="flex: 1; min-height: 0; margin: 0; padding: 0 6px 0 0; list-style: none; display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{ rules }}" as="r" hint-placeholder-count="8">
+<li class="rule" style="flex-shrink: 0; display: grid; grid-template-columns: 34px minmax(0, 1fr) 280px 40px 66px; gap: 14px; align-items: center; padding: 8px 12px 8px 10px; border-radius: 8px; background: #242734; border: 1px solid #2E3244">
+<div style="display: flex; flex-direction: column; align-items: center">
+<button aria-label="Поднять приоритет: {{ r.title }}" title="Выше" style="width: 26px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"></path></svg></button>
+<span style="font-family: 'Roboto Mono', monospace; font-size: 12px; color: #8A90A6">{{ r.num }}</span>
+<button aria-label="Опустить приоритет: {{ r.title }}" title="Ниже" style="width: 26px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+</div>
+<div style="min-width: 0; display: flex; flex-direction: column; gap: 5px; opacity: {{ r.op }}">
+<div style="display: flex; align-items: center; gap: 6px; min-width: 0">
+<span style="flex-shrink: 0; height: 20px; padding: 0 7px; border-radius: 4px; background: {{ r.elBg }}; color: {{ r.elText }}; font-size: 11px; font-weight: 500; display: flex; align-items: center">{{ r.el }}</span>
+<span style="flex-shrink: 0; height: 20px; padding: 0 7px; border-radius: 4px; background: {{ r.tagBg }}; color: {{ r.tagText }}; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; display: flex; align-items: center">{{ r.tag }}</span>
+<span style="font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.title }}</span>
+</div>
+<span style="font-size: 12px; color: #A9AFC2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.cond }}</span>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0; opacity: {{ r.op }}">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A90A6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>
+<sc-if value="{{ r.hasPack }}" hint-placeholder-val="{{ false }}">
+<span style="display: flex; gap: 3px">
+<sc-for list="{{ r.pack }}" as="t" hint-placeholder-count="5"><span role="img" aria-label="{{ t.n }}" title="{{ t.n }}" style="width: 26px; height: 26px; box-sizing: border-box; border-radius: 5px; border: 1.5px solid {{ t.c }}; background: {{ t.bg }}; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #E8EAF0">{{ t.i }}</span></sc-for>
+</span>
+<span style="font-size: 12px; color: #A9AFC2; white-space: nowrap">смена пака</span>
+</sc-if>
+<sc-if value="{{ r.noPack }}" hint-placeholder-val="{{ false }}">
+<span style="height: 26px; padding: 0 10px; border-radius: 13px; background: {{ r.actBg }}; color: {{ r.actText }}; font-size: 12px; font-weight: 500; display: flex; align-items: center; white-space: nowrap">{{ r.action }}</span>
+</sc-if>
+</div>
+<button role="switch" aria-checked="{{ r.on }}" aria-label="Правило включено: {{ r.title }}" title="Включить / выключить правило" onClick="{{ r.flip }}" style="width: 36px; height: 20px; box-sizing: border-box; padding: 2px; border: 0; border-radius: 10px; background: {{ r.track }}; display: flex; align-items: center; justify-content: {{ r.knobPos }}; cursor: pointer"><span style="width: 16px; height: 16px; border-radius: 50%; background: {{ r.knob }}"></span></button>
+<div style="display: flex; gap: 2px; justify-content: flex-end">
+<a href="Rule_Editor.dc.html" aria-label="Редактировать: {{ r.title }}" title="Редактировать" style="width: 30px; height: 30px; box-sizing: border-box; border-radius: 6px; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path></svg></a>
+<button aria-label="Удалить: {{ r.title }}" title="Удалить" style="width: 30px; height: 30px; padding: 0; border-radius: 6px; background: transparent; border: 0; color: #8A90A6; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+</div>
+</li>
+</sc-for>
+</ol>
+
+<div style="display: flex; align-items: center; gap: 12px">
+<a href="States.dc.html" style="height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; color: #F87171; display: flex; align-items: center; gap: 8px; font-size: 13px; text-decoration: none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>Очистить все правила</a>
+</div>
+</section>
+</div>
+
+<footer style="height: 64px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 24px; border-top: 1px solid #2E3244; background: #1B1D26">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #A9AFC2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Все изменения сохранены</span>
+<button style="margin-left: auto; height: 38px; padding: 0 14px; border-radius: 6px; background: transparent; border: 1px solid #EF4444; color: #F87171; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>Восстановить / Сброс</button>
+<button style="height: 38px; padding: 0 18px; border-radius: 6px; background: #2F7A1E; border: 1px solid #2F7A1E; color: #FFFFFF; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"></path><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7M7 3v4a1 1 0 0 0 1 1h7"></path></svg>Сохранить настройки</button>
+</footer>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const EL = {
+      earth: ['#52B788', 'rgba(82,183,136,0.16)'],
+      water: ['#00B4D8', 'rgba(0,180,216,0.16)'],
+      fire: ['#F77F00', 'rgba(247,127,0,0.16)'],
+      light: ['#E9C46A', 'rgba(233,196,106,0.16)'],
+      dark: ['#A3A8C3', 'rgba(163,168,195,0.16)']
+    };
+    const T = {
+      'Ангус': 'earth', 'Авалон': 'earth', 'Эдем': 'earth', 'Сильва': 'earth', 'Вердок': 'earth', 'Паллант': 'earth',
+      'Сигурд': 'water', 'Нова': 'water', 'Маири': 'water', 'Гиперион': 'water', 'Орм': 'water', 'Тидус': 'water',
+      'Молох': 'fire', 'Вулкан': 'fire', 'Игнис': 'fire', 'Араджи': 'fire', 'Ашерон': 'fire', 'Алекто': 'fire',
+      'Амон': 'light', 'Люмира': 'light', 'Ригель': 'light', 'Ияри': 'light', 'Солярис': 'light'
+    };
+    const pack = (s) => s.split(',').map((n) => {
+      const e = EL[T[n]] || EL.dark;
+      return { n: n, i: n.slice(0, 2), c: e[0], bg: e[1] };
+    });
+    const ROOM = {
+      earth: ['Земля', 'rgba(82,183,136,0.16)', '#52B788'],
+      water: ['Вода', 'rgba(0,180,216,0.16)', '#00B4D8'],
+      fire: ['Огонь', 'rgba(247,127,0,0.16)', '#F77F00'],
+      mixed: ['Смешанная', 'rgba(157,78,221,0.18)', '#BF8CF0']
+    };
+    const TAG = {
+      heal: ['ЛЕЧЕНИЕ', 'rgba(74,222,128,0.14)', '#4ADE80'],
+      skip: ['СКИП', 'rgba(169,175,194,0.14)', '#C3C8D6'],
+      hp: ['ХП', 'rgba(250,204,21,0.14)', '#FACC15'],
+      enemy: ['ВРАГИ', 'rgba(239,68,68,0.16)', '#F87171'],
+      energy: ['ЭНЕРГИЯ', 'rgba(41,121,255,0.16)', '#6EA8FF']
+    };
+    const ACT = {
+      pause: ['Мягкая пауза', 'rgba(250,204,21,0.14)', '#FACC15'],
+      skip: ['Пропустить комнату', 'rgba(169,175,194,0.14)', '#C3C8D6']
+    };
+    const make = (num, room, tag, title, cond, packStr, act) => ({
+      num: num,
+      el: ROOM[room][0], elBg: ROOM[room][1], elText: ROOM[room][2],
+      tag: TAG[tag][0], tagBg: TAG[tag][1], tagText: TAG[tag][2],
+      title: title, cond: cond,
+      hasPack: !!packStr, noPack: !packStr, pack: packStr ? pack(packStr) : [],
+      action: act ? ACT[act][0] : '', actBg: act ? ACT[act][1] : 'transparent', actText: act ? ACT[act][2] : '#A9AFC2'
+    });
+    const off = (this.state || {}).off || [7];
+    const list = [
+        make(1, 'mixed', 'heal', 'Авто-отхил', 'ХП Араджи ниже 65%', 'Сигурд,Араджи,Ригель,Ияри,Люмира', null),
+        make(2, 'mixed', 'skip', 'Авто: Ангус + Араджи в комнате', 'Создано ботом после неудачных боёв', '', 'skip'),
+        make(3, 'water', 'hp', 'Сигурд в опасности', 'ХП Сигурда ниже 35%', '', 'pause'),
+        make(4, 'fire', 'enemy', 'Молох и Вулкан', 'Враги в комнате: Молох, Вулкан', 'Алекто,Игнис,Араджи,Ашерон,Молох', null),
+        make(5, 'earth', 'energy', 'Ульта Ангуса', 'Энергия Ангуса ниже 30%', 'Ангус,Паллант,Эдем,Сильва,Авалон', null),
+        make(6, 'water', 'enemy', 'Гиперион в комнате', 'Враги в комнате: Гиперион', 'Сигурд,Нова,Маири,Орм,Тидус', null),
+        make(7, 'fire', 'hp', 'Араджи ранен', 'ХП Араджи ниже 40%', '', 'skip'),
+        make(8, 'mixed', 'enemy', 'Тяжёлая смешанная', 'Враги в комнате: Сигурд, Ангус, Араджи', '', 'pause')
+    ];
+    return {
+      rules: list.map((r) => {
+        const on = off.indexOf(r.num) < 0;
+        return Object.assign({}, r, {
+          on: on,
+          op: on ? 1 : 0.45,
+          track: on ? '#2979FF' : '#3A3F55',
+          knob: on ? '#FFFFFF' : '#A9AFC2',
+          knobPos: on ? 'flex-end' : 'flex-start',
+          flip: () => {
+            const cur = (this.state || {}).off || [7];
+            this.setState({ off: on ? cur.concat([r.num]) : cur.filter((x) => x !== r.num) });
+          }
+        });
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

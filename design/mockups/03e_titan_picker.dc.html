@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Собери состав</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#12131A}
+a{color:#6EA8FF}a:hover{color:#9CC3FF}
+button{font-family:inherit}
+.tt:not([disabled]):hover{border-color:#4A5068 !important}
+</style>
+</helmet>
+<div role="dialog" aria-labelledby="pk-h" style="width: 900px; height: 580px; box-sizing: border-box; display: flex; flex-direction: column; background: #12131A; border: 1px solid #2E3244; color: #E8EAF0; font-family: Roboto, 'Segoe UI', system-ui, sans-serif; font-size: 14px; color-scheme: dark; overflow: hidden">
+
+<div style="flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 18px 24px; border-bottom: 1px solid #2E3244">
+<div style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 8px; background: rgba(41,121,255,0.16); color: #6EA8FF; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 1 0 0-8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
+<div style="display: flex; flex-direction: column; gap: 3px">
+<h1 id="pk-h" style="margin: 0; font-size: 18px; font-weight: 600">Собери состав</h1>
+<span style="font-size: 12px; color: #A9AFC2">От 3 до 5 титанов · нажми на титана, чтобы добавить или убрать</span>
+</div>
+<a href="Rules_Base.dc.html" aria-label="Закрыть" title="Закрыть" style="margin-left: auto; width: 32px; height: 32px; box-sizing: border-box; border-radius: 6px; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></a>
+</div>
+
+<div style="flex-shrink: 0; display: flex; align-items: center; gap: 24px; padding: 14px 24px; background: #1B1D26; border-bottom: 1px solid #2E3244">
+<ol aria-label="Выбранный состав" style="margin: 0; padding: 0; list-style: none; display: flex; gap: 10px">
+<sc-for list="{{ slots }}" as="s" hint-placeholder-count="5">
+<li style="display: flex">
+<sc-if value="{{ s.filled }}" hint-placeholder-val="{{ false }}">
+<button aria-label="Убрать из состава: {{ s.n }}" title="Убрать: {{ s.n }}" onClick="{{ s.pick }}" style="width: 52px; height: 52px; padding: 0; box-sizing: border-box; border-radius: 8px; border: 2px solid {{ s.c }}; background: {{ s.bg }}; color: #E8EAF0; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center; cursor: pointer">{{ s.i }}</button>
+</sc-if>
+<sc-if value="{{ s.empty }}" hint-placeholder-val="{{ true }}">
+<span aria-label="Пустой слот" style="width: 52px; height: 52px; box-sizing: border-box; border-radius: 8px; border: 1.5px dashed #4A5068; color: #8A90A6; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M12 5v14"></path></svg></span>
+</sc-if>
+</li>
+</sc-for>
+</ol>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 15px; font-weight: 600">Выбрано: <span style="font-family: 'Roboto Mono', monospace">{{ count }} / 5</span></span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: {{ statusColor }}"><span style="width: 7px; height: 7px; border-radius: 50%; background: {{ statusColor }}"></span>{{ statusText }}</span>
+</div>
+<button onClick="{{ clear }}" style="margin-left: auto; height: 32px; padding: 0 10px; border-radius: 6px; background: transparent; border: 1px solid transparent; color: #A9AFC2; display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>Очистить</button>
+</div>
+
+<div style="flex: 1; min-height: 0; box-sizing: border-box; padding: 16px 24px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; align-content: start">
+<sc-for list="{{ cols }}" as="col" hint-placeholder-count="5">
+<section aria-label="{{ col.label }}" style="display: flex; flex-direction: column; gap: 6px">
+<div style="height: 24px; display: flex; align-items: center; gap: 8px; margin-bottom: 2px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ col.color }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ col.d }}"></path></svg>
+<h2 style="margin: 0; font-size: 14px; font-weight: 600; color: {{ col.color }}">{{ col.label }}</h2>
+<span style="margin-left: auto; font-size: 12px; color: #8A90A6">{{ col.count }}</span>
+</div>
+<sc-for list="{{ col.items }}" as="t" hint-placeholder-count="6">
+<button class="tt" aria-pressed="{{ t.on }}" disabled="{{ t.locked }}" onClick="{{ t.pick }}" style="height: 40px; padding: 0 8px 0 5px; box-sizing: border-box; border-radius: 8px; background: {{ t.tile }}; border: 1px solid {{ t.border }}; color: #E8EAF0; display: flex; align-items: center; gap: 8px; font-size: 13px; opacity: {{ t.dim }}; cursor: pointer">
+<span style="width: 28px; height: 28px; flex-shrink: 0; box-sizing: border-box; border-radius: 6px; border: 1.5px solid {{ t.c }}; background: {{ t.bg }}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700">{{ t.i }}</span>
+<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ t.n }}</span>
+<sc-if value="{{ t.on }}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="margin-left: auto; width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%; background: #3B8E26; display: flex; align-items: center; justify-content: center"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span></sc-if>
+</button>
+</sc-for>
+</section>
+</sc-for>
+</div>
+
+<div style="flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 14px 24px; border-top: 1px solid #2E3244; background: #1B1D26">
+<span style="font-size: 12px; color: #8A90A6">Когда выбрано 5, остальные титаны блокируются</span>
+<a href="Rules_Base.dc.html" style="margin-left: auto; height: 38px; box-sizing: border-box; padding: 0 16px; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #E8EAF0; display: flex; align-items: center; font-size: 13px; text-decoration: none">Отмена</a>
+<sc-if value="{{ ok }}" hint-placeholder-val="{{ true }}">
+<a href="Rules_Base.dc.html" style="height: 38px; box-sizing: border-box; padding: 0 20px; border-radius: 6px; background: #2F7A1E; color: #FFFFFF; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; text-decoration: none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Применить</a>
+</sc-if>
+<sc-if value="{{ notOk }}" hint-placeholder-val="{{ false }}">
+<button disabled style="height: 38px; padding: 0 20px; border-radius: 6px; background: #2F7A1E; border: 0; color: #FFFFFF; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; opacity: 0.4"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Применить</button>
+</sc-if>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":900,"height":580}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const DEF = ['Сигурд', 'Араджи', 'Ригель'];
+    const st = this.state || {};
+    const sel = st.sel || DEF;
+    const EL = {
+      earth: ['#52B788', 'rgba(82,183,136,0.16)'],
+      water: ['#00B4D8', 'rgba(0,180,216,0.16)'],
+      fire: ['#F77F00', 'rgba(247,127,0,0.16)'],
+      light: ['#E9C46A', 'rgba(233,196,106,0.16)'],
+      dark: ['#A3A8C3', 'rgba(163,168,195,0.16)']
+    };
+    const COLS = [
+      ['earth', 'Земля', 'Ангус,Авалон,Эдем,Сильва,Вердок,Паллант', 'M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10ZM2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12'],
+      ['water', 'Вода', 'Гиперион,Сигурд,Тидус,Нова,Маири,Орм', 'M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z'],
+      ['fire', 'Огонь', 'Араджи,Игнис,Ашерон,Вулкан,Молох,Алекто', 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z'],
+      ['light', 'Свет', 'Ригель,Ияри,Люмира,Солярис,Амон', 'M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41'],
+      ['dark', 'Тьма', 'Мор,Тенебрис,Брустар,Умбра,Керос', 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z']
+    ];
+    const elementOf = {};
+    COLS.forEach((c) => c[2].split(',').forEach((n) => { elementOf[n] = c[0]; }));
+    const full = sel.length >= 5;
+    const toggle = (n) => () => {
+      const cur = (this.state || {}).sel || DEF;
+      if (cur.indexOf(n) >= 0) this.setState({ sel: cur.filter((x) => x !== n) });
+      else if (cur.length < 5) this.setState({ sel: cur.concat([n]) });
+    };
+    const cols = COLS.map((c) => {
+      const e = EL[c[0]];
+      const names = c[2].split(',');
+      return {
+        label: c[1], color: e[0], d: c[3], count: names.length,
+        items: names.map((n) => {
+          const on = sel.indexOf(n) >= 0;
+          const locked = !on && full;
+          return {
+            n: n, i: n.slice(0, 2), c: e[0], bg: e[1], on: on, locked: locked,
+            dim: locked ? 0.4 : 1,
+            tile: on ? 'rgba(59,142,38,0.14)' : '#1B1D26',
+            border: on ? '#3B8E26' : '#2E3244',
+            pick: toggle(n)
+          };
+        })
+      };
+    });
+    const slots = [0, 1, 2, 3, 4].map((k) => {
+      if (k < sel.length) {
+        const n = sel[k];
+        const e = EL[elementOf[n]] || EL.dark;
+        return { filled: true, empty: false, n: n, i: n.slice(0, 2), c: e[0], bg: e[1], pick: toggle(n) };
+      }
+      return { filled: false, empty: true };
+    });
+    const ok = sel.length >= 3;
+    const need = 3 - sel.length;
+    return {
+      cols: cols,
+      slots: slots,
+      count: sel.length,
+      ok: ok,
+      notOk: !ok,
+      statusText: ok ? (full ? 'Состав полный' : 'Можно применять') : ('Минимум 3 · нужно ещё ' + need),
+      statusColor: ok ? '#4ADE80' : '#FACC15',
+      clear: () => this.setState({ sel: [] })
+    };
+  }
+}
+</script>
+</body>
+</html>

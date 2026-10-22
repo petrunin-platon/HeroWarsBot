@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>HUD док-плеер</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;family=Roboto+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#0B0C10}
+a{color:#6EA8FF}a:hover{color:#9CC3FF}
+button{font-family:inherit}
+@keyframes hudPulseG{0%{box-shadow:0 0 0 0 rgba(74,222,128,0.55)}70%{box-shadow:0 0 0 8px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+@keyframes hudPulseR{0%{box-shadow:0 0 0 0 rgba(239,68,68,0.6)}70%{box-shadow:0 0 0 8px rgba(239,68,68,0)}100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}}
+.hud-pulse-g{animation:hudPulseG 1.6s ease-out infinite}
+.hud-pulse-r{animation:hudPulseR 1s ease-out infinite}
+@media (prefers-reduced-motion: reduce){.hud-pulse-g,.hud-pulse-r{animation:none}}
+</style>
+</helmet>
+<div style="width: 1040px; height: 1000px; box-sizing: border-box; padding: 40px; display: flex; flex-direction: column; gap: 48px; background: #0B0C10; color: #E8EAF0; font-family: Roboto, 'Segoe UI', system-ui, sans-serif; font-size: 14px; color-scheme: dark">
+
+<div style="width: 960px; display: flex; flex-direction: column; box-shadow: 0 16px 40px rgba(0,0,0,0.45); border-radius: 8px">
+<div style="height: 30px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #1F2028; border: 1px solid #2E3244; border-bottom: none; border-radius: 8px 8px 0 0; font-size: 12px; color: #A9AFC2">
+<span>HeroWarsBot_Arena</span>
+<div style="margin-left: auto; display: flex; gap: 14px; color: #8A90A6"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12h16"></path></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 5h14v14H5z"></path></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></div>
+</div>
+<div style="height: 432px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #0F1015; border-left: 1px solid #2E3244; border-right: 1px solid #2E3244; color: #8A90A6">
+<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#4A5068" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 12h4M8 10v4M15 13h.01M18 11h.01"></path><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59l-.9 8.1A2.5 2.5 0 0 0 4.29 19.5c.9 0 1.73-.48 2.17-1.27L7.5 16.5h9l1.04 1.73c.44.79 1.27 1.27 2.17 1.27a2.5 2.5 0 0 0 2.49-2.81l-.9-8.1A4 4 0 0 0 17.32 5z"></path></svg>
+<span style="font-size: 14px">Трансляция игры · scrcpy</span>
+<span style="font-family: 'Roboto Mono', monospace; font-size: 12px">960 × 432</span>
+</div>
+
+<div role="toolbar" aria-label="Док-плеер: фарм идёт" style="width: 960px; height: 60px; box-sizing: border-box; display: grid; grid-template-columns: 15fr 25fr 40fr 20fr; background: #1B1D26; border: 1px solid #2E3244; border-radius: 0 0 8px 8px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; min-width: 0"><span class="hud-pulse-g" style="width: 10px; height: 10px; flex-shrink: 0; border-radius: 50%; background: #4ADE80"></span><div style="display: flex; flex-direction: column; gap: 2px; line-height: 1.2"><span style="font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: #4ADE80">ФАРМ ИДЁТ</span><span style="font-size: 12px; color: #A9AFC2">Этаж 14436</span></div></div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; border-left: 1px solid #2E3244; min-width: 0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9D4EDD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l4 6-10 13L2 9Z"></path><path d="M11 3 8 9l4 13 4-13-3-6M2 9h20"></path></svg><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px"><div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: #A9AFC2">Титанит</span><span style="font-family: 'Roboto Mono', monospace">2 838<span style="color: #8A90A6"> / 7 500</span></span></div><div role="progressbar" aria-label="Титанит за день" aria-valuemin="0" aria-valuemax="7500" aria-valuenow="2838" style="height: 6px; border-radius: 3px; background: #242734; overflow: hidden"><div style="width: 37.8%; height: 100%; border-radius: 3px; background: #2979FF"></div></div></div></div>
+<div aria-live="polite" style="display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 14px; border-left: 1px solid #2E3244; min-width: 0">
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0"><span style="flex-shrink: 0; height: 18px; padding: 0 6px; border-radius: 4px; background: rgba(0,180,216,0.16); color: #00B4D8; font-size: 11px; font-weight: 600; display: flex; align-items: center">Вода</span><span style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Бой выигран · ХП Сигурда 85%</span><span style="margin-left: auto; flex-shrink: 0; font-family: 'Roboto Mono', monospace; font-size: 11px; color: #8A90A6">10:42:31</span></div>
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: #8A90A6"><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Этаж 14436 · Вода · основной пак</span><span style="margin-left: auto; flex-shrink: 0; font-family: 'Roboto Mono', monospace; font-size: 11px">10:42:04</span></div>
+</div>
+<div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 0 8px; border-left: 1px solid #2E3244">
+<button aria-label="Мягкая пауза" title="Мягкая пауза (F9)" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #FACC15; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"></path></svg></button>
+<button aria-label="Экстренный стоп" title="Экстренный СТОП (F10)" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #EF4444; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 5h14v14H5z"></path></svg></button>
+<button aria-label="Погасить экран телефона" title="Погасить экран телефона" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></button>
+<a href="Main.dc.html" aria-label="Развернуть полное окно" title="Развернуть полное окно" style="width: 38px; height: 38px; box-sizing: border-box; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></a>
+</div>
+</div>
+</div>
+
+<section aria-label="Состояния бара" style="display: flex; flex-direction: column; gap: 20px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 500; color: #A9AFC2">Состояния док-плеера</h2>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; gap: 8px; font-size: 12px; color: #A9AFC2"><span style="font-weight: 700; color: #4ADE80">ФАРМ</span>бот работает, точка пульсирует; сверху — последнее событие, ниже — предыдущее; F9 — пауза, F10 — стоп работают даже в окне игры</div>
+<div role="toolbar" aria-label="Док-плеер: фарм идёт" style="width: 960px; height: 60px; box-sizing: border-box; display: grid; grid-template-columns: 15fr 25fr 40fr 20fr; background: #1B1D26; border: 1px solid #2E3244; border-radius: 8px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; min-width: 0"><span class="hud-pulse-g" style="width: 10px; height: 10px; flex-shrink: 0; border-radius: 50%; background: #4ADE80"></span><div style="display: flex; flex-direction: column; gap: 2px; line-height: 1.2"><span style="font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: #4ADE80">ФАРМ ИДЁТ</span><span style="font-size: 12px; color: #A9AFC2">Этаж 14436</span></div></div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; border-left: 1px solid #2E3244; min-width: 0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9D4EDD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l4 6-10 13L2 9Z"></path><path d="M11 3 8 9l4 13 4-13-3-6M2 9h20"></path></svg><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px"><div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: #A9AFC2">Титанит</span><span style="font-family: 'Roboto Mono', monospace">2 838<span style="color: #8A90A6"> / 7 500</span></span></div><div role="progressbar" aria-label="Титанит за день" aria-valuemin="0" aria-valuemax="7500" aria-valuenow="2838" style="height: 6px; border-radius: 3px; background: #242734; overflow: hidden"><div style="width: 37.8%; height: 100%; border-radius: 3px; background: #2979FF"></div></div></div></div>
+<div style="display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 14px; border-left: 1px solid #2E3244; min-width: 0">
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0"><span style="flex-shrink: 0; height: 18px; padding: 0 6px; border-radius: 4px; background: rgba(0,180,216,0.16); color: #00B4D8; font-size: 11px; font-weight: 600; display: flex; align-items: center">Вода</span><span style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Бой выигран · ХП Сигурда 85%</span><span style="margin-left: auto; flex-shrink: 0; font-family: 'Roboto Mono', monospace; font-size: 11px; color: #8A90A6">10:42:31</span></div>
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: #8A90A6"><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Этаж 14436 · Вода · основной пак</span><span style="margin-left: auto; flex-shrink: 0; font-family: 'Roboto Mono', monospace; font-size: 11px">10:42:04</span></div>
+</div>
+<div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 0 8px; border-left: 1px solid #2E3244">
+<button aria-label="Мягкая пауза" title="Мягкая пауза (F9)" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #FACC15; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"></path></svg></button>
+<button aria-label="Экстренный стоп" title="Экстренный СТОП (F10)" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #EF4444; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 5h14v14H5z"></path></svg></button>
+<button aria-label="Погасить экран телефона" title="Погасить экран телефона" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></button>
+<a href="Main.dc.html" aria-label="Развернуть полное окно" title="Развернуть полное окно" style="width: 38px; height: 38px; box-sizing: border-box; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></a>
+</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; gap: 8px; font-size: 12px; color: #A9AFC2"><span style="font-weight: 700; color: #FACC15">ПАУЗА</span>бот доиграл текущий бой и ждёт; первая кнопка становится «Продолжить»</div>
+<div role="toolbar" aria-label="Док-плеер: пауза" style="width: 960px; height: 60px; box-sizing: border-box; display: grid; grid-template-columns: 15fr 25fr 40fr 20fr; background: #1B1D26; border: 1px solid #2E3244; border-radius: 8px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; min-width: 0"><span style="width: 10px; height: 10px; flex-shrink: 0; border-radius: 50%; background: #FACC15"></span><div style="display: flex; flex-direction: column; gap: 2px; line-height: 1.2"><span style="font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: #FACC15">ПАУЗА</span><span style="font-size: 12px; color: #A9AFC2">Этаж 14436</span></div></div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; border-left: 1px solid #2E3244; min-width: 0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9D4EDD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l4 6-10 13L2 9Z"></path><path d="M11 3 8 9l4 13 4-13-3-6M2 9h20"></path></svg><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px"><div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: #A9AFC2">Титанит</span><span style="font-family: 'Roboto Mono', monospace">2 838<span style="color: #8A90A6"> / 7 500</span></span></div><div role="progressbar" aria-label="Титанит за день" aria-valuemin="0" aria-valuemax="7500" aria-valuenow="2838" style="height: 6px; border-radius: 3px; background: #242734; overflow: hidden"><div style="width: 37.8%; height: 100%; border-radius: 3px; background: #2979FF"></div></div></div></div>
+<div style="display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 14px; border-left: 1px solid #2E3244; min-width: 0">
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0"><span style="flex-shrink: 0; height: 18px; padding: 0 6px; border-radius: 4px; background: rgba(250,204,21,0.14); color: #FACC15; font-size: 11px; font-weight: 600; display: flex; align-items: center">Пауза</span><span style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Бой доигран, жду команды</span><span style="margin-left: auto; flex-shrink: 0; font-family: 'Roboto Mono', monospace; font-size: 11px; color: #8A90A6">10:44:02</span></div>
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: #8A90A6"><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Вода · бой выигран · ХП в норме</span><span style="margin-left: auto; flex-shrink: 0; font-family: 'Roboto Mono', monospace; font-size: 11px">10:43:58</span></div>
+</div>
+<div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 0 8px; border-left: 1px solid #2E3244">
+<button aria-label="Продолжить фарм" title="Продолжить (F9)" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #3B8E26; color: #4ADE80; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"></path></svg></button>
+<button aria-label="Экстренный стоп" title="Экстренный СТОП (F10)" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #EF4444; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 5h14v14H5z"></path></svg></button>
+<button aria-label="Погасить экран телефона" title="Погасить экран телефона" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></button>
+<a href="Main.dc.html" aria-label="Развернуть полное окно" title="Развернуть полное окно" style="width: 38px; height: 38px; box-sizing: border-box; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></a>
+</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; gap: 8px; font-size: 12px; color: #A9AFC2"><span style="font-weight: 700; color: #F87171">SOS</span>сработал порог паники, бот остановился и написал в Telegram</div>
+<div role="toolbar" aria-label="Док-плеер: SOS" style="width: 960px; height: 60px; box-sizing: border-box; display: grid; grid-template-columns: 15fr 25fr 40fr 20fr; background: #302129; border: 1px solid #EF4444; border-radius: 8px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; min-width: 0"><span class="hud-pulse-r" style="width: 10px; height: 10px; flex-shrink: 0; border-radius: 50%; background: #EF4444"></span><div style="display: flex; flex-direction: column; gap: 2px; line-height: 1.2"><span style="font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: #F87171">SOS</span><span style="font-size: 12px; color: #A9AFC2">Этаж 14437</span></div></div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; border-left: 1px solid rgba(239,68,68,0.35); min-width: 0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9D4EDD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l4 6-10 13L2 9Z"></path><path d="M11 3 8 9l4 13 4-13-3-6M2 9h20"></path></svg><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px"><div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: #A9AFC2">Титанит</span><span style="font-family: 'Roboto Mono', monospace">2 838<span style="color: #A9AFC2"> / 7 500</span></span></div><div role="progressbar" aria-label="Титанит за день" aria-valuemin="0" aria-valuemax="7500" aria-valuenow="2838" style="height: 6px; border-radius: 3px; background: #242734; overflow: hidden"><div style="width: 37.8%; height: 100%; border-radius: 3px; background: #2979FF"></div></div></div></div>
+<div style="display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 14px; border-left: 1px solid rgba(239,68,68,0.35); min-width: 0">
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0"><span style="flex-shrink: 0; height: 18px; padding: 0 6px; border-radius: 4px; background: rgba(239,68,68,0.2); color: #F87171; font-size: 11px; font-weight: 700; display: flex; align-items: center">SOS</span><span style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">ХП Сигурда 18% — ниже порога 20%</span><span style="margin-left: auto; flex-shrink: 0; font-family: 'Roboto Mono', monospace; font-size: 11px; color: #A9AFC2">10:45:17</span></div>
+<div style="display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: #A9AFC2"><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Сообщение отправлено в Telegram</span><span style="margin-left: auto; flex-shrink: 0; font-family: 'Roboto Mono', monospace; font-size: 11px">10:45:18</span></div>
+</div>
+<div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 0 8px; border-left: 1px solid rgba(239,68,68,0.35)">
+<button aria-label="Продолжить фарм" title="Продолжить (F9)" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #3B8E26; color: #4ADE80; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"></path></svg></button>
+<button aria-label="Экстренный стоп" title="Экстренный СТОП (F10)" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #EF4444; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 5h14v14H5z"></path></svg></button>
+<button aria-label="Погасить экран телефона" title="Погасить экран телефона" style="width: 38px; height: 38px; padding: 0; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></button>
+<a href="Main.dc.html" aria-label="Развернуть полное окно" title="Развернуть полное окно" style="width: 38px; height: 38px; box-sizing: border-box; border-radius: 6px; background: #242734; border: 1px solid #2E3244; color: #A9AFC2; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></a>
+</div>
+</div>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1040,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
