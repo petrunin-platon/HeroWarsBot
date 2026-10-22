@@ -22,7 +22,7 @@ import telegram_report
 from i18n import get_text
 from ui import theme
 from ui.icons import icon
-from ui.widgets import Button, TitanAvatar, Tooltip, present_window, titan_name
+from ui.widgets import Button, TitanAvatar, Tooltip, anchor_area, present_window, titan_name
 
 C = theme.COLORS
 T = theme.TINTS
@@ -226,12 +226,14 @@ class InterventionWindow(ctk.CTkToplevel):
     # ── Показ, ответ, закрытие ──────────────────────────────────────────────
     def show(self):
         """Показать по центру окна программы (окно программы свёрнуто — сначала развернуть: иначе окна не видно).
+        Свёрнуто в мини-бар (шаг 4) — по центру картинки игры, окно программы остаётся свёрнутым (ui/widgets.py).
         Показ — через present_window: окно собрано целиком и не пропадает после перекраски заголовка в Windows."""
         if self.closed:
             return
         self.hidden = False
         try:
-            if self.root_window.state() == "iconic":
+            # В мини-баре (шаг 4) окно программы не разворачиваем: окно SOS встанет над игрой само по себе
+            if self.root_window.state() == "iconic" and not getattr(self.root_window, "mini", False):
                 self.root_window.deiconify()
         except Exception:
             pass
@@ -241,8 +243,9 @@ class InterventionWindow(ctk.CTkToplevel):
         root = self.root_window
         self.update_idletasks()
         w, h = max(WIDTH, self.winfo_reqwidth()), self.winfo_reqheight()
-        x = root.winfo_rootx() + (root.winfo_width() - w) // 2
-        y = root.winfo_rooty() + (root.winfo_height() - h) // 3
+        ax, ay, aw, ah = anchor_area(root)
+        x = ax + (aw - w) // 2
+        y = ay + (ah - h) // 3
         x = max(0, min(x, self.winfo_screenwidth() - w))
         y = max(0, min(y, self.winfo_screenheight() - h - 40))
         self.geometry(f"{w}x{h}+{x}+{y}")

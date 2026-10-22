@@ -242,7 +242,7 @@ def test_states_first_config_ready(app, tmp_path):
     assert tiles[2].value.cget("text") == "30%" and tiles[3].value.cget("text") == "05:00"
     app.events.put(("phone", True))
     assert pump(app, 2, until=lambda: dash.right_mode == "start")
-    assert dash.note.cget("text") == "Окно игры встанет в размер 1606×748"
+    assert dash.note.cget("text") == "Окно свернётся в мини-бар под игрой"
 
 
 @gui

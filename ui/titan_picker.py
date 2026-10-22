@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw
 from i18n import get_text
 from ui import theme
 from ui.icons import dot, icon
-from ui.widgets import Button, ClickFrame, TitanAvatar, present_window, titan_name
+from ui.widgets import Button, ClickFrame, TitanAvatar, anchor_area, present_window, titan_name
 
 C = theme.COLORS
 T = theme.TINTS
@@ -318,8 +318,9 @@ class TitanPicker(ctk.CTkToplevel):
     # ── Показ и закрытие ────────────────────────────────────────────────────
     def _place_centered(self, root):
         w, h = WINDOW
-        x = root.winfo_rootx() + (root.winfo_width() - w) // 2
-        y = root.winfo_rooty() + (root.winfo_height() - h) // 3
+        ax, ay, aw, ah = anchor_area(root)
+        x = ax + (aw - w) // 2
+        y = ay + (ah - h) // 3
         x = max(0, min(x, self.winfo_screenwidth() - w))
         y = max(0, min(y, self.winfo_screenheight() - h - 40))
         self.geometry(f"{w}x{h}+{x}+{y}")
