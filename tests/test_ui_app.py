@@ -342,3 +342,26 @@ def test_app_process_exits_after_close_button(workdir):
     for pid in pids:                                      # бот и scrcpy остановлены, ничего не осталось
         with pytest.raises(ProcessLookupError):
             os.kill(pid, 0)
+
+
+START_SCRIPT = STUBS + textwrap.dedent('''
+    import runpy, sys
+    sys.path.insert(0, ROOT)
+    import customtkinter as ctk
+    def show_and_close(self, *args, **kwargs):
+        print("WINDOW", type(self).__name__, flush=True)
+        (self.shutdown if hasattr(self, "shutdown") else self.destroy)()
+    ctk.CTk.mainloop = show_and_close
+    sys.argv = ["gui.py"] + ARGS
+    runpy.run_path(ROOT + "/gui.py", run_name="__main__")
+''')
+
+
+@pytest.mark.parametrize("args, window", [([], "App"), (["--old-ui"], "HeroWarsLauncher"), (["--new-ui"], "App")])
+def test_usual_start_opens_new_window(workdir, args, window):
+    """Как запускает пользователь: start.bat и python gui.py — новое окно; start_old.bat (--old-ui) — старое."""
+    script = f"ROOT = {str(ROOT)!r}\nARGS = {args!r}\n" + START_SCRIPT
+    result = subprocess.run([sys.executable, "-c", script], cwd=workdir, capture_output=True, text=True, timeout=60,
+                            env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    assert f"WINDOW {window}\n" in result.stdout, result.stdout + result.stderr
+    assert result.returncode == 0, result.stderr

@@ -153,7 +153,20 @@ def test_languages_list_matches_translations():
     assert set(i18n.LANGUAGES) == set(i18n.TRANSLATIONS)
     gui = (ROOT / "gui.py").read_text(encoding="utf-8")
     assert "LANGUAGE_MAP = {name: code for code, name in LANGUAGES.items()}" in gui   # старое окно — тот же список
-    assert '"--new-ui" in sys.argv' in gui
+    assert "open_old_window(sys.argv" in gui
+
+
+def test_usual_start_opens_new_window():
+    """start.bat и python gui.py открывают новое окно; старое — только по --old-ui (start_old.bat)."""
+    assert ui_settings.open_old_window(["gui.py"]) is False
+    assert ui_settings.open_old_window(["gui.py", "--old-ui"]) is True
+    assert ui_settings.open_old_window(["gui.py", "--new-ui"]) is False
+    assert ui_settings.open_old_window(["HeroWarsBot.exe"], frozen=True) is True      # до шага 9 (картинки окна в .exe)
+    assert ui_settings.open_old_window(["HeroWarsBot.exe", "--new-ui"], frozen=True) is False
+    start = (ROOT / "start.bat").read_text(encoding="utf-8")
+    assert "python gui.py\n" in start.replace("\r\n", "\n") and "--old-ui" not in start
+    old = (ROOT / "start_old.bat").read_text(encoding="utf-8")
+    assert "python gui.py --old-ui" in old
 
 
 def test_new_texts_in_all_languages():

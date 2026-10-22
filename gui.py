@@ -165,10 +165,11 @@ class HeroWarsLauncher(ctk.CTk):
         self.destroy()
 
 if __name__ == "__main__":
-    if "--new-ui" in sys.argv:
-        # Новое окно (задача 15): python gui.py --new-ui или start_new.bat. Пока рядом со старым
-        from ui.app import run
-        run()
-    else:
+    # Задача 15: обычный запуск открывает новое окно (ui/app.py). Старое — python gui.py --old-ui или start_old.bat
+    from ui.ui_settings import open_old_window
+    if open_old_window(sys.argv, getattr(sys, 'frozen', False) or getattr(sys, 'compiled', False)):
         app = HeroWarsLauncher()
         app.mainloop()
+    else:
+        from ui.app import run
+        run()
