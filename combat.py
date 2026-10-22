@@ -167,7 +167,8 @@ def find_smart_door(window_rect, sct, current_state=None, door_hints=None, opene
         # Жмём один раз. Повтор — только если через click_logic.RETRY_AFTER_S после нажатия окно не отреагировало
         while True:
             elapsed = time.time() - start_time
-            if os.path.exists("pause.flag"): return None, []
+            # Мягкая пауза — только пока «Атаковать» не нажата: после нажатия бот уже в комнате и доиграет бой
+            if policy is None and os.path.exists("pause.flag"): return None, []
 
             if still_shot is not None:
                 scr_cv, still_shot = still_shot, None
@@ -215,8 +216,8 @@ def execute_angus_ult(window_rect, sct):
         "height": int(window_rect["height"] * 0.4)
     }
     
+    # Мягкую паузу здесь не проверяем: бой уже начат, бот доведёт ульту и автобой до конца и остановится в коридоре
     while time.time() - start_time < 15.0:
-        if os.path.exists("pause.flag"): return False
         saved_coords = get_match_loc('btn_round_auto_off.png', roi_rect, sct, CONFIDENCE_THRESHOLD)
         if saved_coords: break
         time.sleep(0.05) 
@@ -232,7 +233,6 @@ def execute_angus_ult(window_rect, sct):
     turned_on = False
     wait_start = time.time()
     while time.time() - wait_start < 1.5:
-        if os.path.exists("pause.flag"): return False
         if get_match_loc('btn_round_auto_on.png', roi_rect, sct, 0.7):
             turned_on = True
             break
@@ -255,7 +255,6 @@ def execute_angus_ult(window_rect, sct):
     turned_off = False
     wait_start = time.time()
     while time.time() - wait_start < 1.5:
-        if os.path.exists("pause.flag"): return False
         if get_match_loc('btn_round_auto_off.png', roi_rect, sct, 0.75):
             turned_off = True
             break

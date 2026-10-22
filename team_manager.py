@@ -1,6 +1,5 @@
 # team_manager.py
 import time
-import os
 import cv2
 import numpy as np
 from config import CONFIDENCE_THRESHOLD
@@ -24,11 +23,10 @@ def open_grid_if_needed(window_rect, sct):
     """Проверка и открытие сетки выбора титанов с динамическим ожиданием"""
     print("[КОМАНДА] Сканирую интерфейс окна (без слепых пауз)...")
 
-    # Ждем либо 4 точки (открыто), либо 9 точек (закрыто)
+    # Ждем либо 4 точки (открыто), либо 9 точек (закрыто). Мягкую паузу здесь не проверяем: бот уже в комнате,
+    # он доиграет бой и остановится в коридоре (раньше пауза обрывала сборку, и бот выключался с ошибкой)
     start_time = time.time()
     while time.time() - start_time < 8.0:
-        if os.path.exists("pause.flag"): return False
-
         if get_match_loc('btn_4_dots.png', window_rect, sct, 0.7):
             print("[КОМАНДА] Сетка титанов открыта и готова к работе.")
             time.sleep(0.3)
@@ -277,9 +275,10 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct, seen=No
     MAX_ATTEMPTS = 3
     scrolled = 0  # на сколько свайпов вниз сдвинута сетка (в обычном случае 0)
 
+    # Мягкая пауза сборку не обрывает: бот доиграет бой и остановится в коридоре (main.py, HALLWAY).
+    # Раньше здесь был выход по pause.flag — main.py принимал его за неудачную сборку и выключал бота
+    # («Ошибка расстановки титанов», проверка шага 4 задачи 15: F9 во время свайпа сетки)
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        if os.path.exists("pause.flag"): return False
-
         shot = None
         if attempt > 1:
             print(f"\n[КОМАНДА] --- ПОПЫТКА {attempt}/{MAX_ATTEMPTS}: Корректировка состава ---")
@@ -297,7 +296,6 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct, seen=No
 
         # 1. Убираем лишних слева направо: слоты прижаты вправо, и правее убранного никто не сдвигается
         for titan in unwanted:
-            if os.path.exists("pause.flag"): return False
             print(f"[КОМАНДА] Убираю: {titan}")
             x, y = click_point_from_info(f"{titan}.png", found[titan], window_rect)
             last_tap = precise_select_titan(x, y, seen_at)
@@ -307,7 +305,6 @@ def verify_and_set_team(target_pack, available_titans, window_rect, sct, seen=No
         for swipe_idx in range(3):
             if not remaining:
                 break
-            if os.path.exists("pause.flag"): return False
             in_grid = best_per_spot(match_many_on_frame(remaining, window_rect, sct, TITAN_THRESHOLD, GRID_AREA, frame=frame))
             for titan in [t for t in remaining if t in in_grid]:
                 other = better_titan_here(titan, in_grid[titan], frame, names)

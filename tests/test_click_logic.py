@@ -539,6 +539,24 @@ def test_attack_lost_tap_repeated_once(combat, clock):
     assert taps[1] - taps[0] >= click_logic.RETRY_AFTER_S
 
 
+def test_soft_pause_before_attack_stops_at_door(combat, clock, tmp_path):
+    """Мягкая пауза до нажатия «Атаковать» — в комнату не входим, бот остановится в коридоре."""
+    (tmp_path / "pause.flag").write_text("")
+    room, enemies, taps = run_attack(combat, clock, lambda since, n: since < 0.8)
+    assert room is None and taps == []
+
+
+def test_soft_pause_after_attack_tap_does_not_abort_entering(combat, clock, tmp_path):
+    """«Атаковать» уже нажата — бот в комнате и доиграет бой. Раньше пауза в этот миг обрывала вход:
+    бот писал «Двери не найдены», а комната оставалась открытой."""
+    def visible(since, n):
+        (tmp_path / "pause.flag").write_text("")   # F9 нажали сразу после нажатия «Атаковать»
+        return since < 0.8
+    room, enemies, taps = run_attack(combat, clock, visible)
+    assert room is not None and enemies == ["sigurd"]
+    assert len(taps) == 1
+
+
 def test_hallway_timeout_on_result_window_goes_to_wait_for_ok(navigation, clock, monkeypatch):
     """Сессия 06, 18:01:55: бой закончился позже, чем бот его ждал, и окно «ПОБЕДА» стояло на экране,
     а бот в коридоре бесконечно искал дверь. Теперь он переходит к обработке результата."""

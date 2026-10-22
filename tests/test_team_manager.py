@@ -98,6 +98,23 @@ def test_mismatch_removes_unwanted_left_to_right_without_swipes(screen, monkeypa
     assert [x for x, _ in first_four] == sorted(x for x, _ in first_four)
 
 
+def test_soft_pause_does_not_abort_team_assembly(screen, monkeypatch, tmp_path):
+    """Проверка шага 4 задачи 15: F9 (мягкая пауза) во время сборки — бот выключился с «Ошибка расстановки титанов».
+    Пауза теперь сборку не обрывает: бот ставит пак, доигрывает бой и останавливается в коридоре."""
+    sct, rect = screen
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pause.flag").write_text("")
+    monkeypatch.setattr(tm.time, "sleep", lambda s: None)
+    assert tm.open_grid_if_needed(rect, sct)              # сетка открыта — и на паузе тоже
+    clicked = []
+    monkeypatch.setattr(tm, "open_grid_if_needed", lambda *a: True)
+    monkeypatch.setattr(tm, "precise_select_titan", lambda x, y, seen_at=None: clicked.append((x, y)))
+    monkeypatch.setattr(tm, "swipe_scrcpy", lambda *a, **k: None)
+    monkeypatch.setattr(tm, "SLOTS_SETTLE_TIMEOUT", 0.0)
+    tm.verify_and_set_team(["hyperion"], None, rect, sct)
+    assert len(clicked) >= 4                              # лишних убирает, как без паузы (раньше — ни одного нажатия)
+
+
 def test_slot_names_from_assets_dir_include_metida():
     names = tm.slot_titan_names()
     assert "metida" in names and set(tm.GAME_ORDER) <= set(names)
