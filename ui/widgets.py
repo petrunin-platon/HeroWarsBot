@@ -2,7 +2,8 @@
 
 Card — карточка; Button — кнопка нужного вида (второстепенная, синяя, сохранить, «Начать фарм», опасная);
 IconButton — квадратная кнопка с иконкой (шапка, сайдбар, мини-бар); Tooltip — подсказка при наведении;
-TitanAvatar — квадрат титана цветом стихии; Chip — фильтр-«таблетка»; Field — поле ввода с подписью и состояниями;
+TitanAvatar — квадрат титана цветом стихии (TitanTile — то же одной картинкой, для длинных списков);
+Chip — фильтр-«таблетка»; Field — поле ввода с подписью и состояниями;
 Switch — тумблер, Dropdown — выпадающий список (шаг 5а, мастер правил);
 DialogBody / ConfirmDialog — подтверждение опасного действия; ToastBody / Toast — короткое уведомление.
 
@@ -21,7 +22,7 @@ from functools import lru_cache
 
 import customtkinter as ctk
 from customtkinter.windows.widgets.core_widget_classes import DropdownMenu
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
 
 from i18n import get_text
 from ui import theme
@@ -487,6 +488,103 @@ class TitanAvatar(ctk.CTkFrame):
         else:
             self.configure(border_color=style["color"], fg_color=style["tint"])
             self.label.configure(text_color=C["text"])
+
+
+# ── Лёгкие элементы для длинных прокручиваемых списков (мастер правил, проверка шага 5а) ─────────────────
+# У каждой надписи и рамки CustomTkinter внутри свой холст: в Windows при прокрутке и раскрытии списка каждый
+# перерисовывается отдельно, и элементы дорисовывались с заметной задержкой. В повторяющихся строках — обычные
+# надписи и рамки Tk: цвет фона задаём сами (bg — цвет того, на чём они стоят), размер шрифта — с масштабом Windows.
+def scaled_font(master, font):
+    """Шрифт из theme.FONTS для обычной надписи Tk: размер в пикселях с учётом масштаба Windows (как у CustomTkinter)."""
+    scale = ctk.ScalingTracker.get_widget_scaling(master)
+    family, size, *rest = font
+    return (family, -round(size * scale), *rest)
+
+
+class PlainLabel(tk.Label):
+    """Обычная надпись Tk вместо CTkLabel (без своего холста)."""
+
+    def __init__(self, master, text="", font=None, color=None, bg=None, **kwargs):
+        super().__init__(master, text=text, font=scaled_font(master, font or F["text"]), fg=color or C["text"],
+                         bg=bg or C["bg_surface"], bd=0, highlightthickness=0, padx=0, pady=0, **kwargs)
+
+
+def plain_icon(master, name, color, size, box=None, tint=None, bg=None, radius=8):
+    """Иконка для обычной надписи Tk (ImageTk.PhotoImage, в настоящих пикселях с учётом масштаба Windows).
+    box — сторона квадрата-подложки цвета tint со скруглением radius (значок стихии 40×40), фон вокруг — bg."""
+    scale = ctk.ScalingTracker.get_widget_scaling(master)
+    return ImageTk.PhotoImage(_plain_icon_picture(name, color.upper(), round(size * scale),
+                                                  round(box * scale) if box else 0, tint, bg, round(radius * scale)),
+                              master=master)
+
+
+@lru_cache(maxsize=128)
+def _plain_icon_picture(name, color, px, box_px, tint, bg, radius):
+    from ui.icons import _colored
+    k = 4
+    glyph = _colored(name, color).resize((px * k, px * k), Image.LANCZOS)
+    if not box_px:
+        return glyph.resize((px, px), Image.LANCZOS)
+    rgb = lambda c: tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))  # noqa: E731
+    big = box_px * k
+    img = Image.new("RGBA", (big, big), rgb(bg) + (255,))
+    ImageDraw.Draw(img).rounded_rectangle((0, 0, big - 1, big - 1), radius=radius * k, fill=rgb(tint) + (255,))
+    img.alpha_composite(glyph, ((big - px * k) // 2, (big - px * k) // 2))
+    return img.resize((box_px, box_px), Image.LANCZOS)
+
+
+class TitanTile(tk.Label):
+    """Лёгкий квадрат титана для длинных прокручиваемых списков (мастер правил): то же, что TitanAvatar
+    (рамка цветом стихии, фон — оттенок стихии, картинка или две буквы, подсказка с именем), но одна обычная
+    надпись Tk с готовой картинкой. У TitanAvatar внутри два холста CustomTkinter, и при прокрутке и раскрытии
+    списков Windows перерисовывает каждый отдельно — элементы дорисовывались с задержкой (проверка шага 5а).
+    bg — цвет того, на чём квадрат стоит (уголки скругления — его цвета)."""
+
+    def __init__(self, master, titan, lang="RU", size=None, bg=None, command=None):
+        self.titan = titan
+        self.lang = lang
+        self.command = command
+        scale = ctk.ScalingTracker.get_widget_scaling(master)   # масштаб Windows: картинка — в настоящих пикселях
+        px = round((size or S["avatar"]) * scale)
+        path = theme.titan_icon_path(titan)
+        picture = _tile_picture(titan, px, max(1, round(S["avatar_border"] * scale)), bg or C["bg_surface"],
+                                str(path) if path else None, path.stat().st_mtime if path else 0)
+        self.photo = ImageTk.PhotoImage(picture, master=master)  # картинка Tk принадлежит окну — не кэшируем её
+        text = "" if path else theme.initials(titan_name(lang, titan))
+        super().__init__(master, image=self.photo, text=text, compound="center", bg=bg or C["bg_surface"],
+                         fg=C["text"], font=(theme.FONT_FAMILY, -round(12 * scale), "bold"), bd=0,
+                         highlightthickness=0, padx=0, pady=0, width=px, height=px)
+        self.tooltip = Tooltip(self, lambda: titan_name(self.lang, self.titan))
+        if command:
+            self.bind("<Button-1>", lambda _e: self.command(self.titan), add="+")
+
+
+@lru_cache(maxsize=256)
+def _tile_picture(titan, px, border, bg, path, mtime):
+    """Готовый квадрат титана (PIL): скруглённый квадрат цвета стихии на фоне bg, внутри картинка титана.
+    Рисуется в 4 раза крупнее и уменьшается — края гладкие. mtime в ключе — заменённая картинка перечитается."""
+    style = theme.element_style(theme.element_of(titan))
+    k = 4
+    big = px * k
+    rgb = lambda color: tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))  # noqa: E731
+    img = Image.new("RGBA", (big, big), rgb(bg) + (255,))
+    ImageDraw.Draw(img).rounded_rectangle((0, 0, big - 1, big - 1), radius=S["radius_control"] * px * k // S["avatar"],
+                                          fill=rgb(style["tint"]) + (255,), outline=rgb(style["color"]) + (255,),
+                                          width=border * k)
+    if path:
+        inner = px - 2 * border - 2
+        side_big = inner * k
+        pic = Image.open(path).convert("RGBA")
+        side = min(pic.size)
+        left, top = (pic.width - side) // 2, (pic.height - side) // 2
+        pic = pic.crop((left, top, left + side, top + side)).resize((side_big, side_big), Image.LANCZOS)
+        mask = Image.new("L", (side_big, side_big), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, side_big - 1, side_big - 1), radius=4 * k * px // S["avatar"],
+                                               fill=255)
+        pic.putalpha(Image.composite(pic.getchannel("A"), mask, mask))
+        offset = (big - side_big) // 2
+        img.alpha_composite(pic, (offset, offset))
+    return img.resize((px, px), Image.LANCZOS)
 
 
 class Chip(ctk.CTkFrame):

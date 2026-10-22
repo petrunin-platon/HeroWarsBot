@@ -486,3 +486,48 @@ def test_hover_changes_only_colors(app):
         assert len(calls) == 2 and set(calls[1]) == {"fg_color"}
         # Рамка передаёт свой фон частям (bg_color) — это цвет; надпись, шрифт и картинка не меняются
         assert all(set(kw) == {"bg_color"} for kw in parts_calls)
+
+
+@needs_gui
+def test_expand_and_edits_do_not_rebuild_the_row(app):
+    """Проверка шага 5а: при прокрутке и раскрытии списков элементы дорисовывались с задержкой. Теперь раскрытие
+    только показывает готовый список, а правка пака перестраивает только свою часть строки."""
+    app.select_frame("rules")
+    page = app.frames["rules"]
+    room = page.base.rooms["water"]
+    box = room.backups
+    pump(app, 1, until=lambda: all(r.backups._filled for r in page.base.rooms.values()))
+    assert all(r.backups._filled for r in page.base.rooms.values())   # списки построены заранее
+    rows = list(box.rows)
+    box.toggle._frame_click()
+    pump(app)
+    assert box.list.winfo_ismapped() and box.rows == rows and box.toggle.expanded
+    assert box.toggle.pill.cget("text") == "1 шт."
+    box.toggle._frame_click()
+    pump(app)
+    assert not box.list.winfo_ismapped() and box.rows == rows and not page.expanded["water"]
+    page.set_team("water", ["sigurd", "nova", "mairi"])
+    assert page.base.rooms["water"] is room and room.backups is box               # строка та же
+    assert [t.titan for t in room.pack_frame.winfo_children() if hasattr(t, "titan")] == ["sigurd", "nova", "mairi"]
+    page.add_backup("water", ["sigurd", "tidus", "orm"])
+    pump(app)
+    assert room.backups is box and box.expanded and len(box.rows) == 2 and box.toggle.pill.cget("text") == "2 шт."
+    page.remove_backup("water", 0)
+    pump(app)
+    assert len(box.rows) == 1 and box.toggle.pill.cget("text") == "1 шт."
+    assert page.form["backup_teams"]["water"] == [["sigurd", "tidus", "orm"]]
+
+
+@needs_gui
+def test_titan_tile_is_one_light_widget(app, monkeypatch):
+    import tkinter as tk
+
+    from ui import theme, widgets
+    tile = widgets.TitanTile(app, "araji", lang="RU")
+    assert isinstance(tile, tk.Label) and not tile.winfo_children()             # без холстов CustomTkinter
+    assert tile.cget("image") and tile.tooltip is not None
+    monkeypatch.setattr(theme, "titan_icon_path", lambda titan: None)
+    blank = widgets.TitanTile(app, "araji", lang="RU", bg=theme.COLORS["bg_primary"])
+    assert blank.cget("text") == "Ар" and blank.cget("bg") == theme.COLORS["bg_primary"]
+    tile.destroy()
+    blank.destroy()
