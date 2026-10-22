@@ -9,6 +9,7 @@
 #   bot_data/titan_state.json    ХП и энергия титанов после последнего боя (в пределах игрового дня)
 #   bot_data/temp_sos.png, bot_data/temp_test.png   скриншоты для Telegram
 #   bot_data/sos_info.json       комната, враги и причина последнего окна SOS (для сообщения в Telegram)
+#   bot_data/ui_settings.json    настройки самого окна программы (язык окна); бот их не читает
 # Пути относительные: бот и окно программы всегда запускаются из папки проекта.
 # При импорте модуль ничего не делает. Старые файлы копируются при первом обращении к любому пути.
 import glob
@@ -26,6 +27,7 @@ TEMP_SOS_FILE = f"{BOT_DATA_DIR}/temp_sos.png"
 TEMP_TEST_FILE = f"{BOT_DATA_DIR}/temp_test.png"
 TITAN_STATE_FILE = f"{BOT_DATA_DIR}/titan_state.json"
 SOS_INFO_FILE = f"{BOT_DATA_DIR}/sos_info.json"
+UI_SETTINGS_FILE = f"{BOT_DATA_DIR}/ui_settings.json"
 
 ROOM_TYPES = ("earth", "water", "fire", "mix")
 
@@ -146,3 +148,9 @@ def sos_info_file():
     берёт для сообщения в Telegram (задача 13, telegram_report.sos_report)."""
     ensure_bot_data()
     return SOS_INFO_FILE
+
+
+def ui_settings_file():
+    """Настройки нового окна программы (задача 15): язык окна. Пишет и читает только окно (ui/ui_settings.py)."""
+    ensure_bot_data()
+    return UI_SETTINGS_FILE

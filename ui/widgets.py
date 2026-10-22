@@ -94,10 +94,11 @@ BUTTON_KINDS = {
 
 class Button(ctk.CTkButton):
     """Кнопка с текстом нужного вида (BUTTON_KINDS). Ширина — по надписи: длинные немецкие тексты не обрезаются.
-    icon_name — иконка слева (имя файла из ui/icons). set_kind() меняет вид (пауза и стоп становятся яркими во время фарма)."""
+    icon_name — иконка слева (имя файла из ui/icons), compound="right" — справа от надписи («RU ▾»).
+    set_kind() меняет вид (пауза и стоп становятся яркими во время фарма)."""
 
     def __init__(self, master, text="", kind="secondary", icon_name=None, icon_size=16, command=None, height=None,
-                 pad_x=14, **kwargs):
+                 pad_x=14, compound="left", **kwargs):
         self._pad_x = pad_x
         self._kind = kind
         self._icon_name = icon_name
@@ -108,7 +109,7 @@ class Button(ctk.CTkButton):
         height = height or (S["cta_height"] if kind == "cta" else S["control_height"])
         super().__init__(master, text=text, command=command, height=height, width=0,
                          corner_radius=S["radius_control"] if kind != "cta" else 8, border_spacing=2,
-                         text_color_disabled=C["text_muted"], compound="left",
+                         text_color_disabled=C["text_muted"], compound=compound,
                          image=icon(icon_name, icon_color, icon_size) if icon_name else None, **style)
 
     def _create_grid(self):

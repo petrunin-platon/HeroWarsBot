@@ -31,7 +31,7 @@ if "--bot-mode" in sys.argv:
 import customtkinter as ctk
 import os
 from config import PAUSE_FLAG_FILE  # <-- ИМПОРТ КОНСТАНТЫ ИЗ КОНФИГА
-from i18n import get_text
+from i18n import LANGUAGES, get_text
 from ui.dashboard import DashboardFrame
 from ui.rules_tab import RulesFrame
 from ui.analytics_tab import AnalyticsFrame
@@ -43,23 +43,9 @@ ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue") 
 
 # =====================================================================
-# СЛОВАРЬ ЯЗЫКОВ (МАППИНГ)
+# СЛОВАРЬ ЯЗЫКОВ (МАППИНГ): название на родном языке → код. Список — i18n.LANGUAGES (его же берёт новое окно)
 # =====================================================================
-LANGUAGE_MAP = {
-    "Русский": "RU",
-    "English": "EN",
-    "Українська": "UK",
-    "Қазақша": "KK",
-    "Deutsch": "DE",
-    "Español": "ES",
-    "Français": "FR",
-    "Polski": "PL",
-    "Português": "PT",
-    "Türkçe": "TR",
-    "中文": "ZH",
-    "한국어": "KO",
-    "日本語": "JA"
-}
+LANGUAGE_MAP = {name: code for code, name in LANGUAGES.items()}
 REVERSE_LANG_MAP = {v: k for k, v in LANGUAGE_MAP.items()}
 # =====================================================================
 
@@ -179,5 +165,10 @@ class HeroWarsLauncher(ctk.CTk):
         self.destroy()
 
 if __name__ == "__main__":
-    app = HeroWarsLauncher()
-    app.mainloop()
+    if "--new-ui" in sys.argv:
+        # Новое окно (задача 15): python gui.py --new-ui или start_new.bat. Пока рядом со старым
+        from ui.app import run
+        run()
+    else:
+        app = HeroWarsLauncher()
+        app.mainloop()

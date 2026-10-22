@@ -10,6 +10,21 @@ TRANSLATIONS = {
         "btn_stats": "Статистика",
         "btn_guide": "Руководство",
         "btn_about": "О программе",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Главная — Фарм",
+        "page_title_stats": "Статистика активности",
+        "nav_language": "Язык",
+        "nav_tg_on": "Telegram: включён",
+        "nav_tg_off": "Telegram: не настроен",
+        "hdr_connected": "подключено",
+        "hdr_waiting": "Ожидание телефона…",
+        "hdr_tip_sleep": "Выключить экран телефона",
+        "hdr_tip_restart": "Перезапустить scrcpy",
+        "hdr_tip_reset_size": "Сброс размера окна игры",
+        "close_bot_title": "Остановить бота?",
+        "close_bot_text": "Бот сейчас работает. Если закрыть окно, бот и scrcpy остановятся сразу, а итог сессии в Telegram не уйдёт.",
+        "close_bot_ok": "Остановить и закрыть",
         
         # Dashboard
         "dash_title": "Панель управления",
@@ -236,6 +251,21 @@ TRANSLATIONS = {
         "btn_stats": "Statistics",
         "btn_guide": "Guide",
         "btn_about": "About",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Main — Farming",
+        "page_title_stats": "Activity statistics",
+        "nav_language": "Language",
+        "nav_tg_on": "Telegram: on",
+        "nav_tg_off": "Telegram: not set up",
+        "hdr_connected": "connected",
+        "hdr_waiting": "Waiting for phone…",
+        "hdr_tip_sleep": "Turn off phone screen",
+        "hdr_tip_restart": "Restart scrcpy",
+        "hdr_tip_reset_size": "Reset game window size",
+        "close_bot_title": "Stop the bot?",
+        "close_bot_text": "The bot is running. If you close the window, the bot and scrcpy stop right away and the session summary is not sent to Telegram.",
+        "close_bot_ok": "Stop and close",
         
         # Dashboard
         "dash_title": "Dashboard",
@@ -461,6 +491,21 @@ TRANSLATIONS = {
         "btn_stats": "Статистика",
         "btn_guide": "Керівництво",
         "btn_about": "Про програму",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Головна — Фарм",
+        "page_title_stats": "Статистика активності",
+        "nav_language": "Мова",
+        "nav_tg_on": "Telegram: увімкнено",
+        "nav_tg_off": "Telegram: не налаштовано",
+        "hdr_connected": "підключено",
+        "hdr_waiting": "Очікування телефона…",
+        "hdr_tip_sleep": "Вимкнути екран телефона",
+        "hdr_tip_restart": "Перезапустити scrcpy",
+        "hdr_tip_reset_size": "Скинути розмір вікна гри",
+        "close_bot_title": "Зупинити бота?",
+        "close_bot_text": "Бот зараз працює. Якщо закрити вікно, бот і scrcpy зупиняться одразу, а підсумок сесії в Telegram не надійде.",
+        "close_bot_ok": "Зупинити й закрити",
         
         # Dashboard
         "dash_title": "Панель керування",
@@ -686,6 +731,21 @@ TRANSLATIONS = {
         "btn_stats": "Statistiken",
         "btn_guide": "Anleitung",
         "btn_about": "Über das Programm",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Hauptmenü — Farmen",
+        "page_title_stats": "Aktivitätsstatistik",
+        "nav_language": "Sprache",
+        "nav_tg_on": "Telegram: an",
+        "nav_tg_off": "Telegram: nicht eingerichtet",
+        "hdr_connected": "verbunden",
+        "hdr_waiting": "Warte auf Telefon…",
+        "hdr_tip_sleep": "Telefonbildschirm ausschalten",
+        "hdr_tip_restart": "scrcpy neu starten",
+        "hdr_tip_reset_size": "Größe des Spielfensters zurücksetzen",
+        "close_bot_title": "Bot stoppen?",
+        "close_bot_text": "Der Bot läuft gerade. Wenn du das Fenster schließt, stoppen Bot und scrcpy sofort, und die Sitzungsübersicht wird nicht an Telegram gesendet.",
+        "close_bot_ok": "Stoppen und schließen",
         
         # Dashboard
         "dash_title": "Dashboard",
@@ -911,6 +971,21 @@ TRANSLATIONS = {
         "btn_stats": "Estadísticas",
         "btn_guide": "Guía",
         "btn_about": "Acerca de",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Principal — Farmeo",
+        "page_title_stats": "Estadísticas de actividad",
+        "nav_language": "Idioma",
+        "nav_tg_on": "Telegram: activado",
+        "nav_tg_off": "Telegram: sin configurar",
+        "hdr_connected": "conectado",
+        "hdr_waiting": "Esperando el teléfono…",
+        "hdr_tip_sleep": "Apagar la pantalla del teléfono",
+        "hdr_tip_restart": "Reiniciar scrcpy",
+        "hdr_tip_reset_size": "Restablecer el tamaño de la ventana del juego",
+        "close_bot_title": "¿Detener el bot?",
+        "close_bot_text": "El bot está funcionando. Si cierras la ventana, el bot y scrcpy se detendrán al instante y el resumen de la sesión no se enviará a Telegram.",
+        "close_bot_ok": "Detener y cerrar",
         
         # Dashboard
         "dash_title": "Panel de control",
@@ -1136,6 +1211,21 @@ TRANSLATIONS = {
         "btn_stats": "Statistiques",
         "btn_guide": "Guide",
         "btn_about": "À propos",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Principal — Farming",
+        "page_title_stats": "Statistiques d'activité",
+        "nav_language": "Langue",
+        "nav_tg_on": "Telegram : activé",
+        "nav_tg_off": "Telegram : non configuré",
+        "hdr_connected": "connecté",
+        "hdr_waiting": "En attente du téléphone…",
+        "hdr_tip_sleep": "Éteindre l'écran du téléphone",
+        "hdr_tip_restart": "Redémarrer scrcpy",
+        "hdr_tip_reset_size": "Réinitialiser la taille de la fenêtre du jeu",
+        "close_bot_title": "Arrêter le bot ?",
+        "close_bot_text": "Le bot est en marche. Si vous fermez la fenêtre, le bot et scrcpy s'arrêtent tout de suite et le résumé de la session n'est pas envoyé sur Telegram.",
+        "close_bot_ok": "Arrêter et fermer",
         
         # Dashboard
         "dash_title": "Tableau de bord",
@@ -1361,6 +1451,21 @@ TRANSLATIONS = {
         "btn_stats": "Statystyki",
         "btn_guide": "Przewodnik",
         "btn_about": "O programie",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Główna — Farma",
+        "page_title_stats": "Statystyki aktywności",
+        "nav_language": "Język",
+        "nav_tg_on": "Telegram: włączony",
+        "nav_tg_off": "Telegram: nieskonfigurowany",
+        "hdr_connected": "połączono",
+        "hdr_waiting": "Oczekiwanie na telefon…",
+        "hdr_tip_sleep": "Wyłącz ekran telefonu",
+        "hdr_tip_restart": "Uruchom ponownie scrcpy",
+        "hdr_tip_reset_size": "Resetuj rozmiar okna gry",
+        "close_bot_title": "Zatrzymać bota?",
+        "close_bot_text": "Bot teraz działa. Jeśli zamkniesz okno, bot i scrcpy zatrzymają się od razu, a podsumowanie sesji nie zostanie wysłane na Telegram.",
+        "close_bot_ok": "Zatrzymaj i zamknij",
         
         # Dashboard
         "dash_title": "Panel sterowania",
@@ -1586,6 +1691,21 @@ TRANSLATIONS = {
         "btn_stats": "Estatísticas",
         "btn_guide": "Guia",
         "btn_about": "Sobre",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Principal — Farm",
+        "page_title_stats": "Estatísticas de atividade",
+        "nav_language": "Idioma",
+        "nav_tg_on": "Telegram: ativado",
+        "nav_tg_off": "Telegram: não configurado",
+        "hdr_connected": "conectado",
+        "hdr_waiting": "Aguardando o telefone…",
+        "hdr_tip_sleep": "Desligar a tela do telefone",
+        "hdr_tip_restart": "Reiniciar o scrcpy",
+        "hdr_tip_reset_size": "Redefinir o tamanho da janela do jogo",
+        "close_bot_title": "Parar o bot?",
+        "close_bot_text": "O bot está em execução. Se você fechar a janela, o bot e o scrcpy param na hora e o resumo da sessão não é enviado ao Telegram.",
+        "close_bot_ok": "Parar e fechar",
         
         # Dashboard
         "dash_title": "Painel de Controle",
@@ -1811,6 +1931,21 @@ TRANSLATIONS = {
         "btn_stats": "İstatistikler",
         "btn_guide": "Rehber",
         "btn_about": "Hakkında",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Ana Sayfa — Farm",
+        "page_title_stats": "Etkinlik istatistikleri",
+        "nav_language": "Dil",
+        "nav_tg_on": "Telegram: açık",
+        "nav_tg_off": "Telegram: ayarlanmadı",
+        "hdr_connected": "bağlı",
+        "hdr_waiting": "Telefon bekleniyor…",
+        "hdr_tip_sleep": "Telefon ekranını kapat",
+        "hdr_tip_restart": "scrcpy'yi yeniden başlat",
+        "hdr_tip_reset_size": "Oyun penceresinin boyutunu sıfırla",
+        "close_bot_title": "Bot durdurulsun mu?",
+        "close_bot_text": "Bot şu anda çalışıyor. Pencereyi kapatırsan bot ve scrcpy hemen durur, oturum özeti Telegram'a gönderilmez.",
+        "close_bot_ok": "Durdur ve kapat",
         
         # Dashboard
         "dash_title": "Kontrol Paneli",
@@ -2036,6 +2171,21 @@ TRANSLATIONS = {
         "btn_stats": "统计",
         "btn_guide": "指南",
         "btn_about": "关于",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "主页 — 刷资源",
+        "page_title_stats": "活动统计",
+        "nav_language": "语言",
+        "nav_tg_on": "Telegram：已开启",
+        "nav_tg_off": "Telegram：未设置",
+        "hdr_connected": "已连接",
+        "hdr_waiting": "等待手机…",
+        "hdr_tip_sleep": "关闭手机屏幕",
+        "hdr_tip_restart": "重启 scrcpy",
+        "hdr_tip_reset_size": "重置游戏窗口大小",
+        "close_bot_title": "停止机器人？",
+        "close_bot_text": "机器人正在运行。如果关闭窗口，机器人和 scrcpy 会立即停止，本次会话总结不会发送到 Telegram。",
+        "close_bot_ok": "停止并关闭",
         
         # Dashboard
         "dash_title": "控制面板",
@@ -2261,6 +2411,21 @@ TRANSLATIONS = {
         "btn_stats": "통계",
         "btn_guide": "가이드",
         "btn_about": "정보",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "메인 — 파밍",
+        "page_title_stats": "활동 통계",
+        "nav_language": "언어",
+        "nav_tg_on": "Telegram: 켜짐",
+        "nav_tg_off": "Telegram: 설정 안 됨",
+        "hdr_connected": "연결됨",
+        "hdr_waiting": "휴대폰 기다리는 중…",
+        "hdr_tip_sleep": "휴대폰 화면 끄기",
+        "hdr_tip_restart": "scrcpy 다시 시작",
+        "hdr_tip_reset_size": "게임 창 크기 초기화",
+        "close_bot_title": "봇을 멈출까요?",
+        "close_bot_text": "봇이 실행 중입니다. 창을 닫으면 봇과 scrcpy가 바로 멈추고, 세션 요약은 Telegram으로 전송되지 않습니다.",
+        "close_bot_ok": "멈추고 닫기",
         
         # Dashboard
         "dash_title": "대시보드",
@@ -2486,6 +2651,21 @@ TRANSLATIONS = {
         "btn_stats": "統計",
         "btn_guide": "ガイド",
         "btn_about": "概要",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "メイン — ファーム",
+        "page_title_stats": "アクティビティ統計",
+        "nav_language": "言語",
+        "nav_tg_on": "Telegram：オン",
+        "nav_tg_off": "Telegram：未設定",
+        "hdr_connected": "接続済み",
+        "hdr_waiting": "スマホを待っています…",
+        "hdr_tip_sleep": "スマホの画面をオフ",
+        "hdr_tip_restart": "scrcpy を再起動",
+        "hdr_tip_reset_size": "ゲームウィンドウのサイズをリセット",
+        "close_bot_title": "ボットを停止しますか？",
+        "close_bot_text": "ボットは実行中です。ウィンドウを閉じると、ボットと scrcpy はすぐに停止し、セッションのまとめは Telegram に送信されません。",
+        "close_bot_ok": "停止して閉じる",
         
         # Dashboard
         "dash_title": "ダッシュボード",
@@ -2711,6 +2891,21 @@ TRANSLATIONS = {
         "btn_stats": "Статистика",
         "btn_guide": "Нұсқаулық",
         "btn_about": "Бағдарлама туралы",
+
+        # Новое окно (задача 15, шаг 2): шапка, полоска слева, закрытие во время фарма
+        "page_title_main": "Басты — Фарм",
+        "page_title_stats": "Белсенділік статистикасы",
+        "nav_language": "Тіл",
+        "nav_tg_on": "Telegram: қосулы",
+        "nav_tg_off": "Telegram: бапталмаған",
+        "hdr_connected": "қосылған",
+        "hdr_waiting": "Телефон күтілуде…",
+        "hdr_tip_sleep": "Телефон экранын өшіру",
+        "hdr_tip_restart": "scrcpy қайта іске қосу",
+        "hdr_tip_reset_size": "Ойын терезесінің өлшемін қалпына келтіру",
+        "close_bot_title": "Ботты тоқтату керек пе?",
+        "close_bot_text": "Бот қазір жұмыс істеп тұр. Терезені жапсаңыз, бот пен scrcpy бірден тоқтайды, ал сессия қорытындысы Telegram-ға жіберілмейді.",
+        "close_bot_ok": "Тоқтату және жабу",
         
         # Dashboard
         "dash_title": "Басқару панелі",
@@ -2928,6 +3123,25 @@ TRANSLATIONS = {
         "tg_bot_err_count": "⚠️ Титандар табылды: {count} (3-тен 5-ке дейін керек).\nТанылды: {names}\n\nТағы бір рет жазыңыз (мысалы: гип, сиг, нов, орм, май):"
     },
 }
+
+# Языки окна программы: код → название на родном языке, в порядке списка выбора.
+# Код уходит боту в HEROWARS_LANG: по нему бот берёт картинки кнопок игры из assets/<код>/
+LANGUAGES = {
+    "RU": "Русский",
+    "EN": "English",
+    "UK": "Українська",
+    "KK": "Қазақша",
+    "DE": "Deutsch",
+    "ES": "Español",
+    "FR": "Français",
+    "PL": "Polski",
+    "PT": "Português",
+    "TR": "Türkçe",
+    "ZH": "中文",
+    "KO": "한국어",
+    "JA": "日本語",
+}
+
 
 def get_text(lang, key):
     return TRANSLATIONS.get(lang, TRANSLATIONS["RU"]).get(key, key)

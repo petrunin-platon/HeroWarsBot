@@ -43,7 +43,28 @@ def dot(color, size=8):
     return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
 
+@lru_cache(maxsize=32)
+def icon_with_dot(name, color, size, dot_color, dot_size=8):
+    """Иконка с цветной точкой у правого верхнего угла (Telegram в полоске: зелёная — включён, серая — не настроен).
+    Картинка на 8 пикселей шире иконки, точка выступает за её угол. Вокруг точки иконка вырезана на 2 пикселя —
+    так точка видна на любом фоне кнопки (в макете — обводка цветом фона)."""
+    k = 4                                   # рисуем в 4 раза крупнее и уменьшаем — края гладкие
+    pad = dot_size // 2
+    side = (size + 2 * pad) * k
+    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    canvas.paste(_colored(name, color.upper()).resize((size * k, size * k), Image.LANCZOS), (pad * k, pad * k))
+    cx, cy, r = side - pad * k, pad * k, dot_size * k // 2
+    gap = 2 * k
+    cut = Image.new("L", canvas.size, 255)
+    ImageDraw.Draw(cut).ellipse((cx - r - gap, cy - r - gap, cx + r + gap, cy + r + gap), fill=0)
+    canvas.putalpha(Image.composite(canvas.getchannel("A"), cut, cut))
+    ImageDraw.Draw(canvas).ellipse((cx - r, cy - r, cx + r, cy + r), fill=_rgb(dot_color.upper()) + (255,))
+    small = canvas.resize((size + 2 * pad, size + 2 * pad), Image.LANCZOS)
+    return ctk.CTkImage(light_image=small, dark_image=small, size=small.size)
+
+
 def clear_cache():
     """Забыть готовые картинки (нужно, если окно Tk закрыли и создали новое — например, в тестах)."""
     icon.cache_clear()
     dot.cache_clear()
+    icon_with_dot.cache_clear()
