@@ -8,7 +8,8 @@
 - «Конфигурация запуска» — цель сессии (одна, первая ненулевая), «Бот решает сам», порог паники, сброс дня (profile.yml);
 - «Текущая сессия» — бот работает: титанит, этажи и дверь, бои, время (и «комната в среднем»); полоска — по цели;
 - «Итог сессии» — бот остановился: те же цифры, причина, «Подробно» (строки [ИТОГ]); ✕ — снова конфигурация.
-Справа: «Подключить телефон» / «Начать фарм» / «Свернуть в мини-бар» (до шага 4 сворачивает окно на панель задач),
+Справа: «Подключить телефон» / «Начать фарм» / «Свернуть в мини-бар» (шаг 4: ui/hud.py; бот запустился — окно сворачивается
+в мини-бар само, ваш ответ 22.10.2026),
 «Пауза F9» (на паузе и после [ПАУЗА ОТЛАДКИ] — зелёная «Продолжить») и «СТОП F10».
 Ниже журнал: строки бота как есть, тег цветом своей «таблетки» (ui/log_lines.py), таблетки «Все / Бои / Правила /
 Система / Ошибки (N)» — выбранная запоминается (bot_data/ui_settings.json), «Копировать» по правому щелчку.
@@ -34,14 +35,14 @@ import session_log
 import telegram_report
 from config import GAME_WINDOW_TITLE
 from i18n import get_text
-from ui import bot_link, launch_config, log_lines, sos_dialogs, theme, ui_settings
+from ui import bot_link, hud_events, launch_config, log_lines, sos_dialogs, theme, ui_settings
 from ui.icons import dot, icon
 from ui.log_lines import ALL, ERRORS, FIGHTS, FILTERS, RULES, SYSTEM
 from ui.sos_telegram import SOS as TG_SOS
 from ui.sos_telegram import TEST as TG_TEST
 from ui.sos_telegram import TelegramQuestion, telegram_ready
 from ui.titan_picker import TitanPicker
-from ui.widgets import Button, Card, Chip, ClickFrame, ConfirmDialog, KeyButton, Tooltip, present_window
+from ui.widgets import Button, Card, Chip, ClickFrame, ConfirmDialog, KeyButton, Tooltip, present_window, show_over_game
 
 C = theme.COLORS
 T = theme.TINTS
@@ -299,6 +300,7 @@ class MainPage(ctk.CTkFrame):
         self.lang = getattr(controller, "current_lang", "RU")
         self.link = link or bot_link.BotLink(controller.events)
         self.stats = log_lines.SessionStats()
+        self.hud_feed = hud_events.HudFeed()   # две строки событий мини-бара (шаг 4)
         self.classifier = log_lines.Classifier()
         self.lines = []
         self.errors = 0
@@ -635,6 +637,9 @@ class MainPage(ctk.CTkFrame):
         self.pause_button.set_kind(kind, text)
         self.pause_button.set_enabled(running)
         self.stop_button.set_enabled(self.link.running())
+        update_hud = getattr(self.controller, "update_hud", None)
+        if update_hud:
+            update_hud()
 
     def _show_first(self):
         steps = self.steps
@@ -781,15 +786,59 @@ class MainPage(ctk.CTkFrame):
         self.run_config = launch_config.launch_config(launch_config.read_profile()[1])
         self.summary_visible = False
         self.stats.reset()
+        self.hud_feed.reset()
         if self.link.start(self.lang):
             self.refresh()
 
     def minimize_window(self):
-        """«Свернуть в мини-бар»: мини-бар — шаг 4, пока окно просто сворачивается на панель задач (ваш ответ)."""
+        """«Свернуть в мини-бар» (шаг 4): окно сворачивается, под игрой — мини-бар (ui/app.py: enter_mini)."""
+        enter_mini = getattr(self.controller, "enter_mini", None)
+        if enter_mini:
+            enter_mini()
+            return
         try:
             self.winfo_toplevel().iconify()
         except tk.TclError:
             pass
+
+    def hud_view(self):
+        """Что показать в мини-баре: состояние, этажи, цель сессии с полоской (как на главной), события."""
+        if self.questions:
+            state = "sos"
+        elif self.link.debug_wait:
+            state = "debug"
+        elif self.link.starting:
+            state = "starting"
+        elif self._paused:
+            state = "paused"
+        else:
+            state = "farm"
+        stats = self.stats
+        goal = (self.run_config or self.config)["goal"]
+        progress = launch_config.goal_progress(goal, stats.rooms, stats.titanite, stats.floors, stats.elapsed())
+        goal_view = None
+        if progress is not None:
+            done, target, share = progress
+            if goal[0] == "time":
+                done_text, target_text = log_lines.clock_text(stats.elapsed())[:5], \
+                    get_text(self.lang, "main_minutes").format(n=target)
+            else:
+                done_text, target_text = log_lines.group_digits(done), log_lines.group_digits(target)
+            goal_view = (goal[0], done_text, target_text, share)
+        return {"state": state, "floors": stats.floors, "goal": goal_view,
+                "titanite": log_lines.group_digits(stats.titanite), "feed": self.hud_feed}
+
+    def raise_questions(self, open_missing=False):
+        """Поднять открытые окна SOS (и «Собери состав», «Остановить бота?») над игрой: кнопка мини-бара на SOS.
+        open_missing — вопрос «Пак справился» ушёл только в Telegram: открыть его окно и здесь."""
+        for question in list(self.questions):
+            if question.window is None and open_missing and question.kind == bot_link.TEST_OK:
+                self._test_window(question)
+                continue
+            for part in (question.window, question.picker, question.confirm):
+                if part is not None and not getattr(part, "closed", False) and not getattr(part, "done", False) \
+                        and not getattr(part, "hidden", False):
+                    show_over_game(part)
 
     def pause_or_continue(self):
         """«Пауза F9»: мягкая пауза (pause.flag) или снять её; после [ПАУЗА ОТЛАДКИ] — «Продолжить» (пустая строка)."""
@@ -798,9 +847,16 @@ class MainPage(ctk.CTkFrame):
         if self.link.debug_wait:
             self.link.continue_debug()
             self.append_log("[GUI] Продолжить: бот идёт дальше после паузы отладки.\n")
+            self.hud_feed.add("resume")
         else:
-            self._paused = self.link.toggle_pause()
+            self._set_paused(self.link.toggle_pause())
         self.refresh()
+
+    def _set_paused(self, paused):
+        """Пауза поменялась (кнопкой, F9 или её поставил сам бот) — событие для мини-бара."""
+        if paused != self._paused and self.link.running():
+            self.hud_feed.add("pause" if paused else "resume")
+        self._paused = paused
 
     def toggle_pause(self):
         self.pause_or_continue()
@@ -866,7 +922,7 @@ class MainPage(ctk.CTkFrame):
                 changed = True
             paused = self.link.paused()
             if paused != self._paused:
-                self._paused = paused
+                self._set_paused(paused)
                 changed = True
             if changed or self.left_mode == "session":
                 self.refresh()
@@ -883,7 +939,12 @@ class MainPage(ctk.CTkFrame):
         elif kind == "bot_started":
             if value == self.link.run_id:
                 self.stats.start()
+                self.hud_feed.add("started")
                 self.refresh()
+                # Бот запустился — окно сворачивается в мини-бар под игрой (ваш ответ 22.10.2026)
+                enter_mini = getattr(self.controller, "enter_mini", None)
+                if enter_mini:
+                    enter_mini()
         elif kind == "bot_exit":
             self._bot_exited(value)
         elif kind == "scrcpy":
@@ -898,6 +959,9 @@ class MainPage(ctk.CTkFrame):
             return
         self.append_log("[СИСТЕМА] Процесс бота завершен.\n")
         self.close_questions()
+        leave_mini = getattr(self.controller, "leave_mini", None)
+        if leave_mini:
+            leave_mini()  # окно разворачивается само: там «Итог сессии»
         if self.stats.started is not None:
             self.stats.finish(self.link.ended_by or log_lines.ENDED_EXIT)
             self.summary_visible = True
@@ -1082,6 +1146,7 @@ class MainPage(ctk.CTkFrame):
         if not line.strip():
             return  # пустые строки бота (print("\n...")) в журнале не нужны
         self.stats.feed(line)
+        self.hud_feed.feed(line)
         self._add_line(line)
 
     def _add_line(self, line):

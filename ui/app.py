@@ -16,6 +16,11 @@ controller: current_lang, frames, select_frame; главная для них —
 - крестик: если бот работает — вопрос «Остановить бота?»; потом остановить потоки и свои after, спрятать окно,
   остановить бота и scrcpy (как старое окно) и закрыть окно — mainloop кончается, процесс выходит сам;
 - сторож ui/freeze_guard.py пишет bot_data/debug/ui_freeze_*.txt, если окно не отвечает 5 с.
+
+Мини-бар (шаг 4, ui/hud.py): бот запустился (или «Свернуть в мини-бар») — окно сворачивается на панель задач,
+под игрой появляется мини-бар (ваш ответ 22.10.2026). «Развернуть» в мини-баре или кнопка окна на панели задач —
+окно снова целиком, мини-бар прячется. Бот остановился — окно разворачивается само (там «Итог сессии»).
+Пока окно в мини-баре (mini), окна SOS и «Собери состав» показываются сами по себе над игрой (ui/widgets.py).
 """
 import os
 import queue
@@ -27,12 +32,13 @@ from customtkinter.windows.widgets.core_widget_classes import DropdownMenu
 
 from config import APP_VERSION, GAME_WINDOW_TITLE, PAUSE_FLAG_FILE
 from i18n import LANGUAGES, get_text
-from ui import phone, theme, ui_settings
+from ui import hud_place, phone, theme, ui_settings
 from ui.about_tab import AboutFrame
 from ui.analytics_tab import AnalyticsFrame
 from ui.freeze_guard import FreezeGuard
 from ui.guide_tab import GuideFrame
 from ui.hotkeys import HotkeyWatcher
+from ui.hud import Hud
 from ui.icons import dot, icon, icon_with_dot
 from ui.main_page import MainPage
 from ui.rules_tab import RulesFrame
@@ -101,8 +107,15 @@ class DevicePlate(ctk.CTkFrame):
             self._status.configure(text=get_text(lang, "hdr_waiting"), text_color=C["danger_text"])
 
 
+def find_game_window():
+    """Окно игры для мини-бара (hud_place.GameWindow) или None. Вне Windows окна scrcpy нет."""
+    if not hud_place.windows_available():
+        return None
+    return hud_place.win_find_game(GAME_WINDOW_TITLE)
+
+
 class App(ctk.CTk):
-    def __init__(self, settings_path=None, status_watcher=None, hotkey_watcher=None):
+    def __init__(self, settings_path=None, status_watcher=None, hotkey_watcher=None, game_locator=None):
         super().__init__(fg_color=C["bg_primary"])
         self.settings_path = settings_path
         saved = ui_settings.load(settings_path).get("language")
@@ -114,12 +127,16 @@ class App(ctk.CTk):
         self._closing = False
         self._close_dialog = None
         self._timers = {}                # свои after, которые надо отменить при закрытии
+        self.mini = False                # окно свёрнуто в мини-бар (шаг 4)
+        self.hud = None
+        self.game_locator = game_locator or find_game_window
 
         self.title(get_text(self.current_lang, "app_title"))
         width, height, min_w, min_h, x, y = fit_window(work_area(self), self._get_window_scaling())
         self.geometry(f"{width}x{height}+{x}+{y}")
         self.minsize(min_w, min_h)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.bind("<Map>", self._on_map, add="+")
 
         # Как старое окно: пауза, оставшаяся от прошлого запуска, не должна держать бота
         if os.path.exists(PAUSE_FLAG_FILE):
@@ -263,6 +280,8 @@ class App(ctk.CTk):
         for frame in self.frames.values():
             if hasattr(frame, "update_language"):
                 frame.update_language(lang)
+        if self.hud is not None:
+            self.hud.set_language(lang)
 
     # ── События из фоновых потоков ──────────────────────────────────────────
     def log_later(self, text):
@@ -346,6 +365,67 @@ class App(ctk.CTk):
         elif name == "F10":
             dash.stop_bot()
 
+    # ── Мини-бар (шаг 4) ────────────────────────────────────────────────────
+    def enter_mini(self):
+        """Свернуть окно в мини-бар под игрой. Только пока бот работает: без него мини-бару нечего показывать."""
+        if self._closing or self.mini or not self.bot_running():
+            return
+        if self.hud is None:
+            self.hud = Hud(self, self.current_lang, self.game_locator, self.hud_command)
+        self.mini = True
+        self.update_hud()
+        self.hud.show()
+        try:
+            if sys.platform == "win32":
+                self.iconify()     # кнопка окна остаётся на панели задач
+            else:
+                self.withdraw()    # в Linux без диспетчера окон (виртуальный экран тестов) iconify ждёт его 2 с впустую
+        except tk.TclError:
+            pass
+        self.frames["dash"].raise_questions()  # открытые окна SOS не прячутся вместе с окном программы
+
+    def leave_mini(self, restore=True):
+        """Окно снова целиком, мини-бар прячется. restore=False — окно уже развернули (кнопка на панели задач)."""
+        if not self.mini:
+            return
+        self.mini = False
+        if self.hud is not None:
+            self.hud.hide()
+        if restore and not self._closing:
+            try:
+                self.deiconify()
+                self.lift()
+                self.focus_force()
+            except tk.TclError:
+                pass
+
+    def _on_map(self, event):
+        """Окно развернули с панели задач, пока оно было в мини-баре, — мини-бар больше не нужен."""
+        if event.widget is self and self.mini and self.state() == "normal":
+            self.leave_mini(restore=False)
+
+    def update_hud(self):
+        if self.mini and self.hud is not None:
+            self.hud.render(self.frames["dash"].hud_view())
+
+    def hud_command(self, name):
+        """Кнопки мини-бара — те же действия, что кнопки главной и шапки."""
+        dash = self.frames["dash"]
+        if name == "pause":
+            dash.pause_or_continue()
+        elif name == "sos":
+            dash.raise_questions(open_missing=True)
+        elif name == "stop":
+            dash.stop_bot()
+        elif name == "sleep":
+            self.sleep_phone()
+        elif name == "expand":
+            self.leave_mini()
+
+    def dialog_area(self):
+        """По центру чего ставить окна SOS, пока окно программы в мини-баре: картинка игры (или None)."""
+        return self.hud.game_area() if self.hud is not None else None
+
     # ── Закрытие ────────────────────────────────────────────────────────────
     def on_close(self):
         """Крестик окна. Бот работает — сначала вопрос (ответ пользователя 22.10.2026), иначе закрываем сразу."""
@@ -357,7 +437,7 @@ class App(ctk.CTk):
         if self._close_dialog is not None and self._close_dialog.winfo_exists():
             self._close_dialog.lift()
             return
-        if self.state() == "iconic":
+        if self.state() != "normal":
             self.deiconify()  # окно подтверждения привязано к главному: у свёрнутого окна его не видно
         lang = self.current_lang
         self._close_dialog = ConfirmDialog(self, get_text(lang, "close_bot_title"), get_text(lang, "close_bot_text"),
@@ -379,6 +459,8 @@ class App(ctk.CTk):
                 pass
         self._timers.clear()
         Toast.close_all(self)
+        if self.hud is not None:
+            self.hud.destroy()
         try:
             self.withdraw()  # окно пропадает сразу; остановка бота и scrcpy — до 2 с на каждый
         except tk.TclError:

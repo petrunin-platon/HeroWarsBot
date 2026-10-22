@@ -1,7 +1,7 @@
 """Общие виджеты нового интерфейса (задача 15, шаг 1): то, из чего собираются все экраны.
 
 Card — карточка; Button — кнопка нужного вида (второстепенная, синяя, сохранить, «Начать фарм», опасная);
-IconButton — квадратная кнопка с иконкой (шапка, сайдбар, док-плеер); Tooltip — подсказка при наведении;
+IconButton — квадратная кнопка с иконкой (шапка, сайдбар, мини-бар); Tooltip — подсказка при наведении;
 TitanAvatar — квадрат титана цветом стихии; Chip — фильтр-«таблетка»; Field — поле ввода с подписью и состояниями;
 DialogBody / ConfirmDialog — подтверждение опасного действия; ToastBody / Toast — короткое уведомление.
 
@@ -68,9 +68,12 @@ def present_window(window, place, hidden=lambda: False, on_shown=None):
             if getattr(window, "_windows_set_titlebar_color_called", False) and left > 0:
                 window.after(20, attempt, left - 1)
                 return
+            in_mini = _detach_from_hidden_owner(window)
             place()
             window.deiconify()
             window.lift()
+            if in_mini:
+                bring_to_front(window)
             window.focus_set()
             window.after(300, check, 3)
         except tk.TclError:
@@ -93,6 +96,63 @@ def present_window(window, place, hidden=lambda: False, on_shown=None):
         window.after(SHOW_DELAY_MS, attempt, 100)
     except tk.TclError:
         pass
+
+
+def _app_of(widget):
+    """Окно программы (ui/app.py: App), к которому относится виджет или окно, или None."""
+    while widget is not None and not hasattr(widget, "mini"):
+        widget = getattr(widget, "master", None)
+    return widget
+
+
+def _detach_from_hidden_owner(window):
+    """Окно программы свёрнуто в мини-бар (шаг 4): окно, привязанное к нему (transient), Windows прячет вместе с ним.
+    Тогда окно (SOS, «Собери состав») отвязывается и показывается само по себе над игрой (ваш ответ 22.10.2026).
+    Возвращает True, если окно программы сейчас в мини-баре."""
+    app = _app_of(window)
+    if app is None or not app.mini:
+        return False
+    if window.master is app:
+        try:
+            window.wm_transient("")
+        except tk.TclError:
+            pass
+    return True
+
+
+def bring_to_front(window, hold_ms=400):
+    """Поднять окно над всеми (над окном игры тоже) на миг и отпустить: окно SOS при свёрнутом окне программы
+    иначе могло бы открыться под игрой. Поверх всех оно не остаётся."""
+    try:
+        window.lift()
+        window.attributes("-topmost", True)
+        window.after(hold_ms, lambda: window.winfo_exists() and window.attributes("-topmost", False))
+    except tk.TclError:
+        pass
+
+
+def show_over_game(window):
+    """Показать окно (SOS, «Собери состав») и поднять над всеми: кнопка мини-бара на SOS. В мини-баре окно
+    отвязывается от свёрнутого окна программы, иначе Windows прячет его вместе с ним."""
+    try:
+        _detach_from_hidden_owner(window)
+        if window.state() != "normal":
+            window.deiconify()
+        bring_to_front(window)
+    except tk.TclError:
+        pass
+
+
+def anchor_area(root):
+    """(x, y, ширина, высота): по центру чего ставить окно. Обычно — окно программы; свёрнуто в мини-бар —
+    картинка игры (App.dialog_area), а если её не видно — весь экран."""
+    app = _app_of(root)
+    if app is not None and app.mini:
+        area = app.dialog_area()
+        if area:
+            return area
+        return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight()
+    return root.winfo_rootx(), root.winfo_rooty(), root.winfo_width(), root.winfo_height()
 
 
 def _pointer_inside(widget):
@@ -803,8 +863,9 @@ class ConfirmDialog(ctk.CTkToplevel):
     def _place_centered(self, root):
         self.update_idletasks()
         w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-        x = root.winfo_rootx() + (root.winfo_width() - w) // 2
-        y = root.winfo_rooty() + (root.winfo_height() - h) // 3
+        ax, ay, aw, ah = anchor_area(root)
+        x = ax + (aw - w) // 2
+        y = ay + (ah - h) // 3
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
 
     def _grab_when_visible(self, tries):
