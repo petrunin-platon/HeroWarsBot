@@ -9,7 +9,10 @@ bot_data/rules/<стихия>.yml — только у стихий, где по�
 - цели: settings.target_titanite / target_rooms / target_floors / target_time. Цель одна (сверка 1.5 и 1.7): окно пишет
   все четыре — выбранную и нули;
 - global_thresholds.critical_hp, max_hp_delta; settings.reset_hour, angus_manual_control, auto_rollback, telegram;
-- запасные паки — settings.backup_teams (как окно «Тактика», tactics.write_tactics).
+- запасные паки — settings.backup_teams (как окно «Тактика», tactics.write_tactics);
+- вкладка «Авто-тактика и ХП» (шаг 5б, макет 03b) — то же, что писало окно «⚙️ Тактика» (tactics.read_tactics /
+  write_tactics): settings.auto_rollback_tries, sos_timeout_minutes, door_order, heal_below_hp, heal_remove_order;
+  global_thresholds.group_loss_titans, group_loss_percent, titan_critical_hp.
 Значения при чтении — по правилам бота (tactics.Settings, ui/launch_config.py): нет ключа — то, что взял бы бот.
 Модуль без Tk.
 """
@@ -39,7 +42,20 @@ PLACES = {
     "auto_rollback": ("settings", "auto_rollback"),
     "telegram": ("settings", "telegram"),
 }
-PROFILE_KEYS = ("goal",) + tuple(PLACES) + ("backup_teams",)
+# Вкладка «Авто-тактика и ХП»: ключи tactics.read_tactics, пишутся tactics.write_tactics
+TACTICS_KEYS = ("auto_rollback_tries", "sos_timeout_minutes", "group_loss_titans", "group_loss_percent",
+                "door_order", "heal_below_hp", "heal_remove_order", "titan_critical_hp")
+BASE_KEYS = ("goal",) + tuple(PLACES) + ("backup_teams",)
+PROFILE_KEYS = BASE_KEYS + TACTICS_KEYS
+# Пределы чисел вкладки (как в окне «Тактика» и у бота, tactics.Settings): (от, до)
+LIMITS = {
+    "auto_rollback_tries": (1, tactics.MAX_TRIES),
+    "sos_timeout_minutes": (0, tactics.MAX_SOS_TIMEOUT),
+    "group_loss_titans": (0, 5),
+    "group_loss_percent": (0, PERCENT_MAX),
+    "heal_below_hp": (0, PERCENT_MAX),
+    "titan_critical_hp": (0, PERCENT_MAX),
+}
 
 # Чем закончилось чтение файла
 OK, MISSING, BROKEN = "ok", "missing", "broken"
@@ -82,6 +98,7 @@ def form_from_profile(profile):
             break
     tg = settings_dict(profile).get("telegram")
     tg = tg if isinstance(tg, dict) else {}
+    tactic = tactics.read_tactics(profile)
     return {
         "goal": goal,
         "critical_hp": settings.critical_hp,
@@ -91,7 +108,8 @@ def form_from_profile(profile):
         "auto_rollback": settings.auto_rollback,
         "telegram": {"active": tg.get("active", False) is True, "token": str(tg.get("token", "") or ""),
                      "chat_id": str(tg.get("chat_id", "") or "")},
-        "backup_teams": tactics.read_tactics(profile)["backup_teams"],
+        "backup_teams": tactic["backup_teams"],
+        **{key: tactic[key] for key in TACTICS_KEYS},
     }
 
 
@@ -126,12 +144,12 @@ def read_rules(room):
 
 
 # ── Проверка полей ──────────────────────────────────────────────────────────
-def parse_number(text, limit):
+def parse_number(text, limit, low=0):
     """Число из поля: (число, None) или (None, "empty"/"range"). Пробелы по краям не мешают."""
     text = str(text).strip()
     if not text:
         return None, "empty"
-    if not text.isdigit() or int(text) > limit:
+    if not text.isdigit() or not low <= int(text) <= limit:
         return None, "range"
     return int(text), None
 
@@ -153,6 +171,48 @@ def add_backup(form, room, team):
         return False
     packs.append(list(team))
     return True
+
+
+def choose_door(order, place, room):
+    """Порядок дверей: на место place выбрали стихию room. Стоявшая там стихия встаёт на прежнее место room
+    (как в окне «Тактика»: повторов не бывает). Возвращает новый список."""
+    order = list(order)
+    if room not in order or not 0 <= place < len(order):
+        return order
+    other = order.index(room)
+    order[place], order[other] = room, order[place]
+    return order
+
+
+def choose_remove(order, place, titan):
+    """«Кого убирать из пака ради раненого» (до tactics.MAX_HEAL_REMOVE): на место place выбрали titan,
+    None — «— сам —» (место пустое, следующие сдвигаются). Титан уже стоит на другом месте — меняются местами.
+    Место дальше занятых — титан встаёт в конец. Возвращает новый список."""
+    order = list(order)
+    if titan is None:
+        if place < len(order):
+            order.pop(place)
+        return order
+    if titan in order:
+        other = order.index(titan)
+        if place < len(order):
+            order[place], order[other] = titan, order[place]
+        return order
+    if place < len(order):
+        order[place] = titan
+    elif len(order) < tactics.MAX_HEAL_REMOVE:
+        order.append(titan)
+    return order
+
+
+def set_personal(form, titan, value):
+    """Личный порог паники титана (value — % ХП) или None — убрать его. Новый титан — в конец списка."""
+    personal = dict(form["titan_critical_hp"])
+    if value is None:
+        personal.pop(titan, None)
+    else:
+        personal[titan] = value
+    form["titan_critical_hp"] = personal
 
 
 def remove_backup(form, room, index):
@@ -182,6 +242,8 @@ def apply_form(profile, form, keys):
         elif key == "backup_teams":
             teams = {room: [list(p) for p in packs] for room, packs in form["backup_teams"].items() if packs}
             tactics.write_tactics(profile, {"backup_teams": teams})
+        elif key in TACTICS_KEYS:
+            tactics.write_tactics(profile, {key: copy.deepcopy(form[key])})
         else:
             section, profile_key = PLACES[key]
             profile[section][profile_key] = copy.deepcopy(form[key])

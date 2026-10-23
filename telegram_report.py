@@ -167,6 +167,11 @@ def alert(icon, title, lines=(), room=None, enemies=None, footer=None, lang="RU"
 # ---------------------------------------------------------------------------
 # Окно SOS («Требуется вмешательство»)
 # ---------------------------------------------------------------------------
+def check_message(lang="RU"):
+    """Пробное сообщение кнопки «Проверить Telegram» (окно Telegram, задача 15, шаг 5б)."""
+    return alert("✅", tg_text(lang, "check_title"), [tg_text(lang, "check_text")], lang=lang)
+
+
 def sos_report(titans, info=None, is_manual=False, can_rollback=True, lang="RU"):
     """Подпись к скриншоту SOS. titans — ХП из [SOS_TRIGGER]; info — sos_info.json от бота
     (комната, номер, враги, причина, пак с ХП и энергией, ХП до боя). Без info — только титаны, как раньше."""

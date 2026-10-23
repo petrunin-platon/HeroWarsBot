@@ -920,50 +920,103 @@ class Switch(ctk.CTkSwitch):
             self._on_change(self.is_on())
 
 
+def plain_disc(master, size, color):
+    """Кружок цвета color на прозрачном фоне (картинка для обычной надписи Tk: номер места поверх — compound="center").
+    Прозрачные уголки: при наведении надпись меняет только свой фон — без новой картинки."""
+    scale = ctk.ScalingTracker.get_widget_scaling(master)
+    return ImageTk.PhotoImage(_disc_picture(round(size * scale), color), master=master)
+
+
+@lru_cache(maxsize=16)
+def _disc_picture(px, color):
+    k = 4
+    rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
+    img = Image.new("RGBA", (px * k, px * k), rgb + (0,))
+    ImageDraw.Draw(img).ellipse((0, 0, px * k - 1, px * k - 1), fill=rgb + (255,))
+    return img.resize((px, px), Image.LANCZOS)
+
+
 class Dropdown(ClickFrame):
     """Выпадающий список в цветах поля ввода (макет 03a: «Титанит ▾», «05:00»): высота 36, слева значок (по желанию),
     надпись, справа стрелка. Пункты — (ключ, надпись); command(ключ) — после выбора. icons — {ключ: (иконка, цвет)}.
-    Список — меню CustomTkinter (как выбор языка в полоске)."""
+    Список — меню CustomTkinter (как выбор языка в полоске).
+    Шаг 5б (макет 03b): badge — номер места в кружке слева («1» в «Приоритете дверей»), colors — {ключ: цвет надписи}
+    (стихия своим цветом), breaks — с каких пунктов начинать новую колонку меню (длинный список титанов — по стихиям).
+    Внутри — обычные надписи Tk (у CTkLabel свой холст на каждую, а списков на вкладке много: в Windows они
+    дорисовывались с задержкой). Наведение меняет только цвет фона рамки и надписей."""
 
-    def __init__(self, master, items, value, command=None, icons=None, width=140, mono=False, **kwargs):
+    def __init__(self, master, items, value, command=None, icons=None, width=140, mono=False, badge=None,
+                 colors=None, breaks=(), **kwargs):
         super().__init__(master, command=self.open, width=width, height=S["control_height"],
                          corner_radius=S["radius_control"], border_width=1, border_color=C["border"],
                          fg_color=C["bg_elevated"], **kwargs)
         self.items = list(items)
         self.value = value
         self.icons = icons or {}
+        self.colors = colors or {}
+        self.breaks = set(breaks)
         self.on_choose = command
         self._look = None
+        self._pictures = {}
         self.grid_propagate(False)
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
-        self._icon_label = ctk.CTkLabel(self, text="", width=15, height=20)
-        self._label = ctk.CTkLabel(self, text="", height=20, anchor="w", text_color=C["text"],
-                                   font=F["mono_field"] if mono else F["body"])
-        self._label.grid(row=0, column=1, sticky="ew", padx=(10, 4))
-        self._arrow = ctk.CTkLabel(self, text="", image=icon("chevron-down", C["text_muted"], 16), width=16, height=20)
-        self._arrow.grid(row=0, column=2, padx=(0, 10))
-        self.bind_parts(self._icon_label, self._label, self._arrow)
+        self.grid_columnconfigure(2, weight=1)
+        bg = C["bg_elevated"]
+        self._badge = None
+        if badge is not None:
+            self._disc = plain_disc(self, 22, C["bg_primary"])
+            self._badge = tk.Label(self, text=str(badge), image=self._disc, compound="center", bg=bg,
+                                   fg=C["text_secondary"], font=scaled_font(self, F["label"]), bd=0,
+                                   highlightthickness=0, padx=0, pady=0)
+            self._badge.grid(row=0, column=0, padx=(8, 0))
+        self._icon_label = tk.Label(self, bg=bg, bd=0, highlightthickness=0, padx=0, pady=0)
+        self._label = PlainLabel(self, "", font=F["mono_field"] if mono else F["body"], color=C["text"], bg=bg,
+                                 anchor="w")
+        self._label.grid(row=0, column=2, sticky="ew", padx=(10, 4))
+        self._arrow_picture = plain_icon(self, "chevron-down", C["text_muted"], 16)
+        self._arrow = tk.Label(self, image=self._arrow_picture, bg=bg, bd=0, highlightthickness=0)
+        self._arrow.grid(row=0, column=3, padx=(0, 10))
+        self._parts = [p for p in (self._badge, self._icon_label, self._label, self._arrow) if p is not None]
+        self.bind_parts(*self._parts)
         self.menu = DropdownMenu(self.winfo_toplevel(), values=[text for _k, text in self.items],
                                  command=self._chosen, fg_color=C["bg_elevated"], hover_color=C["blue_button"],
                                  text_color=C["text"], font=F["text"], min_character_width=6)
+        self._break_columns()
         self._show_value()
         self._paint()
+
+    def _break_columns(self):
+        for i, (key, _text) in enumerate(self.items):
+            if key in self.breaks:
+                try:
+                    self.menu.entryconfigure(i, columnbreak=1)
+                except tk.TclError:
+                    pass
 
     def _paint(self):
         look = T["hover_elevated"] if self._hovering and self.enabled else C["bg_elevated"]
         if look != self._look:
             self._look = look
             self.configure(fg_color=look)
+            for part in self._parts:
+                part.configure(bg=look)
+
+    def _icon_picture(self, name, color):
+        key = (name, color)
+        if key not in self._pictures:
+            self._pictures[key] = plain_icon(self, name, color, 15)
+        return self._pictures[key]
 
     def _show_value(self):
         text = next((t for k, t in self.items if k == self.value), str(self.value))
         if self._label.cget("text") != text:
             self._label.configure(text=text)
+        color = self.colors.get(self.value, C["text"])
+        if self._label.cget("fg") != color:
+            self._label.configure(fg=color)
         if self.value in self.icons:
-            name, color = self.icons[self.value]
-            self._icon_label.configure(image=icon(name, color, 15))
-            self._icon_label.grid(row=0, column=0, padx=(10, 0))
+            self._icon_label.configure(image=self._icon_picture(*self.icons[self.value]))
+            self._icon_label.grid(row=0, column=1, padx=(10, 0))
             self._label.grid_configure(padx=(8, 4))
         else:
             self._icon_label.grid_forget()
@@ -991,6 +1044,7 @@ class Dropdown(ClickFrame):
         """Новые надписи (другой язык)."""
         self.items = list(items)
         self.menu.configure(values=[text for _k, text in self.items])
+        self._break_columns()
         self._show_value()
 
     def destroy(self):
