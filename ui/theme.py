@@ -10,6 +10,8 @@ Tkinter не умеет полупрозрачные цвета (rgba), поэт
 Новый оттенок — через blend(), а не hex руками в виджете.
 Модуль без Tk: его можно импортировать в тестах в облаке.
 """
+import base64
+import io
 import unicodedata
 from pathlib import Path
 
@@ -294,11 +296,16 @@ SIZES = {
 # ── Картинки титанов для оболочки ────────────────────────────────────────────
 # Только для окна программы: бот их не читает (титанов для слотов он ищет в корне assets/, а не в папках).
 # Имя файла — внутреннее имя титана: assets/icons/angus.png. Нет картинки — в квадрате две буквы имени.
+# Сначала папка (заменили картинку — видно сразу, без пересборки assets_db.py), потом assets_db.py (шаг 8: в собранном
+# .exe папки может не быть). pack_assets.py кладёт в него картинку с ключом «путь от assets/ через /»: icons/angus.png.
 TITAN_ICON_DIRS = (
     Path("assets") / "icons",                                       # запуск из папки проекта (start.bat)
     Path(__file__).resolve().parent.parent / "assets" / "icons",    # рядом с кодом (и в собранном .exe)
 )
 TITAN_ICON_EXTS = (".png", ".webp", ".jpg")
+TITAN_ICON_DB_EXTS = (".png", ".jpg")                               # pack_assets.py берёт только их
+TITAN_ICON_DB_PREFIX = "db:"                                        # ключ картинки из assets_db.py: «db:icons/angus.png»
+_ICON_DB = None                                                     # ASSETS из assets_db.py, читается один раз
 
 
 def element_of(titan):
@@ -312,13 +319,51 @@ def element_style(element):
 
 
 def titan_icon_path(titan, dirs=TITAN_ICON_DIRS):
-    """Путь к картинке титана для оболочки или None, если её ещё нет."""
+    """Путь к картинке титана для оболочки или None, если её в папке ещё нет."""
     for folder in dirs:
         for ext in TITAN_ICON_EXTS:
             path = Path(folder) / f"{titan}{ext}"
             if path.is_file():
                 return path
     return None
+
+
+def _icon_db():
+    """ASSETS из assets_db.py ({«icons/angus.png»: картинка в base64}) или {}, если файла нет. Файл большой (в нём все
+    картинки бота), поэтому читается один раз и только когда в папке картинки титана не нашлось."""
+    global _ICON_DB
+    if _ICON_DB is None:
+        try:
+            from assets_db import ASSETS
+        except Exception:      # файла нет (обычный случай при запуске из исходников) или он повреждён
+            ASSETS = {}
+        _ICON_DB = ASSETS if isinstance(ASSETS, dict) else {}
+    return _ICON_DB
+
+
+def titan_icon_source(titan, dirs=TITAN_ICON_DIRS):
+    """Откуда взять картинку титана: (ключ, отметка) или None, если её нет ни в папке, ни в assets_db.py.
+    Ключ — путь к файлу или «db:icons/имя.png»; отметка — время изменения файла (заменённая картинка перечитается),
+    у картинки из assets_db.py — 0. Саму картинку открывает open_titan_icon(ключ)."""
+    path = titan_icon_path(titan, dirs)
+    if path is not None:
+        return str(path), path.stat().st_mtime
+    db = _icon_db()
+    for ext in TITAN_ICON_DB_EXTS:
+        for name in (f"icons/{titan}{ext}", f"icons\\{titan}{ext}"):
+            if name in db:
+                return TITAN_ICON_DB_PREFIX + name, 0
+    return None
+
+
+def open_titan_icon(key):
+    """Картинка PIL по ключу из titan_icon_source. Не читается (битый файл или base64) — исключение, его ловит окно:
+    в квадрате тогда две буквы имени."""
+    from PIL import Image
+    if key.startswith(TITAN_ICON_DB_PREFIX):
+        # как у бота (vision.get_image_data): в assets_db.py картинка лежит в base64
+        return Image.open(io.BytesIO(base64.b64decode(_icon_db()[key[len(TITAN_ICON_DB_PREFIX):]])))
+    return Image.open(key)
 
 
 def plain_text(text):

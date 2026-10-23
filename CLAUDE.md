@@ -117,8 +117,15 @@
     дублируют старую вкладку (она остаётся для `start_old.bat` до шага 9, тест сверяет, что они не разошлись). Новые надписи — `ab_*` в `i18n.py`.
   - Титаны в интерфейсе — внутренними именами (`araji`), имя на языке окна — `i18n` `titan_<имя>`. Названия из `i18n.py` с эмодзи
     («🌿 Земля») — через `theme.plain_text`: в новом окне эмодзи нет.
-  - Картинки титанов для окна — `assets/icons/<титан>.png` (`theme.titan_icon_path`), бот их не читает. Нет картинки — две буквы имени.
-    Пользователь рисует их без обводки и любого размера: обводку цветом стихии и уменьшение делает программа; в `.exe` — из `assets_db.py` (шаг 8).
+  - Картинки титанов для окна — `assets/icons/<титан>.png` (29 штук, PNG 256×256, лежат в репозитории), бот их не читает. Нет картинки — две буквы имени.
+    Пользователь рисует их без обводки и любого размера: обводку цветом стихии и уменьшение делает программа.
+    Шаг 8: источник — `theme.titan_icon_source`: **сначала папка** (заменили картинку — видно сразу, без пересборки `assets_db.py`), потом
+    `assets_db.py` с ключом `icons/<титан>.png` (или `.jpg`; так кладёт `pack_assets.py`; для собранного `.exe`, где папки может не быть). Корневой
+    `<титан>.png` из `assets_db.py` — шаблон бота, окно его не берёт. `assets_db.py` читается один раз и только если в папке картинки нет
+    (импорт 8 МБ — ~0,1 с). Картинка не читается (битый файл или base64) — две буквы, окно не падает. Картинка декодируется один раз
+    (`widgets._titan_pixels`), квадраты — `TitanAvatar`, `TitanTile` (рамка цветом стихии, углы скруглены), в поле выбора титана — `Dropdown(titans=True)`
+    (макет 03d: «Новое правило» и «Личный порог»; в раскрытом списке — одни имена).
+    Новый титан: картинка в `assets/icons/` и `git add -f assets/icons/имя.png`.
   - В подклассах виджетов CustomTkinter не называй свои методы и поля `_draw`, `_image`, `_text`, `_hover`, `_on_enter`, `_on_leave`:
     они уже есть внутри CustomTkinter (на этом падало).
   - **Окно не должно зависать и обязано закрываться крестиком без диспетчера задач** (пользователь долго добивался этого в старом окне;
@@ -592,9 +599,9 @@
 | `ui/stats_page.py` | Задача 15, шаг 6: «Статистика» нового окна (макет 05) — период, 5 плиток, график `BarChart` на холсте (выбор столбика, плашка), «Таблица», ручная корректировка, «Сбросить» с вопросом |
 | `ui/stats_data.py` | Задача 15, шаг 6: столбики за период (по дням, неделям, месяцам), плитки, короткие числа, деления шкалы, ручная корректировка. Без Tk |
 | `ui/intervention_dialog.py` | Окно «Требуется вмешательство» и отправка SOS в Telegram |
-| `ui/theme.py` | Задача 15: цвета, шрифты, размеры, стихии и титаны нового интерфейса (копия `design/theme.py` с внутренними именами титанов), `plain_text`, `initials`, `titan_icon_path`; с шага 3 — эларит (`ELARITE_ONLY`, Метида), кого можно в комнату (`room_titans`), цвета таблеток журнала (`LOG_CATEGORY_COLORS`), значки целей (`GOAL_ICONS`). Без Tk |
+| `ui/theme.py` | Задача 15: цвета, шрифты, размеры, стихии и титаны нового интерфейса (копия `design/theme.py` с внутренними именами титанов), `plain_text`, `initials`, `titan_icon_path`, `titan_icon_source`, `open_titan_icon` (шаг 8: папка, потом `assets_db.py`); с шага 3 — эларит (`ELARITE_ONLY`, Метида), кого можно в комнату (`room_titans`), цвета таблеток журнала (`LOG_CATEGORY_COLORS`), значки целей (`GOAL_ICONS`). Без Tk |
 | `ui/icons/` | Задача 15: иконки Lucide (белые PNG), `icon()` перекрашивает, `dot()` — цветная точка. Иконки, которых нет в `design/icons` (`minimize-2`), — в `theme.EXTRA_ICONS` |
-| `ui/widgets.py` | Задача 15: общие виджеты нового интерфейса — `Card`, `Button`, `IconButton`, `Tooltip`, `TitanAvatar`, `Chip`, `Field`, `ConfirmDialog`, `Toast`; с шага 3 — `ClickFrame` (рамка-кнопка с безопасным наведением) и `KeyButton` («Пауза F9», «СТОП F10»); с шага 5а — `Switch` (тумблер; `set_on`/`is_on`: `set`/`get` — методы CTkSwitch), `Dropdown` (выпадающий список; с шага 5б — номер места `badge`, цвет надписи `colors`, колонки меню `breaks`), лёгкие `TitanTile`, `PlainLabel`, `plain_icon` для длинных списков; с шага 5в — ещё лёгкие `RoundedBackdrop` (скруглённая подложка-картинка; `restyle` — другие цвета на наведении), `PlainSwitch`, `PlainIconButton`, `ElidedLabel`, `pill_label`, одна картинка на окно `shared_photo`, бледный `TitanTile(dim=True)`; с шага 7 — `plain_card` (карточка без холста), `PlainClickFrame` (рамка-кнопка), `PlainButton` (кнопка со скруглением, виды secondary / blue / outline) |
+| `ui/widgets.py` | Задача 15: общие виджеты нового интерфейса — `Card`, `Button`, `IconButton`, `Tooltip`, `TitanAvatar`, `Chip`, `Field`, `ConfirmDialog`, `Toast`; с шага 3 — `ClickFrame` (рамка-кнопка с безопасным наведением) и `KeyButton` («Пауза F9», «СТОП F10»); с шага 5а — `Switch` (тумблер; `set_on`/`is_on`: `set`/`get` — методы CTkSwitch), `Dropdown` (выпадающий список; с шага 5б — номер места `badge`, цвет надписи `colors`, колонки меню `breaks`; с шага 8 — `titans=True`: в поле квадрат титана), лёгкие `TitanTile`, `PlainLabel`, `plain_icon` для длинных списков; с шага 5в — ещё лёгкие `RoundedBackdrop` (скруглённая подложка-картинка; `restyle` — другие цвета на наведении), `PlainSwitch`, `PlainIconButton`, `ElidedLabel`, `pill_label`, одна картинка на окно `shared_photo`, бледный `TitanTile(dim=True)`; с шага 7 — `plain_card` (карточка без холста), `PlainClickFrame` (рамка-кнопка), `PlainButton` (кнопка со скруглением, виды secondary / blue / outline) |
 | `ui/demo.py` | Задача 15: витрина виджетов для проверки (`python -m ui.demo`), в окно программы не входит |
 | `ui/app.py` | Задача 15, шаг 2: новое окно — полоска слева (разделы, Telegram, язык), шапка (плашка телефона, 3 кнопки), страницы (все новые, кроме «Руководства» — оно пока старая вкладка), F9/F10, мини-бар (шаг 4: `enter_mini`/`leave_mini`), закрытие крестиком с вопросом «Остановить бота?», если бот работает. Открывается обычным запуском (`start.bat`, `python gui.py`) |
 | `ui/main_page.py` | Задача 15, шаг 3: главная — 4 состояния и «Итог сессии», «Пауза F9»/«Продолжить», «СТОП F10», журнал с таблетками, окна вмешательства и вопросы в Telegram (ответы боту через `bot_link`); с шага 4 — что показать в мини-баре (`hud_view`) |
@@ -735,6 +742,9 @@ python -m pytest -q
 окно читает правила так же, как `rules_engine`; на виртуальном экране — анализ в фоне, галочки, «Внедрить», процесс выходит сам, пока анализ идёт;
 `test_ui_about.py` — задача 15, шаг 7: полные адреса кошельков, репозиторий и почта из `config.py`, ссылка не открылась — в буфер обмена, адреса и ссылки как в старой вкладке, проверка компонентов, открытие папки,
 надписи на 13 языках; на виртуальном экране — страница как в макете, на ней нет элементов CustomTkinter, наведение меняет только цвета, каждая кнопка открывает свою ссылку, копирование, проверка компонентов в фоне при каждом показе, язык;
+`test_ui_titan_icons.py` — задача 15, шаг 8: у всех 29 титанов есть PNG в `assets/icons`; сначала папка, потом `assets_db.py` (ключ `icons/имя.png`, `.jpg`, корневой шаблон не берётся),
+`assets_db.py` читается один раз и не нужен, пока есть папка, нет файла — просто нет картинки; бот иконки не берёт; на виртуальном экране — квадраты из `assets_db.py`,
+битая картинка — две буквы, заменённая перечитывается, поле выбора титана с картинкой и прозрачными углами, наведение меняет только цвет;
 `test_ui_main.py` — задача 15, шаг 3: таблетки журнала (и на логе сессии 07), цифры сессии, конфигурация запуска, надписи на 13 языках,
 состояния главной, таблетка запоминается, «Очистить» спрашивает, наведение на новые кнопки меняет только цвета;
 `python gui.py` без флагов открывает новое окно, `--old-ui` — старое). Ограничения:
@@ -742,7 +752,7 @@ python -m pytest -q
   `apt-get install -y python3-tk fonts-roboto` (сначала `apt-get update`). Потом
   `python3.12 -m pip install --break-system-packages customtkinter==6.0.0 pyyaml pytest requests` и
   `python3.12 -m pip install --break-system-packages --ignore-installed pillow==12.3.0` (у Pillow из apt нет `ImageTk`), затем
-  `xvfb-run -a python3.12 -m pytest tests/test_ui_kit.py tests/test_ui_safety.py tests/test_ui_app.py tests/test_bot_link.py tests/test_ui_main.py tests/test_ui_hud.py tests/test_ui_rules.py tests/test_ui_tactics.py tests/test_ui_intercepts.py tests/test_ui_stats.py tests/test_ui_analytics.py tests/test_ui_about.py`. Скриншот окна на виртуальном экране — `PIL.ImageGrab.grab(bbox=...)`
+  `xvfb-run -a python3.12 -m pytest tests/test_ui_kit.py tests/test_ui_titan_icons.py tests/test_ui_safety.py tests/test_ui_app.py tests/test_bot_link.py tests/test_ui_main.py tests/test_ui_hud.py tests/test_ui_rules.py tests/test_ui_tactics.py tests/test_ui_intercepts.py tests/test_ui_stats.py tests/test_ui_analytics.py tests/test_ui_about.py`. Скриншот окна на виртуальном экране — `PIL.ImageGrab.grab(bbox=...)`
   (`xvfb-run -a -s "-screen 0 1100x720x24" python3.12 скрипт.py`): так каждый экран сверяется с `design/screenshots/`.
 - **`main.py` запускает бота прямо при импорте** (цикл `while True` на уровне модуля), поэтому импортировать его в тестах нельзя.
   Логику, которую надо проверить, выносим в отдельные функции или модули.

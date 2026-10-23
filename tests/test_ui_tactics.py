@@ -248,8 +248,11 @@ def test_threshold_dialog(app, workdir):
     pump(app, 1, until=lambda: tab._threshold.winfo_viewable())
     dialog = tab._threshold
     assert isinstance(dialog, ThresholdDialog) and dialog.titans.get() == "angus"    # первый без личного порога
+    first = dialog.titans._icon_label.cget("image")                                  # шаг 8: в поле — квадрат титана
+    assert dialog.titans.titans and first and dialog.titans._icon_label.cget("text") == ""
     assert dialog.titans.enabled and dialog.field.get() == "30"                     # по умолчанию — общий порог
     dialog.titans._chosen("Араджи")
+    assert dialog.titans._icon_label.cget("image") != first                          # другой титан — другой квадрат
     dialog.field.set("120")
     dialog.apply()
     assert not dialog.done and "Число от 0 до 100" in dialog.field.note.cget("text")

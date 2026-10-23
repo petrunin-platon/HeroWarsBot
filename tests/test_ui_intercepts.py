@@ -385,7 +385,11 @@ def test_new_rule_from_editor(app, workdir):
     editor = open_editor(app, page)
     assert editor.values["room"] == "mix" and not editor.save_button.cget("state") == "normal"
     assert editor.problem_label.cget("text") == "Выберите состав: от 3 до 5 титанов"
+    # Макет 03d (шаг 8): в поле «Титан» — квадрат титана с картинкой, а не значок стихии
+    picture = editor.titan_menu._icon_label
+    assert editor.titan_menu.titans and picture.cget("image") and picture.cget("text") == ""
     editor.room_menu._chosen("Огонь")
+    assert editor.titan_menu.titans and editor.titan_menu._icon_label.cget("image")   # список титанов — новый, квадрат тоже
     editor._trigger_chosen("По врагам")
     pump(app)
     assert editor.enemy_panel.winfo_ismapped() and not editor.number_panel.winfo_ismapped()
@@ -584,7 +588,9 @@ def test_long_list_is_light(app, workdir):
     app.update()
     tab.choose(None)
     app.update()
-    assert time.perf_counter() - started < 0.5                   # фильтр не перестраивает строки
+    # Фильтр не перестраивает строки: два переключения ~0,4 с, перестройка 48 строк была бы ~1,8 с. Лимит 0,5 с был
+    # впритык (в облаке и до шага 8 выходило 0,42–0,45 с) и падал от любой нагрузки — главное же ниже: строки те же.
+    assert time.perf_counter() - started < 1.0
     assert [row for items in tab.rows.values() for row in items] == rows
 
 

@@ -125,12 +125,14 @@ def test_slot_names_from_assets_dir_include_metida():
 def test_slot_names_from_assets_db(monkeypatch):
     """В собранном .exe картинки лежат в assets_db.py (ключи «имя.png» и «RU/имя.png»), а папки assets/ может не быть."""
     import vision
-    monkeypatch.setattr(vision, "ASSETS", {"newtitan.png": "x", "RU/btn_ok.png": "x", "RU\\btn_ok.png": "x", "btn_auto.png": "x", "enemy_nova.png": "x"})
+    monkeypatch.setattr(vision, "ASSETS", {"newtitan.png": "x", "RU/btn_ok.png": "x", "RU\\btn_ok.png": "x", "btn_auto.png": "x", "enemy_nova.png": "x",
+                                           "icons/newicon.png": "x", "icons\\newicon.png": "x"})   # картинки окна (задача 15, шаг 8)
     monkeypatch.setattr(vision, "ASSETS_DIR", "/нет/такой/папки")
     names = tm.slot_titan_names()
     assert "newtitan" in names
     assert "btn_auto" not in names and "enemy_nova" not in names and "btn_ok" not in names
     assert "RU/btn_ok" not in names
+    assert "newicon" not in names and "icons/newicon" not in names
 
 
 def test_slot_names_include_target_pack_extras(monkeypatch):

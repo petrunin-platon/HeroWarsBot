@@ -410,17 +410,43 @@ class Tooltip:
             self._top = None
 
 
+@lru_cache(maxsize=64)
+def _titan_pixels(key, stamp):
+    """Картинка титана целиком (PIL, RGBA) или None, если она не читается (битый файл или assets_db.py): тогда в квадрате
+    две буквы имени, а окно не падает. Читается один раз на картинку, а не по разу на каждый размер квадрата.
+    key и stamp — из theme.titan_icon_source (отметка — время изменения: заменённая картинка перечитается)."""
+    try:
+        with theme.open_titan_icon(key) as img:
+            return img.convert("RGBA")
+    except Exception:
+        return None
+
+
+def titan_source(titan):
+    """(ключ, отметка) картинки титана — из папки assets/icons или из assets_db.py, — если она читается;
+    иначе None, и в квадрате две буквы имени."""
+    source = theme.titan_icon_source(titan)
+    if source is not None and _titan_pixels(*source) is not None:
+        return source
+    return None
+
+
+def _square_picture(key, stamp, side, radius):
+    """Квадрат side × side пикселей из середины картинки титана, углы скруглены радиусом radius (PIL, RGBA)."""
+    pic = _titan_pixels(key, stamp)
+    edge = min(pic.size)
+    left, top = (pic.width - edge) // 2, (pic.height - edge) // 2
+    pic = pic.crop((left, top, left + edge, top + edge)).resize((side, side), Image.LANCZOS)
+    mask = Image.new("L", (side, side), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, side - 1, side - 1), radius=radius, fill=255)
+    pic.putalpha(Image.composite(pic.getchannel("A"), mask, mask))
+    return pic
+
+
 @lru_cache(maxsize=128)
-def _titan_picture(path, mtime, size, radius):
-    """Картинка титана: квадрат из середины, скруглённые углы (mtime в ключе — заменённая картинка перечитается)."""
-    img = Image.open(path).convert("RGBA")
-    side = min(img.size)
-    left, top = (img.width - side) // 2, (img.height - side) // 2
-    big = size * 4
-    img = img.crop((left, top, left + side, top + side)).resize((big, big), Image.LANCZOS)
-    mask = Image.new("L", (big, big), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, big - 1, big - 1), radius=radius * 4, fill=255)
-    img.putalpha(Image.composite(img.getchannel("A"), mask, mask))
+def _titan_picture(key, stamp, size, radius):
+    """Картинка титана для CTkImage: квадрат из середины, скруглённые углы."""
+    img = _square_picture(key, stamp, size * 4, radius * 4)
     return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
 
@@ -455,10 +481,10 @@ class TitanAvatar(ctk.CTkFrame):
         self._render()
 
     def _render(self):
-        path = theme.titan_icon_path(self.titan)
+        source = titan_source(self.titan)
         inner = self.size - 2 * S["avatar_border"] - 2
-        if path:
-            image = _titan_picture(str(path), path.stat().st_mtime, inner, 4)
+        if source:
+            image = _titan_picture(*source, inner, 4)
             self.label.configure(image=image, text="", width=inner, height=inner)
         else:
             self.label.configure(image=None, text=theme.initials(titan_name(self.lang, self.titan)),
@@ -558,10 +584,9 @@ class TitanTile(tk.Label):
         self.command = command
         scale = ctk.ScalingTracker.get_widget_scaling(master)   # масштаб Windows: картинка — в настоящих пикселях
         px = round((size or S["avatar"]) * scale)
-        path = theme.titan_icon_path(titan)
+        source = titan_source(titan)
         bg = bg or C["bg_surface"]
-        args = (titan, px, max(1, round(S["avatar_border"] * scale)), bg, str(path) if path else None,
-                path.stat().st_mtime if path else 0)
+        args = (titan, px, max(1, round(S["avatar_border"] * scale)), bg) + (source or (None, 0))
 
         def picture():
             tile = _tile_picture(*args)
@@ -569,7 +594,7 @@ class TitanTile(tk.Label):
                 tile = Image.blend(Image.new("RGBA", tile.size, _rgb(bg) + (255,)), tile, theme.RULE_DIM)
             return tile
         self.photo = shared_photo(master, ("tile", dim) + args, picture)
-        text = "" if path else theme.initials(titan_name(lang, titan))
+        text = "" if source else theme.initials(titan_name(lang, titan))
         font_px = round((12 if px >= 30 * scale else 10) * scale)
         super().__init__(master, image=self.photo, text=text, compound="center", bg=bg,
                          fg=theme.blend(C["text"], bg, theme.RULE_DIM) if dim else C["text"],
@@ -581,31 +606,34 @@ class TitanTile(tk.Label):
 
 
 @lru_cache(maxsize=256)
-def _tile_picture(titan, px, border, bg, path, mtime):
-    """Готовый квадрат титана (PIL): скруглённый квадрат цвета стихии на фоне bg, внутри картинка титана.
-    Рисуется в 4 раза крупнее и уменьшается — края гладкие. mtime в ключе — заменённая картинка перечитается."""
+def _tile_picture(titan, px, border, bg, key, stamp):
+    """Готовый квадрат титана (PIL): скруглённый квадрат цвета стихии на фоне bg, внутри картинка титана (key, stamp —
+    из titan_source; None — без картинки). Рисуется в 4 раза крупнее и уменьшается — края гладкие.
+    bg=None — уголки прозрачные: для надписи, у которой фон меняется при наведении (поле выбора титана)."""
     style = theme.element_style(theme.element_of(titan))
     k = 4
     big = px * k
     rgb = lambda color: tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))  # noqa: E731
-    img = Image.new("RGBA", (big, big), rgb(bg) + (255,))
+    img = Image.new("RGBA", (big, big), rgb(bg) + (255,) if bg else (0, 0, 0, 0))
     ImageDraw.Draw(img).rounded_rectangle((0, 0, big - 1, big - 1), radius=S["radius_control"] * px * k // S["avatar"],
                                           fill=rgb(style["tint"]) + (255,), outline=rgb(style["color"]) + (255,),
                                           width=border * k)
-    if path:
+    if key:
         inner = px - 2 * border - 2
-        side_big = inner * k
-        pic = Image.open(path).convert("RGBA")
-        side = min(pic.size)
-        left, top = (pic.width - side) // 2, (pic.height - side) // 2
-        pic = pic.crop((left, top, left + side, top + side)).resize((side_big, side_big), Image.LANCZOS)
-        mask = Image.new("L", (side_big, side_big), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, side_big - 1, side_big - 1), radius=4 * k * px // S["avatar"],
-                                               fill=255)
-        pic.putalpha(Image.composite(pic.getchannel("A"), mask, mask))
-        offset = (big - side_big) // 2
+        pic = _square_picture(key, stamp, inner * k, 4 * k * px // S["avatar"])
+        offset = (big - inner * k) // 2
         img.alpha_composite(pic, (offset, offset))
     return img.resize((px, px), Image.LANCZOS)
+
+
+def titan_photo(master, titan, size=None):
+    """Квадрат титана для обычной надписи Tk с прозрачными уголками (поле выбора титана в Dropdown): (картинка, есть ли
+    на ней титан). Нет картинки — квадрат пустой, две буквы имени надписи кладёт тот, кто её показывает."""
+    scale = ctk.ScalingTracker.get_widget_scaling(master)
+    px = round((size or S["avatar"]) * scale)
+    source = titan_source(titan)
+    args = (titan, px, max(1, round(S["avatar_border"] * scale)), None) + (source or (None, 0))
+    return shared_photo(master, ("tile", False) + args, lambda: _tile_picture(*args)), source is not None
 
 
 def _rgb(color):
@@ -1303,11 +1331,13 @@ class Dropdown(ClickFrame):
     Список — меню CustomTkinter (как выбор языка в полоске).
     Шаг 5б (макет 03b): badge — номер места в кружке слева («1» в «Приоритете дверей»), colors — {ключ: цвет надписи}
     (стихия своим цветом), breaks — с каких пунктов начинать новую колонку меню (длинный список титанов — по стихиям).
+    Шаг 8 (макет 03d): titans=True — ключи пунктов — титаны, и вместо значка слева в поле стоит квадрат выбранного титана
+    с картинкой (пока картинки нет — две буквы имени на языке lang); в раскрытом списке — одни имена.
     Внутри — обычные надписи Tk (у CTkLabel свой холст на каждую, а списков на вкладке много: в Windows они
     дорисовывались с задержкой). Наведение меняет только цвет фона рамки и надписей."""
 
     def __init__(self, master, items, value, command=None, icons=None, width=140, mono=False, badge=None,
-                 colors=None, breaks=(), **kwargs):
+                 colors=None, breaks=(), titans=False, lang="RU", **kwargs):
         super().__init__(master, command=self.open, width=width, height=S["control_height"],
                          corner_radius=S["radius_control"], border_width=1, border_color=C["border"],
                          fg_color=C["bg_elevated"], **kwargs)
@@ -1315,6 +1345,8 @@ class Dropdown(ClickFrame):
         self.value = value
         self.icons = icons or {}
         self.colors = colors or {}
+        self.titans = titans
+        self.lang = lang           # язык окна: две буквы имени, пока у титана нет картинки
         self.breaks = set(breaks)
         self.on_choose = command
         self._look = None
@@ -1375,7 +1407,16 @@ class Dropdown(ClickFrame):
         color = self.colors.get(self.value, C["text"])
         if self._label.cget("fg") != color:
             self._label.configure(fg=color)
-        if self.value in self.icons:
+        if self.titans and self.value:
+            photo, has_picture = titan_photo(self, self.value, S["avatar_small"])
+            scale = ctk.ScalingTracker.get_widget_scaling(self)
+            self._icon_label.configure(image=photo, compound="center", fg=C["text"],
+                                       text="" if has_picture else theme.initials(titan_name(self.lang, self.value)),
+                                       font=(theme.FONT_FAMILY, -round(10 * scale), "bold"))
+            self._icon_label.photo = photo
+            self._icon_label.grid(row=0, column=1, padx=(8, 0))
+            self._label.grid_configure(padx=(8, 4))
+        elif self.value in self.icons:
             self._icon_label.configure(image=self._icon_picture(*self.icons[self.value]))
             self._icon_label.grid(row=0, column=1, padx=(10, 0))
             self._label.grid_configure(padx=(8, 4))
