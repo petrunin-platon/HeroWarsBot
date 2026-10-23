@@ -68,6 +68,14 @@ def test_short_numbers():
     assert full(7536) == "7 536" and full(105520) == "105 520" and full(0) == "0"
 
 
+def test_tile_numbers_fit_the_tile():
+    """В плитке до 100 000 — полностью, дальше сокращённо (ваше замечание: бывают сотни тысяч и миллионы)."""
+    from ui.stats_data import tile_number
+    assert [tile_number(v) for v in (0, 7536, 98540, 99999, 100000, 105520, 999_900, 1_000_000, 1_240_000, 25_678_900)] == \
+        ["0", "7 536", "98 540", "99 999", "100K", "105.5K", "999.9K", "1M", "1.24M", "25.68M"]
+    assert max(len(tile_number(v)) for v in range(0, 100_000_000, 7919)) <= 7    # не длиннее «99 999» / «999.9K»
+
+
 def test_ticks_cover_the_highest_bar():
     from ui.stats_data import nice_ticks
     for top in (1, 6, 850, 3588, 17236, 140000, 999_999):
@@ -195,6 +203,19 @@ def test_page_like_mockup(page):
     assert page.bars[0]["kind"] == "week" and page.chart_sub.cget("text").endswith(page.text("st_by_week"))
     page.segments._choose("all")
     assert page.tiles["titanite"][1].cget("text") == "12 000"
+
+
+@needs_gui
+def test_big_numbers_are_short_with_full_in_tooltip(page, workdir):
+    daily = {"2026-10-22": {"titanite": 1_240_000, "rooms": 105_520, "floors": 98540, "potions": 25_678_900}}
+    write_stats(workdir, stats_of(daily, titanite=1_240_000, rooms=105_520))
+    page.refresh_data()
+    page.segments._choose("7d")
+    texts = {name: label.cget("text") for name, (_t, label) in page.tiles.items()}
+    assert texts == {"titanite": "1.24M", "today": "1.24M", "potions": "25.68M", "rooms": "105.5K", "floors": "98 540"}
+    page.select(6)                                   # выбранный столбик — тоже сокращённо
+    assert page.tiles["potions"][1].cget("text") == "25.68M"
+    assert page.tile_values["potions"] == 25_678_900  # полное число — для подсказки при наведении
 
 
 @needs_gui

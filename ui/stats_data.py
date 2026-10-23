@@ -50,6 +50,20 @@ def full(value):
     return f"{int(value):,}".replace(",", " ")
 
 
+TILE_FULL_BELOW = 100_000   # в плитке до 100 000 — полностью, дальше сокращённо (ваше замечание: бывают и миллионы)
+
+
+def tile_number(value):
+    """Число в плитке: 98 540, 105.5K, 1.24M — помещается в плитку и при самом узком окне.
+    Полное число плитка показывает в подсказке при наведении."""
+    value = int(value)
+    if abs(value) < TILE_FULL_BELOW:
+        return full(value)
+    if abs(value) < 1_000_000:
+        return f"{value / 1000:.1f}".rstrip("0").rstrip(".") + "K"
+    return f"{value / 1_000_000:.2f}".rstrip("0").rstrip(".") + "M"
+
+
 def _day_values(daily, day):
     row = daily.get(day_key(day)) or {}
     return {m: int(row.get(m, 0) or 0) for m in METRICS}

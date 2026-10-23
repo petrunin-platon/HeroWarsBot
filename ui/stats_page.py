@@ -22,7 +22,7 @@ import customtkinter as ctk
 import stats_manager
 from i18n import get_text
 from ui import stats_data, theme
-from ui.widgets import Button, Card, ConfirmDialog, Dropdown, PlainLabel, Toast, plain_icon, scaled_font
+from ui.widgets import Button, Card, ConfirmDialog, Dropdown, PlainLabel, Toast, Tooltip, plain_icon, scaled_font
 
 C = theme.COLORS
 T = theme.TINTS
@@ -420,6 +420,7 @@ class StatsPage(ctk.CTkFrame):
         row = tk.Frame(self, bg=C["bg_primary"])
         row.grid(row=1, column=0, sticky="ew", pady=(0, S["gap_l"]))
         self.tiles = {}
+        self.tile_values = {}
         for i, name in enumerate(TILES):
             row.grid_columnconfigure(i, weight=1, uniform="tile")
             card = Card(row, width=10, height=10)
@@ -438,6 +439,10 @@ class StatsPage(ctk.CTkFrame):
             value = PlainLabel(inner, "0", font=(theme.MONO_FAMILY, 22, "bold"), color=C["text"], anchor="w")
             value.pack(fill="x", pady=(px(self, 6), 0))
             self.tiles[name] = (title, value)
+            # Сокращённое число (105.5K) — полностью в подсказке при наведении на плитку
+            tip = Tooltip(card, lambda n=name: stats_data.full(self.tile_values.get(n, 0)))
+            for part in (inner, head, icon_label, title, value):
+                tip.attach(part)
 
     def _build_chart(self):
         card = Card(self, width=10, height=10)
@@ -555,8 +560,8 @@ class StatsPage(ctk.CTkFrame):
         else:
             values = stats_data.totals(self.stats, self.period, self.today, bars=self.bars)
         for name, (_title, label) in self.tiles.items():
-            text = stats_data.full(values.get(name, 0)) if values.get(name, 0) < 1_000_000 \
-                else stats_data.compact(values[name])
+            self.tile_values[name] = values.get(name, 0)
+            text = stats_data.tile_number(self.tile_values[name])
             if label.cget("text") != text:
                 label.configure(text=text)
 
