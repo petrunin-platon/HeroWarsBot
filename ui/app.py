@@ -4,8 +4,8 @@
 
 Каркас — по design/README.md («Каркас окна»): слева полоска 64 px (логотип, 6 разделов с подсказками, Telegram, язык),
 сверху шапка 56 px (название раздела, плашка телефона, три кнопки), ниже — страница. С шага 3 главная новая
-(ui/main_page.py), с шага 5а — «Мастер правил» (ui/rules_page.py), остальные страницы пока — старые вкладки,
-их заменят следующие шаги. Для них окно — прежний
+(ui/main_page.py), с шага 5а — «Мастер правил» (ui/rules_page.py), с шага 6 — «Аналитика» (ui/analytics_page.py)
+и «Статистика» (ui/stats_page.py), остальные страницы пока — старые вкладки, их заменят следующие шаги. Для них окно — прежний
 controller: current_lang, frames, select_frame; главная для них — frames["dash"] с append_log().
 
 Связь с ботом не меняется (протокол тот же): бота запускает, читает и останавливает главная через ui/bot_link.py.
@@ -35,7 +35,7 @@ from config import APP_VERSION, GAME_WINDOW_TITLE, PAUSE_FLAG_FILE
 from i18n import LANGUAGES, get_text
 from ui import hud_place, phone, theme, ui_settings
 from ui.about_tab import AboutFrame
-from ui.analytics_tab import AnalyticsFrame
+from ui.analytics_page import AnalyticsPage
 from ui.freeze_guard import FreezeGuard
 from ui.guide_tab import GuideFrame
 from ui.hotkeys import HotkeyWatcher
@@ -43,7 +43,7 @@ from ui.hud import Hud
 from ui.icons import dot, icon, icon_with_dot
 from ui.main_page import MainPage
 from ui.rules_page import RulesPage
-from ui.statistics_tab import StatisticsFrame
+from ui.stats_page import StatsPage
 from ui.status import StatusWatcher
 from ui.widgets import Button, ConfirmDialog, IconButton, Toast, Tooltip
 from ui.window_fit import fit_window, work_area
@@ -57,8 +57,8 @@ S = theme.SIZES
 PAGES = (
     ("dash", MainPage, "house", "btn_main", "page_title_main"),
     ("rules", RulesPage, "sliders-vertical", "btn_rules", "btn_rules"),
-    ("analytics", AnalyticsFrame, "activity", "btn_analytics", "btn_analytics"),
-    ("stats", StatisticsFrame, "chart-no-axes-column", "btn_stats", "page_title_stats"),
+    ("analytics", AnalyticsPage, "activity", "btn_analytics", "btn_analytics"),
+    ("stats", StatsPage, "chart-no-axes-column", "btn_stats", "page_title_stats"),
     ("guide", GuideFrame, "book-open", "btn_guide", "btn_guide"),
     ("about", AboutFrame, "info", "btn_about", "btn_about"),
 )

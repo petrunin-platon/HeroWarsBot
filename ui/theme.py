@@ -192,6 +192,41 @@ GOAL_ICONS = {
     "time": ("gauge", COLORS["blue_text"]),
 }
 
+# «Статистика» (шаг 6, макет 05_stats): значок плитки и его цвет (цифры белые, цвет только у значка)
+STAT_TILES = {
+    "titanite": ("gem", COLORS["success"]),
+    "today": ("calendar", COLORS["success"]),
+    "potions": ("flask-conical", ELEMENTS["mix"]["text"]),
+    "rooms": ("door-open", LOG_TAGS["СИСТЕМА"]),
+    "floors": ("layers", LOG_TAGS["СИСТЕМА"]),
+}
+# График титанита: столбики зелёные; выбран один — он ярче, остальные бледнее, под ним синеватая колонка
+CHART_COLORS = {
+    "bar": COLORS["green"],
+    "bar_hover": COLORS["green_hover"],
+    "bar_dim": blend(COLORS["green"], COLORS["bg_surface"], 0.35),
+    "column": blend(COLORS["blue"], COLORS["bg_surface"], 0.10),
+    "grid": COLORS["border"],
+    "axis": COLORS["text_muted"],
+    "label": COLORS["text_secondary"],
+    "label_selected": COLORS["text"],
+    "plate": COLORS["bg_elevated"],
+    "plate_border": COLORS["border_strong"],
+}
+# «Аналитика» (шаг 6, макет 04_analytics): теги «Хода анализа» и пометки подробного отчёта
+ANALYSIS_TAGS = {
+    "system": LOG_TAGS["СИСТЕМА"],
+    "ml": LOG_TAGS["ML"],
+    "done": COLORS["success"],
+    "error": COLORS["danger_text"],
+}
+REPORT_STATUS_COLORS = {
+    "in_base": COLORS["blue_text"],
+    "perfect": COLORS["success"],
+    "average": COLORS["warning"],
+    "danger": COLORS["danger_text"],
+}
+
 # ── Шрифты ───────────────────────────────────────────────────────────────────
 # Roboto идёт вместе с CustomTkinter. Моноширинный: Consolas (есть в Windows).
 # Размер — в пикселях, как в макетах; CustomTkinter сам увеличивает его под масштаб Windows.
