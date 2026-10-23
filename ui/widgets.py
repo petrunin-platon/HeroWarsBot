@@ -745,6 +745,18 @@ class RoundedBackdrop(tk.Label):
         self.configure(image=self.photo)
 
 
+    def restyle(self, fill, border):
+        """Другие цвета подложки (наведение на кнопку): готовая картинка того же размера, виджеты не перестраиваются."""
+        look = (fill, border) + self._look[2:]
+        if look == self._look:
+            return
+        self._look = look
+        if self._size:
+            key = ("backdrop",) + self._size + look
+            self.photo = shared_photo(self, key, lambda: _backdrop_picture(*self._size, *look))
+            self.configure(image=self.photo)
+
+
 def _backdrop_picture(w, h, fill, border, outer, radius):
     k = 3
     img = Image.new("RGBA", (w * k, h * k), _rgb(outer) + (255,))
@@ -792,6 +804,148 @@ class PlainIconButton(tk.Label):
             self.configure(image=self._pictures["on" if enabled else "off"], cursor="hand2" if enabled else "")
             if not enabled:
                 self._paint(False)
+
+
+def plain_card(master, outer, fill=None, border=None, radius=None):
+    """Карточка без холста CustomTkinter (страница «О программе», шаг 7): рамка Tk с готовой скруглённой подложкой.
+    outer — цвет за карточкой (в углах), содержимое кладут прямо в неё (grid/pack), у надписей bg=fill, а от краёв — не меньше
+    радиуса, чтобы квадратные уголки надписей не закрыли скругление. Прокрутка страницы с такими карточками не оставляет следов."""
+    card = tk.Frame(master, bg=outer)
+    card.fill = fill or C["bg_surface"]
+    card.backdrop = RoundedBackdrop(card, card.fill, border or C["border"], outer,
+                                    radius=S["radius_card"] if radius is None else radius)
+    return card
+
+
+class PlainClickFrame(tk.Frame):
+    """Рамка-кнопка без холста CustomTkinter: щелчок по ней или по любой её части — command(), наведение — _paint() по
+    self._hovering (только цвета). Уход мыши проверяется через 30 мс по положению указателя: при переходе между частями рамки
+    «ушла/пришла» не мигает. Части, добавленные после создания, подключает bind_parts()."""
+
+    def __init__(self, master, command=None, **kwargs):
+        super().__init__(master, **kwargs)
+        self.command = command
+        self.enabled = True
+        self._hovering = False
+        self._leave_id = None
+        self.bind_parts(self)
+        self.bind("<Destroy>", self._cancel_leave, add="+")
+
+    def bind_parts(self, *parts):
+        for part in parts:
+            part.bind("<Button-1>", self._click, add="+")
+            part.bind("<Enter>", self._enter, add="+")
+            part.bind("<Leave>", self._leave, add="+")
+
+    def _paint(self):
+        pass
+
+    def _click(self, _event=None):
+        if self.enabled and self.command:
+            self.command()
+
+    def _enter(self, _event=None):
+        if not self._hovering:
+            self._hovering = True
+            self._paint()
+
+    def _leave(self, _event=None):
+        self._cancel_leave()
+        try:
+            self._leave_id = self.after(30, self._leave_if_outside)
+        except tk.TclError:
+            self._leave_id = None
+
+    def _cancel_leave(self, _event=None):
+        if self._leave_id:
+            try:
+                self.after_cancel(self._leave_id)
+            except tk.TclError:
+                pass
+            self._leave_id = None
+
+    def _leave_if_outside(self):
+        self._leave_id = None
+        if not _pointer_inside(self):
+            self._hovering = False
+            self._paint()
+
+
+# Виды лёгкой кнопки: заливка, рамка, заливка при наведении, цвет текста, цвет значка
+PLAIN_BUTTON_KINDS = {
+    "secondary": dict(fill=C["bg_elevated"], border=C["border"], hover=T["hover_elevated"], text=C["text"],
+                      icon=C["text_secondary"]),
+    "blue": dict(fill=C["blue_button"], border=C["blue_button"], hover=T["hover_blue"], text=C["white"],
+                 icon=C["white"]),
+    "outline": dict(fill=None, border=C["border_strong"], hover=T["hover_elevated"], text=C["text"],
+                    icon=C["text_secondary"]),
+}
+
+
+class PlainButton(PlainClickFrame):
+    """Кнопка со скруглением без холста CustomTkinter (страница «О программе», шаг 7): рамка Tk, скругление — готовая
+    картинка (RoundedBackdrop), внутри одна надпись Tk со значком. Наведение — другая картинка подложки и цвет надписи.
+    kind: secondary / blue / outline (без заливки: цвет за кнопкой — outer). outer — цвет за кнопкой, он же заливка outline.
+    Ширина — по надписи (меньше не бывает), в сетке с sticky="ew" растягивается; text="" — квадрат с одним значком.
+    icon_gap — зазор между значком и надписью (у кнопки с одним значком — 0). set_text() меняет надпись и ширину (язык окна)."""
+
+    def __init__(self, master, text="", command=None, kind="secondary", icon_name=None, icon_size=15, height=36,
+                 pad_x=12, anchor="center", outer=None, font=None, width=None, tooltip=None, icon_gap=12):
+        self._style = dict(PLAIN_BUTTON_KINDS[kind])
+        self._outer = outer or C["bg_surface"]
+        if self._style["fill"] is None:
+            self._style["fill"] = self._outer
+        fill = self._style["fill"]
+        scale = ctk.ScalingTracker.get_widget_scaling(master)
+        super().__init__(master, command=command, bg=self._outer, height=round(height * scale), cursor="hand2")
+        self.grid_propagate(False)
+        self.pack_propagate(False)
+        self._font = font or F["button"]
+        self._pad_x = pad_x
+        self._min_width = width
+        self._icon_gap = icon_gap if icon_name else 0
+        self.backdrop = RoundedBackdrop(self, fill, self._style["border"], self._outer, radius=S["radius_control"])
+        # Значок на подложке цвета заливки: по одной картинке на обычный вид и на наведение (наведение только меняет их)
+        self.photos = {hovering: plain_icon(self, icon_name, self._style["icon"], icon_size,
+                                            box=icon_size + self._icon_gap, tint=color, bg=color, radius=0)
+                       for hovering, color in ((False, fill), (True, self._style["hover"]))} if icon_name else {}
+        self.photo = self.photos.get(False)
+        self.label = tk.Label(self, text=text, image=self.photo, compound="left" if icon_name else "none", fg=self._style["text"],
+                              bg=fill, font=scaled_font(self, self._font), bd=0, highlightthickness=0, padx=0, pady=0,
+                              anchor=anchor, cursor="hand2", width=1)
+        # У значка своя подложка шире самого значка (на gap): половина зазора уже внутри картинки, отступ слева — без неё
+        # Сверху и снизу — рамка 1 px, по бокам — не меньше 3 px: надпись не должна закрыть рамку и скругление подложки
+        self.label.pack(fill="both", expand=True, pady=max(1, round(scale)),
+                        padx=max(round(3 * scale), round((pad_x - (self._icon_gap / 2)) * scale)))
+        self.bind_parts(self.label)
+        self.icon_size = icon_size
+        self.fit_width()
+        if tooltip:
+            self.tooltip = Tooltip(self, tooltip)
+            self.tooltip.attach(self.label)
+
+    def fit_width(self):
+        """Ширина не меньше, чем надо надписи со значком (в языках надписи разной длины)."""
+        scale = ctk.ScalingTracker.get_widget_scaling(self)
+        text = self.label.cget("text")
+        inner = text_width(self, self._font, text) if text else 0
+        if self.photo is not None:
+            inner += round((self.icon_size + self._icon_gap) * scale)
+        width = round(2 * (self._pad_x - (self._icon_gap / 2)) * scale) + inner
+        self.configure(width=max(width, round((self._min_width or 0) * scale)))
+
+    def set_text(self, text):
+        if self.label.cget("text") != text:
+            self.label.configure(text=text)
+            self.fit_width()
+
+    def _paint(self):
+        fill = self._style["hover"] if self._hovering else self._style["fill"]
+        self.backdrop.restyle(fill, self._style["border"])
+        if self.label.cget("bg") != fill:
+            self.label.configure(bg=fill)
+            if self.photos:   # у значка своя подложка цвета заливки: на наведении — подложка цвета наведения
+                self.label.configure(image=self.photos[self._hovering])
 
 
 class Chip(ctk.CTkFrame):

@@ -1,0 +1,352 @@
+"""Задача 15, шаг 7: «О программе» (ui/about_page.py, данные — ui/about_data.py).
+
+Без окна (ui/about_data.py):
+- кошельки на экране и в буфере — полный адрес; адреса доната и ссылки такие же, как в старой вкладке; репозиторий и почта автора
+  берутся из config.py (бот переедет — меняется одна строка);
+- ссылка не открылась (нет программы для mailto:) — окно кладёт её в буфер обмена и пишет об этом;
+- состояние компонентов: ADB и scrcpy — в PATH, база шаблонов — assets_db.py или папка assets/ с картинками;
+- «Папка бота» открывает проводник нужной командой, нет папки — «не получилось»;
+- новые надписи — на 13 языках, слоган и описание — те же, что в старом «about_desc».
+На виртуальном экране (xvfb-run -a python3.12 -m pytest tests/test_ui_about.py):
+- страница как в макете, кнопки открывают нужные ссылки (релизы GitHub — ваш ответ 7.1), копирование кладёт полный адрес
+  в буфер, «Папка бота» с ошибкой показывает уведомление;
+- проверка компонентов идёт в фоне и обновляется при каждом показе страницы, язык меняется на лету,
+- на странице нет ни одного элемента CustomTkinter (у них свои холсты, на них в Windows при прокрутке остаются следы);
+  наведение на кнопку меняет только цвета.
+"""
+import unicodedata
+from pathlib import Path
+
+import pytest
+
+from test_ui_rules import ROOT, app, needs_gui, pump, workdir  # noqa: F401
+
+NEW_KEYS = ["ab_slogan", "ab_text", "ab_support_text", "ab_check_updates", "ab_open_folder", "ab_author_license",
+            "ab_components", "ab_author", "ab_license", "ab_templates", "ab_found", "ab_not_found", "ab_loaded",
+            "ab_not_loaded", "ab_checking", "ab_support_title", "ab_crypto", "ab_tg_donate", "ab_app", "ab_browser",
+            "ab_direct", "ab_copy", "ab_copied", "ab_folder_fail", "ab_open_failed"]
+# Совпадают с русским по праву: слова одинаковы в украинском и казахском
+SAME_AS_RU = {"UK": {"ab_open_folder", "ab_crypto", "ab_browser"}, "KK": {"ab_license", "ab_crypto", "ab_browser"}}
+
+
+# ── Без окна ─────────────────────────────────────────────────────────────────
+def test_wallets_are_full_addresses():
+    from ui import about_data
+    assert [key for key, _label, _address in about_data.WALLETS] == ["usdt", "btc", "eth"]
+    assert all(len(address) >= 34 for _k, _l, address in about_data.WALLETS)   # настоящие адреса, без сокращений («…»)
+    assert not any("…" in address for _k, _l, address in about_data.WALLETS)
+
+
+def test_addresses_and_links_same_as_old_tab():
+    """Кошельки и ссылки скопированы из старой вкладки без ошибок: каждый есть в её тексте."""
+    from ui import about_data
+    old = (ROOT / "ui" / "about_tab.py").read_text(encoding="utf-8")
+    for _key, _label, address in about_data.WALLETS:
+        assert f'"{address}"' in old
+    for _currency, app_url, web_url in about_data.TELEGRAM_DONATE:
+        assert f'"{app_url}"' in old and f'"{web_url}"' in old
+    for _key, _text, url in about_data.DIRECT_DONATE:
+        assert f'"{url}"' in old
+    assert [c for c, _a, _w in about_data.TELEGRAM_DONATE] == ["RUB", "EUR", "USD"]
+
+
+def test_repo_and_email_come_from_config(monkeypatch):
+    """Бот переедет в другой репозиторий — меняется только GITHUB_REPO в config.py (и почта — AUTHOR_EMAIL)."""
+    import importlib
+
+    import config
+    from ui import about_data
+    assert about_data.GITHUB_URL == f"https://github.com/{config.GITHUB_REPO}"
+    assert about_data.RELEASES_URL == about_data.GITHUB_URL + "/releases" and about_data.EMAIL == config.AUTHOR_EMAIL
+    monkeypatch.setattr(config, "GITHUB_REPO", "new-owner/NewBot")
+    monkeypatch.setattr(config, "AUTHOR_EMAIL", "me@example.com")
+    try:
+        importlib.reload(about_data)
+        assert about_data.GITHUB_URL == "https://github.com/new-owner/NewBot"
+        assert about_data.RELEASES_URL == "https://github.com/new-owner/NewBot/releases"
+        assert about_data.mail_url() == "mailto:me@example.com"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(about_data)
+    assert about_data.GITHUB_URL == f"https://github.com/{config.GITHUB_REPO}"
+
+
+def test_launch_reports_failure():
+    from ui import about_data
+    seen = []
+    assert about_data.launch("https://example.com", opener=lambda url: seen.append(url) or True) and seen == ["https://example.com"]
+    assert not about_data.launch("mailto:a@b.c", opener=lambda url: False)   # Windows без почтовой программы
+    assert not about_data.launch("", opener=lambda url: True)
+
+    def broken(_url):
+        raise OSError("нет программы")
+    assert not about_data.launch("https://example.com", opener=broken)
+
+
+def test_safe_url():
+    from ui import about_data
+    assert about_data.safe_url("") is None and about_data.safe_url("ВСТАВЬ ССЫЛКУ") is None
+    assert about_data.safe_url("example.com/x") == "https://example.com/x"
+    assert about_data.safe_url(about_data.RELEASES_URL) == "https://github.com/petrunin-platon/HeroWarsBot/releases"
+    assert about_data.safe_url(about_data.mail_url()) == "mailto:petrunin.platon@gmail.com"
+
+
+def test_components_found_like_the_bot_looks(tmp_path):
+    from ui import about_data
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "btn_ok.png").write_bytes(b"x")
+    nothing = lambda _name: None  # noqa: E731
+    no_db = lambda _name: None  # noqa: E731
+    found = about_data.check_components(which=lambda n: f"/usr/bin/{n}", find_spec=no_db, dirs=[tmp_path / "assets"])
+    assert found == {"adb": True, "scrcpy": True, "templates": True}
+    found = about_data.check_components(which=lambda n: "/x/adb" if n == "adb" else None, find_spec=no_db,
+                                        dirs=[tmp_path / "nope"])
+    assert found == {"adb": True, "scrcpy": False, "templates": False}
+    assert about_data.check_components(which=nothing, find_spec=no_db, dirs=[tmp_path])["templates"] is False  # нет картинок
+    # assets_db.py есть — этого достаточно (бот берёт картинки из него, папка не нужна)
+    assert about_data.templates_found(find_spec=lambda _n: object(), dirs=[tmp_path / "nope"])
+
+
+def test_open_folder(tmp_path):
+    from ui import about_data
+    started = []
+    assert about_data.open_folder(str(tmp_path), platform="win32", startfile=started.append) and started == [str(tmp_path)]
+    popen = []
+    assert about_data.open_folder(str(tmp_path), platform="linux", popen=popen.append)
+    assert popen == [["xdg-open", str(tmp_path)]]
+    popen.clear()
+    assert about_data.open_folder(str(tmp_path), platform="darwin", popen=popen.append) and popen[0][0] == "open"
+    assert not about_data.open_folder(str(tmp_path / "нет такой"), platform="win32", startfile=started.append)
+
+    def broken(_path):
+        raise OSError("нет проводника")
+    assert not about_data.open_folder(str(tmp_path), platform="win32", startfile=broken)
+    assert about_data.program_folder() == str(Path.cwd())
+
+
+def test_new_texts_in_all_languages():
+    import i18n
+    ru = i18n.TRANSLATIONS["RU"]
+    for lang, words in i18n.TRANSLATIONS.items():
+        for key in NEW_KEYS:
+            text = words.get(key)
+            assert text, (lang, key)
+            assert lang == "RU" or text != ru[key] or key in SAME_AS_RU.get(lang, ()), (lang, key)
+            assert not any(unicodedata.category(ch) == "So" for ch in text), (lang, key, text)   # в новом окне эмодзи нет
+        # слоган, описание и «поддержать» — те же слова, что в старом «about_desc» этого языка
+        version, text, support = words["about_desc"].split("\n\n")
+        assert words["ab_slogan"] == version.split("\n", 1)[1] and words["ab_text"] == text
+        assert words["ab_support_text"] == support
+
+
+# ── На виртуальном экране ────────────────────────────────────────────────────
+@pytest.fixture
+def page(app, monkeypatch):
+    from ui import about_data, about_page
+    opened = []
+    monkeypatch.setattr(about_page.webbrowser, "open", lambda url: opened.append(url) or True)
+    monkeypatch.setattr(about_data, "check_components",
+                        lambda: {"adb": True, "scrcpy": False, "templates": True})
+    app.geometry("1100x720+0+0")
+    app.select_frame("about")
+    pump(app, 0.5)
+    result = app.frames["about"]
+    result.opened = opened
+    result.fail_opening = lambda: monkeypatch.setattr(about_page.webbrowser, "open", lambda url: False)
+    return result
+
+
+def walk(widget):
+    yield widget
+    for child in widget.winfo_children():
+        yield from walk(child)
+
+
+def texts_of(page):
+    return {key: (widget.label if hasattr(widget, "label") else widget).cget("text") for widget, key in page._texts}
+
+
+@needs_gui
+def test_page_like_mockup(page):
+    from config import APP_VERSION
+    from ui.about_page import AboutPage
+    assert isinstance(page, AboutPage) and page.winfo_viewable()
+    texts = texts_of(page)
+    assert texts["ab_check_updates"] == "Проверить обновления" and texts["ab_open_folder"] == "Папка бота"
+    assert texts["about_btn_mail"] == "Написать автору" and texts["about_btn_github"] == "GitHub проекта"
+    assert texts["ab_author_license"] == "Автор и лицензия" and texts["ab_components"] == "Состояние компонентов"
+    assert texts["about_btn_boosty"] == "Поддержать на Boosty" and texts["about_btn_yoomoney"] == "ЮMoney (RUB)"  # без эмодзи
+    assert texts["ab_slogan"].startswith("Ультимативный автономный RPA-бот") and "Машину состояний" in texts["ab_text"]
+    assert list(page.wallet_buttons) == ["usdt", "btc", "eth"] and list(page.donate_buttons) == ["boosty", "yoomoney"]
+    assert APP_VERSION == "1.6.1"
+    # описание — просто текст под значком (с левого края карточки), без плашки
+    description = next(w for w, key in page._texts if key == "ab_text")
+    info = description.grid_info()
+    assert (info["row"], info["column"], info["columnspan"]) == (1, 0, 2)
+    assert hasattr(description.master, "backdrop")                       # лежит прямо на карточке, не на своей плашке
+    # кошельки — полным адресом
+    from ui import about_data
+    assert {k: f.get() for k, f in page.wallet_fields.items()} == {k: a for k, _l, a in about_data.WALLETS}
+    assert len({b.grid_info()["row"] for b in page.wallet_buttons.values()}) == 3        # по строке на кошелёк, как у Telegram
+
+
+@needs_gui
+def test_buttons_open_the_right_links(page):
+    from ui import about_data
+    buttons = {key: widget for widget, key in page._texts if hasattr(widget, "command")}
+    buttons["ab_check_updates"].command()
+    buttons["about_btn_mail"].command()
+    buttons["about_btn_github"].command()
+    assert page.opened == ["https://github.com/petrunin-platon/HeroWarsBot/releases",
+                           "mailto:petrunin.platon@gmail.com", "https://github.com/petrunin-platon/HeroWarsBot"]
+    page.opened.clear()
+    page.donate_buttons["boosty"].command()
+    page.donate_buttons["yoomoney"].command()
+    assert page.opened == [url for _k, _t, url in about_data.DIRECT_DONATE]
+    page.opened.clear()
+    app_buttons = [w for w, key in page._texts if key == "ab_app"]
+    web_buttons = [w for w, key in page._texts if key == "ab_browser"]
+    for app_button, web_button in zip(app_buttons, web_buttons):
+        app_button.command()
+        web_button.command()
+    assert page.opened == [url for _c, app_url, web_url in about_data.TELEGRAM_DONATE for url in (app_url, web_url)]
+
+
+@needs_gui
+def test_copy_button_puts_full_address_to_clipboard(page):
+    from ui import about_data
+    from ui.widgets import Toast
+    for key, _label, address in about_data.WALLETS:
+        page.wallet_buttons[key].command()
+        pump(page, 0.1)
+        assert page.clipboard_get() == address
+    assert Toast._open and Toast._open[-1].top is not None
+    Toast.close_all(page.winfo_toplevel())
+
+
+@needs_gui
+def test_wallet_field_selects_and_copies(page):
+    """Адрес в поле: не правится, двойной щелчок выделяет весь, правая кнопка предлагает «Копировать»."""
+    from ui import about_data
+    from ui.widgets import Toast
+    key, _label, address = about_data.WALLETS[2]
+    field = page.wallet_fields[key]
+    assert str(field.cget("state")) == "readonly"
+    assert field.bind("<Double-Button-1>")                      # Tk не даёт сыграть двойной щелчок событием — зовём обработчик
+    page._select_all(field)
+    pump(page, 0.1)
+    assert field.selection_get() == address
+    page._chosen_wallet = key
+    page._copy_chosen_wallet()
+    assert page.clipboard_get() == address
+    assert page.wallet_menu.entrycget(0, "label") == "Копировать"
+    Toast.close_all(page.winfo_toplevel())
+    # три кошелька — три строки в тех же рядах, что RUB / EUR / USD справа
+    wallet_rows = [page.wallet_buttons[k].grid_info()["row"] for k in ("usdt", "btc", "eth")]
+    assert wallet_rows == [1, 2, 3]
+
+
+@needs_gui
+def test_folder_button(page, monkeypatch):
+    from ui import about_data, about_page
+    from ui.widgets import Toast
+    calls = []
+    monkeypatch.setattr(about_data, "open_folder", lambda path: calls.append(path) or True)
+    page.open_folder()
+    assert calls == [about_data.program_folder()] and not Toast._open
+    monkeypatch.setattr(about_page.about_data, "open_folder", lambda path: False)
+    page.open_folder()
+    pump(page, 0.1)
+    assert Toast._open and Toast._open[-1].top is not None
+    Toast.close_all(page.winfo_toplevel())
+
+
+@needs_gui
+def test_components_checked_in_background_on_every_show(app, monkeypatch):
+    from ui import about_data
+    answers = iter([{"adb": True, "scrcpy": False, "templates": True},
+                    {"adb": True, "scrcpy": True, "templates": False}])
+    monkeypatch.setattr(about_data, "check_components", lambda: next(answers))
+    app.select_frame("about")
+    page = app.frames["about"]
+    assert page._status["adb"][1].cget("text") == "проверяю…"          # ответа ещё нет
+    pump(app, 1.0, until=lambda: page.found is not None)
+    status = {key: name.cget("text") for key, (_mark, name) in page._status.items()}
+    assert status == {"adb": "найден", "scrcpy": "не найден", "templates": "загружена"}
+    app.select_frame("dash")
+    app.select_frame("about")                                          # показали снова — проверили снова
+    pump(app, 1.0, until=lambda: page.found == {"adb": True, "scrcpy": True, "templates": False})
+    status = {key: name.cget("text") for key, (_mark, name) in page._status.items()}
+    assert status == {"adb": "найден", "scrcpy": "найден", "templates": "не найдена"}
+    assert page._status["scrcpy"][1].cget("fg") != page._status["templates"][1].cget("fg")   # зелёный и красный
+
+
+@needs_gui
+def test_language_changes_everything(page):
+    page.update_language("DE")
+    texts = texts_of(page)
+    assert texts["ab_check_updates"] == "Nach Updates suchen" and texts["ab_open_folder"] == "Bot-Ordner"
+    assert page._status["adb"][1].cget("text") == "gefunden"
+    app = page.winfo_toplevel()
+    app.set_language("EN")
+    pump(page, 0.1)
+    assert texts_of(page)["ab_components"] == "Component status"
+    assert app.title_label.cget("text") == "About"
+
+
+@needs_gui
+def test_page_has_no_customtkinter_widgets(page):
+    """Ни одного элемента CustomTkinter (у каждого свой холст — в Windows при прокрутке и смене вкладок остаются следы):
+    карточки, кнопки, строки — обычный Tk на готовых подложках. Своя прокрутка страницы — не в счёт: её детей здесь нет."""
+    ctk_widgets = [w for w in walk(page) if w.__class__.__module__.startswith("customtkinter")]
+    assert not ctk_widgets, ctk_widgets
+    assert len(list(walk(page))) < 400
+
+
+@needs_gui
+def test_hover_changes_only_colors(page):
+    from ui.widgets import PlainButton
+    button = next(w for w, key in page._texts if key == "ab_check_updates")
+    assert isinstance(button, PlainButton)
+    size = (button.winfo_width(), button.winfo_height())
+    children = len(list(walk(button)))
+    before = (button.label.cget("bg"), str(button.backdrop.cget("image")))
+    button._enter()
+    pump(page, 0.05)
+    after = (button.label.cget("bg"), str(button.backdrop.cget("image")))
+    assert after[0] != before[0] and after[1] != before[1]                    # другой цвет и другая картинка подложки
+    assert (button.winfo_width(), button.winfo_height()) == size and len(list(walk(button))) == children
+    button._hovering = False
+    button._paint()
+    assert button.label.cget("bg") == before[0]
+    donate = page.donate_buttons["boosty"]
+    donate._enter()
+    assert donate._hovering
+    donate._hovering = False
+    donate._paint()
+
+
+@needs_gui
+def test_button_text_widens_button_for_long_language(page):
+    button = next(w for w, key in page._texts if key == "ab_check_updates")
+    page.update_language("EN")
+    short = button.winfo_reqwidth()
+    page.update_language("DE")
+    assert button.label.cget("text") == "Nach Updates suchen"
+    assert button.winfo_reqwidth() >= short - 2 and button.winfo_reqwidth() >= 150
+
+
+@needs_gui
+def test_link_that_did_not_open_is_copied(page):
+    """Нет программы для ссылки (в Windows — почтовой программы для mailto:): адрес в буфере обмена и уведомление."""
+    from ui.widgets import Toast
+    page.fail_opening()
+    buttons = {key: widget for widget, key in page._texts if hasattr(widget, "command")}
+    buttons["about_btn_mail"].command()
+    pump(page, 0.1)
+    assert page.clipboard_get() == "petrunin.platon@gmail.com"        # адрес, а не «mailto:...»
+    assert Toast._open and Toast._open[-1].top is not None
+    Toast.close_all(page.winfo_toplevel())
+    buttons["ab_check_updates"].command()
+    assert page.clipboard_get() == "https://github.com/petrunin-platon/HeroWarsBot/releases"
+    Toast.close_all(page.winfo_toplevel())

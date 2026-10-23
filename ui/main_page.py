@@ -33,7 +33,7 @@ import customtkinter as ctk
 import data_paths
 import session_log
 import telegram_report
-from config import GAME_WINDOW_TITLE
+from config import AUTHOR_EMAIL, GAME_WINDOW_TITLE
 from i18n import get_text
 from ui import bot_link, hud_events, launch_config, log_lines, sos_dialogs, theme, ui_settings
 from ui.icons import dot, icon
@@ -1301,7 +1301,7 @@ class MainPage(ctk.CTkFrame):
         self.append_log("[СИСТЕМА] Открываю почтовый клиент ОС...\n")
         body = ("Привет, Platon! Вот логи сессии.%0A%0A"
                 "(Пожалуйста, прикрепите файлы gui_log_...txt и battle_log.csv к этому письму)")
-        webbrowser.open(f"mailto:Petrunin.platon@gmail.com?subject=HeroWars Bot Log Report&body={body}")
+        webbrowser.open(f"mailto:{AUTHOR_EMAIL}?subject=HeroWars Bot Log Report&body={body}")
 
     # ── Закрытие окна программы ─────────────────────────────────────────────
     def shutdown_processes(self):

@@ -51,7 +51,7 @@ def test_no_hex_outside_theme():
                  "ui/hotkeys.py", "ui/status.py", "ui/window_fit.py", "ui/ui_settings.py", "ui/phone.py",
                  "ui/main_page.py", "ui/sos_dialogs.py", "ui/titan_picker.py", "ui/bot_link.py", "ui/log_lines.py",
                  "ui/launch_config.py", "ui/sos_telegram.py", "ui/rules_list.py", "ui/rules_intercepts.py",
-                 "ui/rule_editor.py"):
+                 "ui/rule_editor.py", "ui/about_page.py", "ui/about_data.py"):
         text = (ROOT / path).read_text(encoding="utf-8")
         found = set(re.findall(r'"#[0-9A-Fa-f]{6}"', text))
         assert not found, f"{path}: {found}"

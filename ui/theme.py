@@ -200,6 +200,11 @@ STAT_TILES = {
     "rooms": ("door-open", LOG_TAGS["СИСТЕМА"]),
     "floors": ("layers", LOG_TAGS["СИСТЕМА"]),
 }
+# «О программе» (шаг 7, макет 07_about): цвет квадрата у кнопок прямых переводов (оранжевый — как у огня, фиолетовый — как у смешанной)
+DONATE_COLORS = {
+    "boosty": ELEMENTS["fire"]["color"],
+    "yoomoney": ELEMENTS["mix"]["color"],
+}
 # График титанита: столбики зелёные; выбран один — он ярче, остальные бледнее, под ним синеватая колонка
 CHART_COLORS = {
     "bar": COLORS["green"],
@@ -234,6 +239,8 @@ FONT_FAMILY = "Roboto"
 MONO_FAMILY = "Consolas"
 FONTS = {
     "page_title": (FONT_FAMILY, 18, "bold"),   # заголовок в шапке
+    "app_name": (FONT_FAMILY, 22, "bold"),     # название программы в карточке «О программе»
+    "about_text": (FONT_FAMILY, 16),           # описание под названием в «О программе»
     "section": (FONT_FAMILY, 15, "bold"),      # заголовок карточки/раздела
     "card_title": (FONT_FAMILY, 14, "bold"),
     "dialog_title": (FONT_FAMILY, 16, "bold"),
