@@ -27,7 +27,8 @@ S = theme.SIZES
 
 WIDTH = 500          # ширина окна
 POLL_MS = 100
-ERROR_CHARS = 180    # длинную ошибку requests в окне обрезаем
+ERROR_CHARS = 60     # длинную ошибку requests обрезаем: ответ — не больше двух строк справа от кнопки
+NOTE_WIDTH = 230     # подпись «Записать в файл…» слева от кнопок
 V_KEYCODE = 86       # клавиша V в Windows: Ctrl+V при русской раскладке Tk не узнаёт как «вставить»
 
 
@@ -116,17 +117,26 @@ class TelegramWindow(ctk.CTkToplevel):
             field.entry.bind("<Button-3>", lambda e, f=field: self._show_paste_menu(e, f), add="+")
             field.entry.bind("<Control-KeyPress>", lambda e, f=field: self._ctrl_key(e, f), add="+")
 
-        check = ctk.CTkFrame(body, fg_color="transparent", width=10, height=10)
+        # Ответ проверки — справа от кнопки, не выше её (до двух строк; замечание к шагу 5б)
+        check = tk.Frame(body, bg=C["bg_surface"])
         check.grid(row=4, column=0, sticky="ew", pady=(16, 0))
-        check.grid_columnconfigure(0, weight=1)
+        check.grid_columnconfigure(1, weight=1)
         self.check_button = Button(check, self.text("tw_check"), kind="secondary", icon_name="send", icon_size=15,
                                    pad_x=12, command=self.check)
         self.check_button.configure(image=icon("send", C["blue_text"], 15))
         self.check_button.grid(row=0, column=0, sticky="w")
         self.check_label = ctk.CTkLabel(check, text="", font=F["label"], text_color=C["text_secondary"], anchor="w",
-                                        justify="left", wraplength=WIDTH - 60, compound="left")
-        self.check_label.grid(row=1, column=0, sticky="w", pady=(8, 0))
-        self.check_label.grid_remove()
+                                        justify="left", height=S["control_height"], compound="left")
+        self.check_label.grid(row=0, column=1, sticky="ew", padx=(12, 0))
+        check.bind("<Configure>", self._wrap_check, add="+")
+
+    def _wrap_check(self, _event=None):
+        """Ответ проверки — по ширине места справа от кнопки (в CTkLabel wraplength — без масштаба Windows)."""
+        scale = ctk.ScalingTracker.get_widget_scaling(self)
+        free = (self.check_label.master.winfo_width() - self.check_button.winfo_width()) / scale - 30
+        width = max(120, int(free))
+        if self.check_label.cget("wraplength") != width:
+            self.check_label.configure(wraplength=width)
 
     def _paste_button(self, field):
         return Button(field, self.text("tw_paste"), kind="secondary", height=S["control_height"], pad_x=10,
@@ -137,15 +147,16 @@ class TelegramWindow(ctk.CTkToplevel):
         footer = ctk.CTkFrame(self, fg_color="transparent", width=10, height=10)
         footer.grid(row=3, column=0, sticky="ew", padx=20, pady=16)
         footer.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(footer, text=self.text("tw_note"), font=F["label"], text_color=C["text_muted"], anchor="w",
-                     justify="left", wraplength=WIDTH - 40).grid(row=0, column=0, columnspan=3, sticky="w",
-                                                                 pady=(0, 12))
+        # «Записать в файл…» — слева от кнопок, по центру по высоте (замечание к шагу 5б)
+        self.note = ctk.CTkLabel(footer, text=self.text("tw_note"), font=F["label"], text_color=C["text_muted"],
+                                 anchor="w", justify="left", wraplength=NOTE_WIDTH)
+        self.note.grid(row=0, column=0, sticky="w", padx=(0, 12))
         self.cancel_button = Button(footer, self.text("btn_cancel"), kind="secondary",
                                     height=S["button_height_footer"], command=self.close)
-        self.cancel_button.grid(row=1, column=1, padx=(0, 10))
+        self.cancel_button.grid(row=0, column=1, padx=(0, 10))
         self.apply_button = Button(footer, self.text("btn_apply"), kind="blue", icon_name="check", icon_size=14,
                                    height=S["button_height_footer"], command=self.apply)
-        self.apply_button.grid(row=1, column=2)
+        self.apply_button.grid(row=0, column=2)
 
     # ── Поля ────────────────────────────────────────────────────────────────
     def toggle_token(self):
@@ -233,7 +244,6 @@ class TelegramWindow(ctk.CTkToplevel):
         else:
             color, image = C["danger_text"], icon("triangle-alert", C["danger_text"], 13)
         self.check_label.configure(text=(" " + text) if image else text, text_color=color, image=image)
-        self.check_label.grid()
 
     # ── Показ и закрытие ────────────────────────────────────────────────────
     @property

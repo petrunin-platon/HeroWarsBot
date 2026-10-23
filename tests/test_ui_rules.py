@@ -485,8 +485,8 @@ def test_hover_changes_only_colors(app):
         widget._hovering = False
         widget._paint()
         assert len(calls) == 2 and set(calls[1]) == {"fg_color"}
-        # Рамка передаёт свой фон частям (bg_color) — это цвет; надпись, шрифт и картинка не меняются
-        assert all(set(kw) == {"bg_color"} for kw in parts_calls)
+        # Части — обычные надписи Tk (шаг 5б): им — только цвет фона; надпись, шрифт и картинка не меняются
+        assert all(set(kw) in ({"bg_color"}, {"bg"}) for kw in parts_calls)
 
 
 @needs_gui

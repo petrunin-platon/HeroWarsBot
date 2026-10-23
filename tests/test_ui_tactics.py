@@ -141,7 +141,7 @@ def open_tactics(app, workdir, profile=TACTICS_PROFILE):
 @needs_gui
 def test_tab_like_mockup(app, workdir):
     page, tab = open_tactics(app, workdir)
-    assert tab.winfo_viewable() and page.base is not None and not page.base.winfo_viewable()
+    assert tab.winfo_viewable() and page.shown_tab_widget() is tab
     assert [d.get() for d in tab.doors] == ["fire", "water", "earth", "mix"]
     assert tab.doors[0]._label.cget("text") == "Огонь" and tab.doors[0]._badge.cget("text") == "1"
     assert {k: tab.entries[k].get() for k in tab.entries} == {
@@ -152,8 +152,30 @@ def test_tab_like_mockup(app, workdir):
     chips = [c for c in tab.chips.winfo_children() if hasattr(c, "titan")]
     assert [c.titan for c in chips] == ["sigurd", "rigel"] and chips[0].value_label.cget("text") == "20%"
     assert tab.personal_rest.cget("text") == "У остальных титанов — общий порог 30%"
-    assert not tab.banner_off.winfo_ismapped()            # «Бот решает сам» включён — предупреждения нет
+    assert tab.banner_text.cget("text") == "Если бой прошёл плохо, бот откатывает его и переигрывает запасным паком. " \
+        "Удачный пак сохраняется в правило — в следующий раз бот возьмёт его сразу."   # «Бот решает сам» включён
+    assert not tab.notes["auto_rollback_tries"].winfo_ismapped()   # пустая подсказка — без пустой строки
+    assert tab.notes["group_loss_titans"].cget("text") == "0 титанов — не проверять"
+    assert tab.notes["group_loss_titans"].grid_info()["row"] == 0   # справа в строке «Считать бой плохим, если»
     assert footer(page) == "Все изменения сохранены"
+
+
+@needs_gui
+def test_tabs_are_prebuilt_and_switch_without_rebuild(app, workdir):
+    """Проверка шага 5б: переключение вкладок и списки — без задержек. Вкладки строятся заранее и только поднимаются."""
+    import time as clock
+    app.select_frame("rules")
+    page = app.frames["rules"]
+    pump(app, 2, until=lambda: page.tactics is not None)
+    tab, base = page.tactics, page.base
+    assert tab is not None and page.shown_tab_widget() is base          # построена заранее, под открытой
+    started = clock.perf_counter()
+    for name in ("rb_tab_tactics", "rb_tab_rules", "rb_tab_base", "rb_tab_tactics"):
+        page.tabs.set(page.text(name))
+        page._tab_chosen(page.text(name))
+        app.update()
+    assert clock.perf_counter() - started < 1.0
+    assert page.tactics is tab and page.base is base and page.shown_tab_widget() is tab   # ничего не перестроено
 
 
 @needs_gui
@@ -166,8 +188,9 @@ def test_banner_warns_when_bot_does_not_decide(app, workdir):
     page.base._percent_typed("critical_hp")
     page._tab_chosen(page.text("rb_tab_tactics"))
     pump(app)
-    assert page.tactics is tab and tab.banner_off.winfo_ismapped()
-    assert "«Бот решает сам» выключен" in tab.banner_off.cget("text")
+    text = tab.banner_text.cget("text")                   # продолжение того же белого текста, без значка
+    assert page.tactics is tab and text.startswith("Если бой прошёл плохо") and "«Бот решает сам» выключен" in text
+    assert tab.banner_text.cget("fg") == "#E8EAF0" and not tab.banner_text.cget("image")
     assert tab.personal_rest.cget("text").endswith("35%")
 
 
@@ -201,8 +224,9 @@ def test_wrong_number_blocks_save(app, workdir):
                                ("group_loss_percent", "abc", "Число от 0 до 100")):
         tab.entries[key].set(text)
         tab._number_typed(key)
-        note = tab.notes[key][0]
-        assert tab.entries[key].error and message in note.cget("text"), key
+        pump(app, 0.1)
+        note = tab.notes[key]
+        assert tab.entries[key].error and message in note.cget("text") and note.winfo_ismapped(), key
     page.save()
     assert read_yaml(workdir / "profile.yml")["settings"]["auto_rollback_tries"] == 3   # не сохранилось
     assert page.dirty()
@@ -212,7 +236,8 @@ def test_wrong_number_blocks_save(app, workdir):
     tab = page.tactics
     tab.entries["auto_rollback_tries"].set("2")
     tab._number_typed("auto_rollback_tries")
-    assert not tab.entries["auto_rollback_tries"].error and tab.notes["auto_rollback_tries"][0].cget("text") == ""
+    pump(app)
+    assert not tab.entries["auto_rollback_tries"].error and not tab.notes["auto_rollback_tries"].winfo_ismapped()
 
 
 @needs_gui
@@ -239,7 +264,7 @@ def test_threshold_dialog(app, workdir):
     assert dialog.titans.get() == "sigurd" and not dialog.titans.enabled and dialog.field.get() == "20"
     dialog.close()
     assert page.form["titan_critical_hp"]["sigurd"] == 20
-    chips[0].remove_button.invoke()                                                 # ✕ — убрать
+    chips[0].remove_button.event_generate("<Button-1>")                                              # ✕ — убрать
     assert "sigurd" not in page.form["titan_critical_hp"]
     for titan in list(page.form["titan_critical_hp"]):
         tab.threshold_set(titan, None)
@@ -291,6 +316,10 @@ def test_telegram_window(app, workdir):
     pump(app, 2, until=lambda: "ушло" in window.check_label.cget("text"))
     assert calls == [("123:abc", "777", "RU", False)]    # запрос — в фоновом потоке
     assert "Сообщение ушло" in window.check_label.cget("text") and window.check_button.cget("state") == "normal"
+    info = window.check_label.grid_info()                 # справа от кнопки, не выше её
+    assert info["row"] == window.check_button.grid_info()["row"] and info["column"] == 1
+    assert window.check_label.winfo_height() <= window.check_button.winfo_height() + 1
+    assert window.note.grid_info()["row"] == window.apply_button.grid_info()["row"]   # «Записать в файл» — слева
     window.sender = lambda token, chat_id, lang: (False, "Telegram ответил ошибкой: Unauthorized")
     window.check_button.invoke()
     pump(app, 2, until=lambda: "Не ушло" in window.check_label.cget("text"))

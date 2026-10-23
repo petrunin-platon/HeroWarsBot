@@ -1,7 +1,8 @@
 """Мастер правил → «Авто-тактика и ХП» (задача 15, шаг 5б; макет design/mockups/03b_rules_tactics) — вместо окна «⚙️ Тактика».
 
-Синяя плашка: что делает бот, когда бой плохой. «Бот решает сам» выключен — в плашке ещё строка: запасные паки и пак
-отхила тогда не работают, а остальное работает всегда (ваш ответ 22.10.2026).
+Синяя плашка: что делает бот, когда бой плохой. «Бот решает сам» выключен — в плашке продолжение того же текста: запасные
+паки и пак отхила тогда не работают, а остальное работает всегда (ваш ответ 22.10.2026; после проверки — тем же белым
+текстом, без значка).
 «Приоритет дверей» — 4 места, каждое — выпадающий список стихии; выбрали стихию, которая стоит на другом месте, —
 они меняются местами (как в окне «Тактика»). «Критерии плохого боя и SOS» — сколько запасных паков пробовать (1–3),
 через сколько минут без ответа на окно SOS бот решает сам, общие потери пака. «Авто-сборка пака отхила в Смешанной» —
@@ -11,6 +12,10 @@
 Как «База и комнаты» (ui/rules_base.py): вкладка ничего не пишет сама, все значения — в форме страницы (page.form),
 пишет их «Сохранить настройки»; ключи профиля — те же, что у окна «Тактика» (ui/rules_store.py: TACTICS_KEYS).
 Поле с ошибкой (не число или не в пределах) — красная рамка и текст под ним, сохранить нельзя (page.field_errors).
+
+Надписи, значки, стрелки и рамки внутри карточек — обычные Tk (PlainLabel, tk.Label с картинкой, tk.Frame): у каждого
+элемента CustomTkinter свой холст, и в Windows вкладка дорисовывалась с задержкой (проверка шага 5б). CustomTkinter —
+только там, где нужны скругления: карточки, поля, места «Кого убирать», чипсы, кнопка.
 """
 import tkinter as tk
 
@@ -20,9 +25,8 @@ from customtkinter.windows.widgets.core_widget_classes import DropdownMenu
 import tactics
 from i18n import get_text
 from ui import rules_store, theme
-from ui.icons import icon
-from ui.widgets import (Button, Card, ClickFrame, Dropdown, Field, IconButton, PlainLabel, TitanTile, Tooltip,
-                        anchor_area, plain_icon, present_window, titan_name)
+from ui.widgets import (Button, Card, ClickFrame, Dropdown, Field, PlainLabel, TitanTile, Tooltip, anchor_area,
+                        plain_icon, present_window, titan_name)
 
 C = theme.COLORS
 T = theme.TINTS
@@ -35,16 +39,30 @@ ALL_TITANS = [name for names in theme.TITANS.values() for name in names] + theme
 # Новая колонка меню титанов — с первого титана каждой стихии (кроме первой): список из 29 имён иначе выше экрана
 COLUMN_BREAKS = [names[0] for names in list(theme.TITANS.values())[1:]] + theme.ELARITE_ONLY[:1]
 AUTO = None   # «— сам —» в «Кого убирать»
+BG = C["bg_surface"]
 
 
 def line(master):
     return tk.Frame(master, height=1, bg=C["border"])
 
 
+def px(widget, value):
+    """Размер в настоящих пикселях с учётом масштаба Windows (wraplength у надписей Tk — в пикселях)."""
+    return round(value * ctk.ScalingTracker.get_widget_scaling(widget))
+
+
+class Picture(tk.Label):
+    """Значок обычной надписью Tk (картинка держится у самой надписи)."""
+
+    def __init__(self, master, name, color, size, bg=BG):
+        self.picture = plain_icon(master, name, color, size)
+        super().__init__(master, image=self.picture, bg=bg, bd=0, highlightthickness=0, padx=0, pady=0)
+
+
 def card_header(master, icon_name, color, text):
-    head = ctk.CTkFrame(master, fg_color="transparent", width=10, height=10)
-    ctk.CTkLabel(head, text="", image=icon(icon_name, color, 16), width=16, height=20).pack(side="left")
-    ctk.CTkLabel(head, text=text, font=F["card_title"], text_color=C["text"], height=20).pack(side="left", padx=(8, 0))
+    head = tk.Frame(master, bg=BG)
+    Picture(head, icon_name, color, 16).pack(side="left")
+    PlainLabel(head, text, font=F["card_title"], color=C["text"]).pack(side="left", padx=(px(head, 8), 0))
     return head
 
 
@@ -54,12 +72,40 @@ def titan_items(lang):
 
 
 def titan_icons():
-    return {t: (theme.element_style(theme.element_of(t))["icon"], theme.element_style(theme.element_of(t))["color"])
-            for t in ALL_TITANS}
+    styles = {t: theme.element_style(theme.element_of(t)) for t in ALL_TITANS}
+    return {t: (style["icon"], style["color"]) for t, style in styles.items()}
 
 
 def titan_order(titan):
     return ALL_TITANS.index(titan) if titan in ALL_TITANS else len(ALL_TITANS)
+
+
+class Note(PlainLabel):
+    """Серая подсказка под полем (или справа в строке); ошибка — красный текст со значком."""
+
+    def __init__(self, master, sub, anchor="w"):
+        super().__init__(master, sub, font=F["label"], color=C["text_muted"], anchor=anchor, compound="left")
+        self.sub = sub
+        self.error_picture = plain_icon(self, "triangle-alert", C["danger_text"], 13)
+        self.shown = None
+
+    def show(self, error_text):
+        """error_text — текст ошибки или None (снова подсказка)."""
+        if error_text == self.shown:
+            return
+        self.shown = error_text
+        if error_text:
+            self.configure(text=" " + error_text, fg=C["danger_text"], image=self.error_picture)
+        else:
+            self.configure(text=self.sub, fg=C["text_muted"], image="")
+        self.fit()
+
+    def fit(self):
+        """Пустую подсказку (поле без подсказки и без ошибки) не показываем — под подписью нет пустой строки."""
+        if self.cget("text"):
+            self.grid()
+        else:
+            self.grid_remove()
 
 
 class NumberEntry(ctk.CTkEntry):
@@ -68,7 +114,7 @@ class NumberEntry(ctk.CTkEntry):
     def __init__(self, master, value, width=ENTRY_WIDTH):
         super().__init__(master, width=width, height=S["control_height"], corner_radius=S["radius_control"],
                          border_width=1, border_color=C["border"], fg_color=C["bg_elevated"], text_color=C["text"],
-                         font=F["mono_field"], justify="center")
+                         font=F["mono_field"], justify="center", bg_color=BG)
         self.insert(0, str(value))
         self.error = False
         self._look = (1, C["border"], C["bg_elevated"])
@@ -104,7 +150,8 @@ class TacticsTab(ctk.CTkScrollableFrame):
         self.page = page
         self.lang = page.lang
         self.entries = {}       # ключ формы → NumberEntry
-        self.notes = {}         # ключ формы → (надпись под полем, обычный текст)
+        self.notes = {}         # ключ формы → Note (подсказка или ошибка)
+        self._banner_off = None
         self.grid_columnconfigure(0, weight=1)
         self._build_banner()
         self._build_doors()
@@ -117,39 +164,30 @@ class TacticsTab(ctk.CTkScrollableFrame):
 
     # ── Плашка ──────────────────────────────────────────────────────────────
     def _build_banner(self):
-        banner = Card(self, fg_color=T["info_banner_bg"], border_color=T["info_banner_border"], width=10, height=10)
+        bg = T["info_banner_bg"]
+        banner = Card(self, fg_color=bg, border_color=T["info_banner_border"], width=10, height=10)
         banner.grid(row=0, column=0, sticky="ew", padx=(24, 12), pady=(18, 0))
         banner.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(banner, text="", image=icon("info", C["blue_text"], 18), width=18, height=20).grid(
-            row=0, column=0, sticky="n", padx=(16, 12), pady=(14, 0))
-        self.banner_text = ctk.CTkLabel(banner, text=self.text("rt_banner"), font=F["text"], text_color=C["text"],
-                                        anchor="w", justify="left", wraplength=880)
+        Picture(banner, "info", C["blue_text"], 18, bg=bg).grid(row=0, column=0, sticky="n", padx=(16, 12),
+                                                                  pady=(14, 0))
+        self.banner_text = PlainLabel(banner, "", font=F["text"], color=C["text"], bg=bg, anchor="w",
+                                      justify="left", wraplength=px(banner, 880))
         self.banner_text.grid(row=0, column=1, sticky="w", padx=(0, 16), pady=12)
-        self.banner_off = ctk.CTkLabel(banner, text=" " + self.text("rt_banner_off"), font=F["text"],
-                                       text_color=C["warning"], anchor="w", justify="left", wraplength=880,
-                                       image=icon("triangle-alert", C["warning"], 14), compound="left")
-        self._banner_off_shown = False
-        self.banner = banner
         banner.bind("<Configure>", self._wrap_banner, add="+")
 
     def _wrap_banner(self, event):
         """Текст плашки — по ширине плашки (иначе длинный немецкий текст вылезает за край)."""
-        width = max(300, event.width - 80)
+        width = max(px(self, 300), event.width - px(self, 80))
         if self.banner_text.cget("wraplength") != width:
             self.banner_text.configure(wraplength=width)
-            self.banner_off.configure(wraplength=width)
 
     def refresh(self):
         """Вкладку снова показали: «Бот решает сам» и общий порог могли поменять на «Базе и комнатах»."""
         off = not self.page.form["auto_rollback"]
-        if off != self._banner_off_shown:
-            self._banner_off_shown = off
-            if off:
-                self.banner_off.grid(row=1, column=1, sticky="w", padx=(0, 16), pady=(0, 12))
-                self.banner_text.grid_configure(pady=(12, 6))
-            else:
-                self.banner_off.grid_remove()
-                self.banner_text.grid_configure(pady=12)
+        if off != self._banner_off:
+            self._banner_off = off
+            text = self.text("rt_banner") + (" " + self.text("rt_banner_off") if off else "")
+            self.banner_text.configure(text=text)
         rest = self.text("rt_personal_rest").format(n=self.page.form["critical_hp"])
         if self.personal_rest.cget("text") != rest:
             self.personal_rest.configure(text=rest)
@@ -159,13 +197,13 @@ class TacticsTab(ctk.CTkScrollableFrame):
         card = Card(self, width=10, height=10)
         card.grid(row=1, column=0, sticky="ew", padx=(24, 12), pady=(12, 0))
         card.grid_columnconfigure(0, weight=1)
-        head = ctk.CTkFrame(card, fg_color="transparent", width=10, height=10)
+        head = tk.Frame(card, bg=BG)
         head.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 12))
         head.grid_columnconfigure(1, weight=1)
         card_header(head, "door-open", C["blue_text"], self.text("rt_doors_title")).grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(head, text=self.text("rt_doors_hint"), font=F["label"], text_color=C["text_muted"],
-                     height=20).grid(row=0, column=1, sticky="e", padx=(12, 0))
-        row = ctk.CTkFrame(card, fg_color="transparent", width=10, height=10)
+        PlainLabel(head, self.text("rt_doors_hint"), font=F["label"], color=C["text_muted"]).grid(
+            row=0, column=1, sticky="e", padx=(12, 0))
+        row = tk.Frame(card, bg=BG)
         row.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 16))
         items, icons, colors = [], {}, {}
         for room in tactics.DEFAULT_DOOR_ORDER:
@@ -177,12 +215,11 @@ class TacticsTab(ctk.CTkScrollableFrame):
         for i, room in enumerate(self.page.form["door_order"]):
             row.grid_columnconfigure(i * 2, weight=1, uniform="doors")
             menu = Dropdown(row, items, room, command=lambda r, i=i: self._door_chosen(i, r), icons=icons,
-                            colors=colors, badge=i + 1, width=10)
+                            colors=colors, badge=i + 1, width=10, bg_color=BG)
             menu.grid(row=0, column=i * 2, sticky="ew")
             self.doors.append(menu)
             if i < 3:
-                ctk.CTkLabel(row, text="", image=icon("arrow-right", C["text_muted"], 16), width=16, height=20).grid(
-                    row=0, column=i * 2 + 1, padx=10)
+                Picture(row, "arrow-right", C["text_muted"], 16).grid(row=0, column=i * 2 + 1, padx=10)
 
     def _door_chosen(self, place, room):
         order = rules_store.choose_door(self.page.form["door_order"], place, room)
@@ -194,37 +231,35 @@ class TacticsTab(ctk.CTkScrollableFrame):
 
     # ── Критерии плохого боя и отхил ────────────────────────────────────────
     def _build_middle(self):
-        cards = ctk.CTkFrame(self, fg_color="transparent", width=10, height=10)
+        cards = tk.Frame(self, bg=C["bg_primary"])
         cards.grid(row=2, column=0, sticky="ew", padx=(24, 12), pady=(12, 0))
         cards.grid_columnconfigure((0, 1), weight=1, uniform="cards")
-        criteria = Card(cards, width=10, height=10)
+        criteria = Card(cards, width=10, height=10, bg_color=C["bg_primary"])
         criteria.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        heal = Card(cards, width=10, height=10)
+        heal = Card(cards, width=10, height=10, bg_color=C["bg_primary"])
         heal.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
         self._build_criteria(criteria)
         self._build_heal(heal)
 
     def _number_row(self, master, row, key, title, sub=""):
         """Подпись (и серая подсказка под ней) слева, поле справа."""
-        frame = ctk.CTkFrame(master, fg_color="transparent", width=10, height=10)
+        frame = tk.Frame(master, bg=BG)
         frame.grid(row=row, column=0, sticky="ew", padx=16)
         frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(frame, text=title, font=F["text"], text_color=C["text_secondary"], anchor="w", justify="left",
-                     height=18).grid(row=0, column=0, sticky="w")
-        note = ctk.CTkLabel(frame, text=sub, font=F["label"], text_color=C["text_muted"], anchor="w", height=16,
-                            compound="left")
-        note.grid(row=1, column=0, sticky="w", pady=(2, 0))
-        if not sub:
-            note.grid_remove()
-        entry = self._entry(frame, key, note, sub)
+        PlainLabel(frame, title, font=F["text"], color=C["text_secondary"], anchor="w", justify="left").grid(
+            row=0, column=0, sticky="w")
+        note = Note(frame, sub)
+        note.grid(row=1, column=0, sticky="w", pady=(px(frame, 2), 0))
+        note.fit()
+        entry = self._entry(frame, key, note)
         entry.grid(row=0, column=1, rowspan=2, sticky="e", padx=(12, 0))
         return frame
 
-    def _entry(self, master, key, note, sub):
+    def _entry(self, master, key, note):
         entry = NumberEntry(master, self.page.form[key])
         entry.bind("<KeyRelease>", lambda _e, k=key: self._number_typed(k), add="+")
         self.entries[key] = entry
-        self.notes[key] = (note, sub)
+        self.notes[key] = note
         typed = self.page.field_errors.get(key)
         if typed is not None:   # язык сменили, пока в поле ошибка: показываем то, что было введено
             entry.set(typed)
@@ -244,50 +279,40 @@ class TacticsTab(ctk.CTkScrollableFrame):
         self.page.changed()
 
     def _show_error(self, key, error):
-        entry = self.entries[key]
-        entry.set_error(error)
-        note, sub = self.notes[key]
-        if key in ("group_loss_titans", "group_loss_percent"):   # одна строка под двумя полями
-            error = any(self.entries[k].error for k in ("group_loss_titans", "group_loss_percent") if k in self.entries)
-            bad = next((k for k in ("group_loss_titans", "group_loss_percent")
-                        if k in self.entries and self.entries[k].error), key)
-            low, high = rules_store.LIMITS[bad]
-        else:
-            low, high = rules_store.LIMITS[key]
+        self.entries[key].set_error(error)
+        bad = key
+        if key in GROUP_KEYS:   # одна подсказка на два поля
+            bad = next((k for k in GROUP_KEYS if k in self.entries and self.entries[k].error), None)
+            error = bad is not None
         if error:
-            text = " " + self.text("rt_range_error").format(lo=low, hi=high)
-            if note.cget("text") != text:
-                note.configure(text=text, text_color=C["danger_text"],
-                               image=icon("triangle-alert", C["danger_text"], 13))
-            note.grid()
+            low, high = rules_store.LIMITS[bad]
+            self.notes[key].show(self.text("rt_range_error").format(lo=low, hi=high))
         else:
-            if note.cget("text") != sub:
-                note.configure(text=sub, text_color=C["text_muted"], image=None)
-            if not sub:
-                note.grid_remove()
+            self.notes[key].show(None)
 
     def _build_criteria(self, card):
         card.grid_columnconfigure(0, weight=1)
         card_header(card, "triangle-alert", C["warning"], self.text("rt_criteria_title")).grid(
             row=0, column=0, sticky="w", padx=16, pady=(16, 14))
         self._number_row(card, 1, "auto_rollback_tries", self.text("rt_tries"))
-        tk.Frame(card, height=12, bg=C["bg_surface"]).grid(row=2, column=0)
+        tk.Frame(card, height=px(card, 12), bg=BG).grid(row=2, column=0)
         self._number_row(card, 3, "sos_timeout_minutes", self.text("rt_sos_timeout"), self.text("rt_sos_timeout_sub"))
         line(card).grid(row=4, column=0, sticky="ew", padx=16, pady=14)
-        ctk.CTkLabel(card, text=self.text("rt_group_label"), font=F["text"], text_color=C["text_secondary"],
-                     anchor="w", height=18).grid(row=5, column=0, sticky="w", padx=16)
-        group = ctk.CTkFrame(card, fg_color="transparent", width=10, height=10)
-        group.grid(row=6, column=0, sticky="w", padx=16, pady=(8, 0))
-        note = ctk.CTkLabel(card, text=self.text("rt_group_sub"), font=F["label"], text_color=C["text_muted"],
-                            anchor="w", height=16, compound="left")
-        note.grid(row=7, column=0, sticky="w", padx=16, pady=(6, 16))
-        sub = self.text("rt_group_sub")
-        for col, (key, label) in enumerate((("group_loss_titans", "rt_group_titans"),
-                                            ("group_loss_percent", "rt_group_percent"))):
-            ctk.CTkLabel(group, text=self.text(label), font=F["text"], text_color=C["text"], height=20).grid(
+        # «Считать бой плохим, если» и справа в той же строке «0 титанов — не проверять» (замечание к шагу 5б)
+        head = tk.Frame(card, bg=BG)
+        head.grid(row=5, column=0, sticky="ew", padx=16)
+        head.grid_columnconfigure(0, weight=1)
+        PlainLabel(head, self.text("rt_group_label"), font=F["text"], color=C["text_secondary"], anchor="w").grid(
+            row=0, column=0, sticky="w")
+        note = Note(head, self.text("rt_group_sub"), anchor="e")
+        note.grid(row=0, column=1, sticky="e", padx=(12, 0))
+        group = tk.Frame(card, bg=BG)
+        group.grid(row=6, column=0, sticky="w", padx=16, pady=(8, 16))
+        for col, (key, label) in enumerate(((GROUP_KEYS[0], "rt_group_titans"), (GROUP_KEYS[1], "rt_group_percent"))):
+            PlainLabel(group, self.text(label), font=F["text"], color=C["text"]).grid(
                 row=0, column=col * 2, padx=(0 if col == 0 else 16, 8))
-            self._entry(group, key, note, sub).grid(row=0, column=col * 2 + 1)
-        ctk.CTkLabel(group, text=self.text("rt_group_unit"), font=F["text"], text_color=C["text"], height=20).grid(
+            self._entry(group, key, note).grid(row=0, column=col * 2 + 1)
+        PlainLabel(group, self.text("rt_group_unit"), font=F["text"], color=C["text"]).grid(
             row=0, column=4, padx=(8, 0))
 
     def _build_heal(self, card):
@@ -296,26 +321,21 @@ class TacticsTab(ctk.CTkScrollableFrame):
             row=0, column=0, sticky="w", padx=16, pady=(16, 14))
         self._number_row(card, 1, "heal_below_hp", self.text("rt_heal_hp"), self.text("rt_heal_hp_sub"))
         line(card).grid(row=2, column=0, sticky="ew", padx=16, pady=14)
-        ctk.CTkLabel(card, text=self.text("rt_remove_title"), font=F["text"], text_color=C["text_secondary"],
-                     anchor="w", height=18).grid(row=3, column=0, sticky="w", padx=16)
-        self.remove_row = tk.Frame(card, bg=C["bg_surface"])
+        PlainLabel(card, self.text("rt_remove_title"), font=F["text"], color=C["text_secondary"], anchor="w").grid(
+            row=3, column=0, sticky="w", padx=16)
+        self.remove_row = tk.Frame(card, bg=BG)
         self.remove_row.grid(row=4, column=0, sticky="w", padx=16, pady=(8, 0))
-        ctk.CTkLabel(card, text=self.text("rt_remove_sub").format(auto=self.text("tac_heal_auto")), font=F["label"], text_color=C["text_muted"], anchor="w",
-                     justify="left", height=16, wraplength=400).grid(row=5, column=0, sticky="w", padx=16, pady=(8, 16))
+        PlainLabel(card, self.text("rt_remove_sub").format(auto=self.text("tac_heal_auto")), font=F["label"],
+                   color=C["text_muted"], anchor="w", justify="left", wraplength=px(card, 400)).grid(
+            row=5, column=0, sticky="w", padx=16, pady=(8, 16))
         self.remove_slots = []
         for i in range(tactics.MAX_HEAL_REMOVE):
             if i:
-                tk.Label(self.remove_row, image=self._arrow_image(), bg=C["bg_surface"], bd=0).grid(
-                    row=0, column=i * 2 - 1, padx=6)
+                Picture(self.remove_row, "arrow-right", C["text_muted"], 14).grid(row=0, column=i * 2 - 1, padx=6)
             slot = RemoveSlot(self.remove_row, self, i)
             slot.grid(row=0, column=i * 2)
             self.remove_slots.append(slot)
         self.show_remove()
-
-    def _arrow_image(self):
-        if not hasattr(self, "_arrow_photo"):
-            self._arrow_photo = plain_icon(self, "arrow-right", C["text_muted"], 14)
-        return self._arrow_photo
 
     def show_remove(self):
         order = self.page.form["heal_remove_order"]
@@ -333,13 +353,13 @@ class TacticsTab(ctk.CTkScrollableFrame):
         card = Card(self, width=10, height=10)
         card.grid(row=3, column=0, sticky="ew", padx=(24, 12), pady=(12, 20))
         card.grid_columnconfigure(0, weight=1)
-        head = ctk.CTkFrame(card, fg_color="transparent", width=10, height=10)
+        head = tk.Frame(card, bg=BG)
         head.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 12))
         head.grid_columnconfigure(1, weight=1)
         card_header(head, "gauge", C["danger_text"], self.text("rt_personal_title")).grid(row=0, column=0, sticky="w")
-        self.personal_rest = ctk.CTkLabel(head, text="", font=F["label"], text_color=C["text_muted"], height=20)
+        self.personal_rest = PlainLabel(head, "", font=F["label"], color=C["text_muted"])
         self.personal_rest.grid(row=0, column=1, sticky="e", padx=(12, 0))
-        self.chips = tk.Frame(card, bg=C["bg_surface"])
+        self.chips = tk.Frame(card, bg=BG)
         self.chips.grid(row=1, column=0, sticky="ew", padx=16)
         self.chips.grid_columnconfigure(tuple(range(CHIPS_PER_ROW)), weight=1, uniform="chips")
         self.add_threshold = Button(card, self.text("rt_personal_add"), kind="secondary", icon_name="plus",
@@ -376,25 +396,28 @@ class TacticsTab(ctk.CTkScrollableFrame):
         self.page.changed()
 
 
+GROUP_KEYS = ("group_loss_titans", "group_loss_percent")
+
+
 class RemoveSlot(ClickFrame):
-    """Место в «Кого убирать из пака ради раненого»: номер, квадрат и имя титана; пустое — «— сам —» в пунктирной
-    (светлой) рамке. Щелчок — список: «— сам —» и все титаны по стихиям (ваш ответ 22.10.2026)."""
+    """Место в «Кого убирать из пака ради раненого»: номер, квадрат и имя титана; пустое — «— сам —» в светлой
+    рамке. Щелчок — список: «— сам —» и все титаны по стихиям (ваш ответ 22.10.2026)."""
 
     def __init__(self, master, tab, place):
         super().__init__(master, command=self.open, height=S["control_height"] + 4, width=10,
                          corner_radius=S["radius_control"], border_width=1, border_color=C["border"],
-                         fg_color=C["bg_elevated"], bg_color=C["bg_surface"])
+                         fg_color=C["bg_elevated"], bg_color=BG)
         self.tab = tab
         self.place_no = place
         self.titan = "?"
         self._look = None
+        self._bg = C["bg_elevated"]
         self.grid_rowconfigure(0, weight=1)
-        self.number = ctk.CTkLabel(self, text=str(place + 1), font=F["label"], text_color=C["text_muted"], width=10,
-                                   height=20)
-        self.number.grid(row=0, column=0, padx=(10, 6), pady=4)
-        self.tile_box = tk.Frame(self, bg=C["bg_elevated"])
-        self.name_label = ctk.CTkLabel(self, text="", font=F["text"], height=20)
-        self.name_label.grid(row=0, column=2, padx=(6, 12), pady=4)
+        self.number = PlainLabel(self, str(place + 1), font=F["label"], color=C["text_muted"], bg=self._bg)
+        self.number.grid(row=0, column=0, padx=(10, 6), pady=6)
+        self.tile_box = tk.Frame(self, bg=self._bg)
+        self.name_label = PlainLabel(self, "", font=F["text"], color=C["text"], bg=self._bg)
+        self.name_label.grid(row=0, column=2, padx=(6, 12), pady=6)
         self.bind_parts(self.number, self.name_label, self.tile_box)
         auto = get_text(tab.lang, "tac_heal_auto")
         self.items = [(AUTO, auto)] + titan_items(tab.lang)
@@ -413,14 +436,14 @@ class RemoveSlot(ClickFrame):
             child.destroy()
         if titan is AUTO:
             self.tile_box.grid_remove()
-            self.name_label.configure(text=get_text(self.tab.lang, "tac_heal_auto"), text_color=C["text_muted"])
+            self.name_label.configure(text=get_text(self.tab.lang, "tac_heal_auto"), fg=C["text_muted"])
             self.name_label.grid_configure(padx=(0, 12))
         else:
             tile = TitanTile(self.tile_box, titan, lang=self.tab.lang, size=S["avatar_small"], bg=C["bg_elevated"])
             tile.pack()
             self.bind_parts(tile)
-            self.tile_box.grid(row=0, column=1, pady=4)
-            self.name_label.configure(text=titan_name(self.tab.lang, titan), text_color=C["text"])
+            self.tile_box.grid(row=0, column=1, pady=6)
+            self.name_label.configure(text=titan_name(self.tab.lang, titan), fg=C["text"])
             self.name_label.grid_configure(padx=(8, 12))
         self._paint()
 
@@ -429,11 +452,13 @@ class RemoveSlot(ClickFrame):
         if self._hovering:
             look = (T["hover_elevated"], C["border_focus"])
         else:
-            look = ("transparent" if empty else C["bg_elevated"], C["border_focus"] if empty else C["border"])
+            look = (BG if empty else C["bg_elevated"], C["border_focus"] if empty else C["border"])
         if look != self._look:
             self._look = look
             fg, border = look
             self.configure(fg_color=fg, border_color=border)
+            for part in (self.number, self.name_label, self.tile_box):
+                part.configure(bg=fg)
 
     def open(self):
         self.menu.open(self.winfo_rootx(), self.winfo_rooty() + self.winfo_height() + 2)
@@ -452,30 +477,33 @@ class RemoveSlot(ClickFrame):
 
 
 class ThresholdChip(ClickFrame):
-    """Чипс личного порога: квадрат титана, имя, порог жёлтым, ✕ — убрать. Щелчок по чипсу — изменить порог."""
+    """Чипс личного порога: квадрат титана, имя, порог жёлтым, ✕ — убрать. Щелчок по чипсу — изменить порог.
+    Внутри — обычные надписи Tk; наведение меняет только цвет фона."""
 
     def __init__(self, master, tab, titan, value):
         super().__init__(master, command=lambda: tab.open_threshold(titan), height=S["control_height"] + 4, width=10,
                          corner_radius=S["radius_control"], border_width=1, border_color=C["border"],
-                         fg_color=C["bg_elevated"], bg_color=C["bg_surface"])
+                         fg_color=C["bg_elevated"], bg_color=BG)
         self.titan = titan
         self._look = None
+        bg = C["bg_elevated"]
         self.grid_propagate(False)
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
-        self.tile = TitanTile(self, titan, lang=tab.lang, size=S["avatar_small"], bg=C["bg_elevated"])
+        self.tile = TitanTile(self, titan, lang=tab.lang, size=S["avatar_small"], bg=bg)
         self.tile.grid(row=0, column=0, padx=(6, 8))
-        self.name_label = ctk.CTkLabel(self, text=titan_name(tab.lang, titan), font=F["text"], text_color=C["text"],
-                                 anchor="w", height=20)
+        self.name_label = PlainLabel(self, titan_name(tab.lang, titan), font=F["text"], color=C["text"], bg=bg,
+                                     anchor="w")
         self.name_label.grid(row=0, column=1, sticky="ew")
-        self.value_label = ctk.CTkLabel(self, text=f"{value}%", font=F["mono"], text_color=C["warning"], height=20)
-        self.value_label.grid(row=0, column=2, padx=(6, 2))
-        self.remove_button = IconButton(self, "x", size=26, icon_size=13, fg_color=C["bg_elevated"],
-                                 bg_color=C["bg_elevated"], hover_color=C["bg_surface"], border_width=0,
-                                 icon_color=C["text_muted"],
-                                 tooltip=lambda: get_text(tab.lang, "rt_personal_remove"),
-                                 command=lambda: tab.threshold_set(titan, None))
+        self.value_label = PlainLabel(self, f"{value}%", font=F["mono"], color=C["warning"], bg=bg)
+        self.value_label.grid(row=0, column=2, padx=(6, 6))
+        self.remove_button = Picture(self, "x", C["text_muted"], 13, bg=bg)
+        self.remove_button.configure(cursor="hand2", padx=px(self, 4), pady=px(self, 4))
         self.remove_button.grid(row=0, column=3, padx=(0, 6))
+        self.remove_button.bind("<Button-1>", lambda _e: tab.threshold_set(titan, None), add="+")
+        self.remove_button.bind("<Enter>", self._frame_enter, add="+")
+        self.remove_button.bind("<Leave>", self._frame_leave, add="+")
+        self.remove_tip = Tooltip(self.remove_button, lambda: get_text(tab.lang, "rt_personal_remove"))
         self.bind_parts(self.tile, self.name_label, self.value_label)
         self.tooltip = Tooltip(self.name_label, lambda: get_text(tab.lang, "rt_personal_edit"))
         self._paint()
@@ -485,17 +513,20 @@ class ThresholdChip(ClickFrame):
         if look != self._look:
             self._look = look
             self.configure(fg_color=look)
-            self.remove_button.configure(fg_color=look, bg_color=look)
+            for part in (self.name_label, self.value_label, self.remove_button):
+                part.configure(bg=look)
 
 
 class ThresholdDialog(ctk.CTkToplevel):
     """«Задать личный порог титану» (макета нет — в стиле окон подтверждения, ваш ответ 22.10.2026): титан из списка
     (по стихиям), порог 0–100 % ХП, «Применить» — on_apply(титан, порог). titan — изменить порог этого титана
-    (список тогда не меняется). Крестик, Esc и «Отмена» — просто закрыть. В файл пишет «Сохранить настройки»."""
+    (список тогда не меняется). Крестик, Esc и «Отмена» — просто закрыть. В файл пишет «Сохранить настройки».
+    Раскладка (замечание к шагу 5б): заголовок и пояснение рядом, вместе — по центру значка; список и поле — во всю
+    ширину, от левого края значка до правого края окна (минус отступ)."""
 
     def __init__(self, master, lang, personal, common, titan, on_apply):
         root = master.winfo_toplevel()
-        super().__init__(root, fg_color=C["bg_surface"])
+        super().__init__(root, fg_color=BG)
         self.withdraw()
         self.lang = lang
         self.on_apply = on_apply
@@ -503,26 +534,31 @@ class ThresholdDialog(ctk.CTkToplevel):
         self.title(get_text(lang, "rt_pt_title"))
         self.resizable(False, False)
         self.transient(root)
-        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1, minsize=DIALOG_WIDTH)
 
-        badge = ctk.CTkFrame(self, width=40, height=40, corner_radius=10, fg_color=T["danger_on_surface"])
-        badge.grid(row=0, column=0, rowspan=2, sticky="n", padx=(20, 14), pady=(20, 0))
-        badge.grid_propagate(False)
-        ctk.CTkLabel(badge, text="", image=icon("gauge", C["danger_text"], 20)).place(relx=0.5, rely=0.5,
-                                                                                    anchor="center")
-        ctk.CTkLabel(self, text=get_text(lang, "rt_pt_title"), font=F["dialog_title"], text_color=C["text"],
-                     anchor="w").grid(row=0, column=1, sticky="w", padx=(0, 20), pady=(20, 4))
-        ctk.CTkLabel(self, text=get_text(lang, "rt_pt_sub"), font=F["text"], text_color=C["text_secondary"],
-                     anchor="w", justify="left", wraplength=360).grid(row=1, column=1, sticky="w", padx=(0, 20))
+        head = tk.Frame(self, bg=BG)
+        head.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 0))
+        head.grid_columnconfigure(1, weight=1)
+        self.badge_picture = plain_icon(self, "gauge", C["danger_text"], 20, box=40, tint=T["danger_on_surface"],
+                                        bg=BG, radius=10)
+        tk.Label(head, image=self.badge_picture, bg=BG, bd=0, highlightthickness=0).grid(row=0, column=0,
+                                                                                        padx=(0, 14))
+        words = tk.Frame(head, bg=BG)
+        words.grid(row=0, column=1, sticky="w")    # по центру значка по высоте (так ставит grid)
+        PlainLabel(words, get_text(lang, "rt_pt_title"), font=F["dialog_title"], color=C["text"], anchor="w").pack(
+            anchor="w")
+        PlainLabel(words, get_text(lang, "rt_pt_sub"), font=F["label"], color=C["text_secondary"], anchor="w",
+                   justify="left", wraplength=px(self, DIALOG_WIDTH - 94)).pack(anchor="w", pady=(px(self, 2), 0))
 
-        body = ctk.CTkFrame(self, fg_color="transparent", width=10, height=10)
-        body.grid(row=2, column=1, sticky="ew", padx=(0, 20), pady=(16, 0))
-        body.grid_columnconfigure(0, weight=1, minsize=340)
-        ctk.CTkLabel(body, text=get_text(lang, "rt_pt_titan"), font=F["label"], text_color=C["text_secondary"],
-                     anchor="w", height=18).grid(row=0, column=0, sticky="w", pady=(0, 6))
+        body = tk.Frame(self, bg=BG)
+        body.grid(row=1, column=0, sticky="ew", padx=20, pady=(18, 0))
+        body.grid_columnconfigure(0, weight=1)
+        PlainLabel(body, get_text(lang, "rt_pt_titan"), font=F["label"], color=C["text_secondary"], anchor="w").grid(
+            row=0, column=0, sticky="w", pady=(0, 6))
         free = [t for t in ALL_TITANS if t not in personal]
         start = titan or (free[0] if free else ALL_TITANS[0])
-        self.titans = Dropdown(body, titan_items(lang), start, icons=titan_icons(), breaks=COLUMN_BREAKS, width=10)
+        self.titans = Dropdown(body, titan_items(lang), start, icons=titan_icons(), breaks=COLUMN_BREAKS, width=10,
+                               bg_color=BG)
         self.titans.grid(row=1, column=0, sticky="ew")
         if titan:
             self.titans.set_enabled(False)
@@ -532,8 +568,8 @@ class ThresholdDialog(ctk.CTkToplevel):
         self.field.grid(row=2, column=0, sticky="ew", pady=(14, 0))
         self.field.entry.bind("<Return>", lambda _e: self.apply(), add="+")
 
-        row = ctk.CTkFrame(self, fg_color="transparent", width=10, height=10)
-        row.grid(row=3, column=0, columnspan=2, sticky="ew", padx=20, pady=20)
+        row = tk.Frame(self, bg=BG)
+        row.grid(row=2, column=0, sticky="ew", padx=20, pady=20)
         self.apply_button = Button(row, get_text(lang, "btn_apply"), kind="blue", icon_name="check", icon_size=14,
                                    height=S["button_height_footer"], command=self.apply)
         self.apply_button.pack(side="right")
@@ -588,3 +624,6 @@ class ThresholdDialog(ctk.CTkToplevel):
             self.destroy()
         except tk.TclError:
             pass
+
+
+DIALOG_WIDTH = 440   # содержимое окна личного порога (без отступов 20 + 20)

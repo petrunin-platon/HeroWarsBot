@@ -31,6 +31,7 @@ F = theme.FONTS
 S = theme.SIZES
 
 TABS = ("base", "tactics", "rules")
+PREBUILD_MS = 500   # «Авто-тактика» строится заранее, через столько мс после показа страницы
 TAB_KEYS = {"base": "rb_tab_base", "tactics": "rb_tab_tactics", "rules": "rb_tab_rules"}
 
 
@@ -114,7 +115,13 @@ class RulesPage(ctk.CTkFrame):
         self.body.grid_columnconfigure(0, weight=1)
         self.base = None
         self.tactics = None
+        # Вкладки лежат в одной ячейке, щелчок поднимает нужную наверх (lift): без новой раскладки и перерисовки
+        # всей вкладки, поэтому переключение мгновенное и без артефактов (проверка шага 5б). Пустая — для шага 5в.
+        self.blank = tk.Frame(self.body, bg=C["bg_primary"])
+        self.blank.grid(row=0, column=0, sticky="nsew")
+        self._prebuild_id = None
         self._show_tab()
+        self._schedule_prebuild()
 
         tk.Frame(self, height=1, bg=C["border"]).grid(row=2, column=0, sticky="ew")
         footer = ctk.CTkFrame(self, height=S["footer_height"], corner_radius=0, fg_color=C["bg_surface"])
@@ -157,23 +164,65 @@ class RulesPage(ctk.CTkFrame):
                 if button.cget("text_color") != color:
                     button.configure(text_color=color)
 
-    def _show_tab(self):
-        """Вкладка строится один раз, при первом показе; «Правила и перехваты» пока пустая (шаг 5в).
-        «Авто-тактику» при каждом показе обновляем: «Бот решает сам» и общий порог живут на «Базе и комнатах»."""
-        if self.tab == "base":
+    def _tab_widget(self, tab):
+        """Вкладка (строится один раз и кладётся в ячейку). «Правила и перехваты» пока пустая (шаг 5в)."""
+        if tab == "base":
             if self.base is None:
                 self.base = BaseTab(self.body, self)
-            self.base.grid(row=0, column=0, sticky="nsew")
-        elif self.base is not None:
-            self.base.grid_forget()
-        if self.tab == "tactics":
+                self.base.grid(row=0, column=0, sticky="nsew")
+            return self.base
+        if tab == "tactics":
             if self.tactics is None:
                 self.tactics = TacticsTab(self.body, self)
-            else:
-                self.tactics.refresh()
-            self.tactics.grid(row=0, column=0, sticky="nsew")
-        elif self.tactics is not None:
-            self.tactics.grid_forget()
+                self.tactics.grid(row=0, column=0, sticky="nsew")
+            return self.tactics
+        return self.blank
+
+    def _show_tab(self):
+        """Поднять выбранную вкладку наверх. «Авто-тактику» при показе обновляем: «Бот решает сам» и общий порог
+        живут на «Базе и комнатах»."""
+        built = self.tactics is not None
+        widget = self._tab_widget(self.tab)
+        if self.tab == "tactics" and built:
+            self.tactics.refresh()
+        widget.lift()
+
+    def shown_tab_widget(self):
+        """Вкладка, которая сейчас видна (для проверки): что под серединой области вкладок."""
+        tabs = [w for w in (self.base, self.tactics, self.blank) if w is not None]
+        frames = {str(getattr(w, "_parent_frame", w)): w for w in tabs}   # у CTkScrollableFrame наверху — его рамка
+        x = self.body.winfo_rootx() + self.body.winfo_width() // 2
+        y = self.body.winfo_rooty() + self.body.winfo_height() // 2
+        widget = self.body.winfo_containing(x, y)
+        while widget is not None and str(widget) not in frames:
+            widget = widget.master
+        return frames.get(str(widget)) if widget is not None else None
+
+    def _schedule_prebuild(self):
+        self._cancel_prebuild()
+        if self.tactics is None or self.base is None:
+            self._prebuild_id = self.after(PREBUILD_MS, self._prebuild)
+
+    def _cancel_prebuild(self):
+        if self._prebuild_id is not None:
+            try:
+                self.after_cancel(self._prebuild_id)
+            except tk.TclError:
+                pass
+            self._prebuild_id = None
+
+    def _prebuild(self):
+        """Построить ещё не построенные вкладки заранее, под открытой: первый щелчок по ним тоже мгновенный."""
+        self._prebuild_id = None
+        missing = [tab for tab in ("base", "tactics") if getattr(self, tab) is None]
+        if missing:
+            self._tab_widget(missing[0])
+            self._tab_widget(self.tab).lift()
+            self._schedule_prebuild()   # следующую — отдельно, чтобы окно между ними отвечало
+
+    def destroy(self):
+        self._cancel_prebuild()
+        super().destroy()
 
     def rebuild_base(self):
         """Построить вкладки заново из формы («Восстановить», «Не сохранять»)."""
@@ -183,6 +232,7 @@ class RulesPage(ctk.CTkFrame):
                 tab.destroy()
                 setattr(self, name, None)
         self._show_tab()
+        self._schedule_prebuild()
 
     def rebuild_room(self, room):
         if self.base is not None:
@@ -358,6 +408,7 @@ class RulesPage(ctk.CTkFrame):
         if lang == self.lang:
             return
         self.lang = lang
+        self._cancel_prebuild()
         for child in self.winfo_children():
             child.destroy()
         self.base = None
