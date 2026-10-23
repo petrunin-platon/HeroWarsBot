@@ -11,6 +11,8 @@
 все. Паллант, Орм и Алекто — эларитовые, но стоят в колонке своей стихии и встают в её комнату. Метида — только эларит:
 отдельная строка «Эларит», выбрать её можно только для смешанной комнаты (ui/theme.py: room_titans).
 Крестик окна и «Отмена» — on_cancel (окно вмешательства возвращается на экран).
+Шаг 5в: из окна «Новое правило» — и состав правила (3–5), и «Требовать обкатку титанов» (min_titans=1, любые стихии;
+ваш ответ 23.10.2026: бот проверяет каждого титана отдельно) со своим заголовком.
 """
 from functools import lru_cache
 
@@ -152,7 +154,7 @@ class TitanPicker(ctk.CTkToplevel):
     (только те, кого можно в эту комнату). on_apply(список титанов) — «Применить», on_cancel() — крестик и «Отмена»."""
 
     def __init__(self, master, lang, on_apply, on_cancel=None, room=None, selected=(), apply_text=None,
-                 apply_kind="save"):
+                 apply_kind="save", min_titans=MIN_TITANS, title=None, sub=None):
         root = master.winfo_toplevel()
         super().__init__(root, fg_color=C["bg_primary"])
         self.withdraw()
@@ -160,11 +162,14 @@ class TitanPicker(ctk.CTkToplevel):
         self.room = room
         self.on_apply = on_apply
         self.on_cancel = on_cancel
+        self.min_titans = min_titans
         self.allowed = set(theme.room_titans(room))
         self.chosen = [t for t in selected if t in self.allowed][:MAX_TITANS]
         self.rows = {}
         self._done = False
-        self.title(theme.plain_text(get_text(lang, "pick_title")))
+        self.title_text = title or get_text(lang, "pick_title")
+        self.sub_text = sub or get_text(lang, "pick_sub")
+        self.title(theme.plain_text(self.title_text))
         self.resizable(False, False)
         self.transient(root)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
@@ -186,9 +191,9 @@ class TitanPicker(ctk.CTkToplevel):
         badge.grid(row=0, column=0, rowspan=2, padx=(24, 12), pady=18)
         badge.grid_propagate(False)
         ctk.CTkLabel(badge, text="", image=icon("users", C["blue_text"], 18)).place(relx=0.5, rely=0.5, anchor="center")
-        ctk.CTkLabel(header, text=get_text(self.lang, "pick_title"), font=F["page_title"], text_color=C["text"],
+        ctk.CTkLabel(header, text=self.title_text, font=F["page_title"], text_color=C["text"],
                      anchor="w", height=22).grid(row=0, column=1, sticky="sw", pady=(18, 0))
-        ctk.CTkLabel(header, text=get_text(self.lang, "pick_sub"), font=F["label"], text_color=C["text_secondary"],
+        ctk.CTkLabel(header, text=self.sub_text, font=F["label"], text_color=C["text_secondary"],
                      anchor="w", height=16).grid(row=1, column=1, sticky="nw", pady=(3, 18))
         ctk.CTkFrame(self, height=1, corner_radius=0, fg_color=C["border"]).grid(row=0, column=0, sticky="sew")
 
@@ -308,10 +313,14 @@ class TitanPicker(ctk.CTkToplevel):
                 avatar.place(x=0, y=0)
         count = len(self.chosen)
         self.count_label.configure(text=get_text(self.lang, "pick_count").format(n=count))
-        ok = MIN_TITANS <= count <= MAX_TITANS
+        ok = self.min_titans <= count <= MAX_TITANS
         color = C["success"] if ok else C["warning"]
-        text = get_text(self.lang, "pick_ok") if ok else \
-            get_text(self.lang, "pick_need").format(k=MIN_TITANS - count)
+        if ok:
+            text = get_text(self.lang, "pick_ok")
+        elif self.min_titans == 1:
+            text = get_text(self.lang, "pick_need_one")
+        else:
+            text = get_text(self.lang, "pick_need").format(k=self.min_titans - count)
         self.status_label.configure(text=" " + text, text_color=color, image=dot(color, 7))
         self.apply_button.set_enabled(ok)
 
@@ -326,7 +335,7 @@ class TitanPicker(ctk.CTkToplevel):
         self.geometry(f"{w}x{h}+{x}+{y}")
 
     def apply(self):
-        if self._done or not (MIN_TITANS <= len(self.chosen) <= MAX_TITANS):
+        if self._done or not (self.min_titans <= len(self.chosen) <= MAX_TITANS):
             return
         team = list(self.chosen)
         self._finish()

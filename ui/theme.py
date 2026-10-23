@@ -158,6 +158,29 @@ LOG_CATEGORY_COLORS = {
     "gui": LOG_TAGS["GUI"],
 }
 
+# «Правила и перехваты» (шаг 5в, макет 03c): значки в строке правила — (цвет текста, подложка на фоне строки bg_elevated).
+# Тип правила (ваш ответ 4.2): ЛЕЧЕНИЕ, СКИП, ХП, ВРАГИ, ЭНЕРГИЯ; действие без пака: «Спросить вас», «Пропустить комнату»
+_SKIP_TEXT = "#C3C8D6"
+RULE_TAG_COLORS = {
+    "heal": (COLORS["success"], blend(COLORS["success"], COLORS["bg_elevated"], 0.14)),
+    "skip": (_SKIP_TEXT, blend(COLORS["text_secondary"], COLORS["bg_elevated"], 0.14)),
+    "hp": (COLORS["warning"], blend(COLORS["warning"], COLORS["bg_elevated"], 0.14)),
+    "enemies": (COLORS["danger_text"], blend(COLORS["danger"], COLORS["bg_elevated"], 0.16)),
+    "energy": (COLORS["blue_text"], blend(COLORS["blue"], COLORS["bg_elevated"], 0.16)),
+}
+RULE_ACTION_COLORS = {
+    "ask": RULE_TAG_COLORS["hp"],
+    "skip": RULE_TAG_COLORS["skip"],
+}
+RULE_DIM = 0.45   # выключенное правило бледное (макет: opacity 0.45), но не удалено
+
+
+def rule_room_badge(room):
+    """Значок стихии в строке правила: (цвет текста, подложка на фоне строки)."""
+    style = ELEMENTS.get(room, UNKNOWN_ELEMENT)
+    return style["text"], blend(style["color"], COLORS["bg_elevated"], 0.18 if room == "mix" else 0.16)
+
+
 # Иконки ui/icons, которых нет в design/icons: нарисованы по контуру Lucide тем же размером (ui/icons/__init__.py)
 EXTRA_ICONS = {"minimize-2"}
 
