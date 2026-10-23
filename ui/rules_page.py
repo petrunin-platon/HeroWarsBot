@@ -1,13 +1,14 @@
 """Страница «Мастер правил» нового окна (задача 15, шаг 5а; макеты 03a–03c, экран 8).
 
 Сверху три вкладки (сегменты): «База и комнаты» (ui/rules_base.py), «Авто-тактика и ХП» (ui/rules_tactics.py, шаг 5б),
-«Правила и перехваты» (шаг 5в) — последняя пока пустая (ваш ответ 22.10.2026: заглушки не нужны). Ниже — прокручиваемая вкладка,
+«Правила и перехваты» (ui/rules_intercepts.py, шаг 5в; окно «Новое правило» — ui/rule_editor.py). Ниже — вкладка,
 внизу общий футер: «Все изменения сохранены» / «Есть несохранённые изменения», «Восстановить / Сброс» (с подтверждением),
 «Сохранить настройки». Пока бот работает, в футере подсказка «Бот возьмёт новые настройки при следующем запуске»
 (менять можно, как в старом окне: бот читает настройки при запуске).
 
-Все значения — в форме страницы (form — profile.yml, teams — основные паки), пишет их только «Сохранить настройки»
-(ваш ответ, сверка 4.1), и только то, что поменялось (ui/rules_store.py; ваше замечание: беречь диск).
+Все значения — в форме страницы (form — profile.yml, teams — основные паки, rules — правила стихий), пишет их только
+«Сохранить настройки» (ваш ответ, сверка 4.1), и только то, что поменялось (ui/rules_store.py, ui/rules_list.py;
+ваше замечание: беречь диск). Правила, которые бот запомнил, пока окно было открыто, при сохранении не теряются.
 Уйти со страницы (или закрыть окно) с несохранёнными изменениями — окно «Сохранить изменения?» (ask_leave).
 Для старого кода страница по-прежнему frames["rules"] с open_tg_dialog() (точка Telegram в полоске): с шага 5б —
 новое окно Telegram (ui/telegram_window.py) с кнопкой «Проверить Telegram».
@@ -19,9 +20,10 @@ import tkinter as tk
 import customtkinter as ctk
 
 from i18n import get_text
-from ui import rules_store, theme
+from ui import rules_list, rules_store, theme
 from ui.icons import icon
 from ui.rules_base import BaseTab
+from ui.rules_intercepts import InterceptsTab
 from ui.rules_tactics import TacticsTab
 from ui.widgets import Button, ConfirmDialog, Toast
 
@@ -31,7 +33,8 @@ F = theme.FONTS
 S = theme.SIZES
 
 TABS = ("base", "tactics", "rules")
-PREBUILD_MS = 500   # «Авто-тактика» строится заранее, через столько мс после показа страницы
+TAB_ATTRS = {"base": "base", "tactics": "tactics", "rules": "intercepts"}   # где страница держит построенную вкладку
+PREBUILD_MS = 500   # остальные вкладки строятся заранее, через столько мс после показа страницы
 TAB_KEYS = {"base": "rb_tab_base", "tactics": "rb_tab_tactics", "rules": "rb_tab_rules"}
 
 
@@ -48,10 +51,12 @@ class RulesPage(ctk.CTkFrame):
         self.bot_running = False
         self._dialog = None
         self._tg_window = None
+        self._editor = None
         self.load()
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self._build()
+        self.bind("<Map>", self._mapped, add="+")
 
     def text(self, key):
         return get_text(self.lang, key)
@@ -78,7 +83,26 @@ class RulesPage(ctk.CTkFrame):
         for room in broken:
             self.log(f"[ОШИБКА] Не удалось загрузить основной пак: bot_data/rules/{room}.yml поврежден.\n")
         self.saved_teams = copy.deepcopy(self.teams)
+        self.rules, broken = rules_list.read_all()
+        for room in broken:
+            self.log(f"[ОШИБКА] Не удалось загрузить правила: bot_data/rules/{room}.yml поврежден. "
+                     "Правила этой стихии не показаны и не сохраняются.\n")
+        self.broken_rules = set(broken)
+        self.saved_rules = copy.deepcopy(self.rules)
         self.field_errors = {}
+
+    def reload_rules(self):
+        """Перечитать правила с диска, если в форме их не меняли (бот мог запомнить новые, пока окно открыто).
+        True — правила на диске поменялись."""
+        if self.rules != self.saved_rules:
+            return False
+        fresh, broken = rules_list.read_all()
+        self.broken_rules = set(broken)
+        if fresh == self.saved_rules:
+            return False
+        self.rules = fresh
+        self.saved_rules = copy.deepcopy(fresh)
+        return True
 
     def dirty_tab(self):
         """На какой вкладке несохранённое (для «Сохранить изменения?»): открытая, если на ней, иначе первая."""
@@ -88,12 +112,14 @@ class RulesPage(ctk.CTkFrame):
             tabs.append("base")
         if keys & set(rules_store.TACTICS_KEYS):
             tabs.append("tactics")
+        if self.rules != self.saved_rules:
+            tabs.append("rules")
         return self.tab if self.tab in tabs else (tabs[0] if tabs else "base")
 
     def dirty(self):
         """Есть несохранённые изменения (в том числе поле с ошибкой)."""
         return bool(rules_store.changed_keys(self.saved, self.form) or self.teams != self.saved_teams
-                    or self.field_errors)
+                    or self.rules != self.saved_rules or self.field_errors)
 
     # ── Части страницы ──────────────────────────────────────────────────────
     def _build(self):
@@ -115,10 +141,9 @@ class RulesPage(ctk.CTkFrame):
         self.body.grid_columnconfigure(0, weight=1)
         self.base = None
         self.tactics = None
+        self.intercepts = None
         # Вкладки лежат в одной ячейке, щелчок поднимает нужную наверх (lift): без новой раскладки и перерисовки
-        # всей вкладки, поэтому переключение мгновенное и без артефактов (проверка шага 5б). Пустая — для шага 5в.
-        self.blank = tk.Frame(self.body, bg=C["bg_primary"])
-        self.blank.grid(row=0, column=0, sticky="nsew")
+        # всей вкладки, поэтому переключение мгновенное и без артефактов (проверка шага 5б).
         self._prebuild_id = None
         self._show_tab()
         self._schedule_prebuild()
@@ -165,31 +190,38 @@ class RulesPage(ctk.CTkFrame):
                     button.configure(text_color=color)
 
     def _tab_widget(self, tab):
-        """Вкладка (строится один раз и кладётся в ячейку). «Правила и перехваты» пока пустая (шаг 5в)."""
-        if tab == "base":
-            if self.base is None:
-                self.base = BaseTab(self.body, self)
-                self.base.grid(row=0, column=0, sticky="nsew")
-            return self.base
-        if tab == "tactics":
-            if self.tactics is None:
-                self.tactics = TacticsTab(self.body, self)
-                self.tactics.grid(row=0, column=0, sticky="nsew")
-            return self.tactics
-        return self.blank
+        """Вкладка (строится один раз и кладётся в ячейку)."""
+        attr = TAB_ATTRS[tab]
+        if getattr(self, attr) is None:
+            kind = {"base": BaseTab, "tactics": TacticsTab, "rules": InterceptsTab}[tab]
+            widget = kind(self.body, self)
+            widget.grid(row=0, column=0, sticky="nsew")
+            setattr(self, attr, widget)
+        return getattr(self, attr)
 
     def _show_tab(self):
         """Поднять выбранную вкладку наверх. «Авто-тактику» при показе обновляем: «Бот решает сам» и общий порог
-        живут на «Базе и комнатах»."""
-        built = self.tactics is not None
+        живут на «Базе и комнатах»; «Правила» — с диска, если бот за это время запомнил новые."""
+        built = getattr(self, TAB_ATTRS[self.tab]) is not None
         widget = self._tab_widget(self.tab)
         if self.tab == "tactics" and built:
             self.tactics.refresh()
+        if self.tab == "rules" and built:
+            self._refresh_rules()
         widget.lift()
+
+    def _mapped(self, event):
+        """Страницу снова открыли (полоска слева): правила могли поменяться на диске."""
+        if event.widget is self and self.tab == "rules" and self.intercepts is not None:
+            self._refresh_rules()
+
+    def _refresh_rules(self):
+        if self.reload_rules() and self.intercepts is not None:
+            self.intercepts.rebuild()
 
     def shown_tab_widget(self):
         """Вкладка, которая сейчас видна (для проверки): что под серединой области вкладок."""
-        tabs = [w for w in (self.base, self.tactics, self.blank) if w is not None]
+        tabs = [w for w in (self.base, self.tactics, self.intercepts) if w is not None]
         frames = {str(getattr(w, "_parent_frame", w)): w for w in tabs}   # у CTkScrollableFrame наверху — его рамка
         x = self.body.winfo_rootx() + self.body.winfo_width() // 2
         y = self.body.winfo_rooty() + self.body.winfo_height() // 2
@@ -200,7 +232,7 @@ class RulesPage(ctk.CTkFrame):
 
     def _schedule_prebuild(self):
         self._cancel_prebuild()
-        if self.tactics is None or self.base is None:
+        if any(getattr(self, attr) is None for attr in TAB_ATTRS.values()):
             self._prebuild_id = self.after(PREBUILD_MS, self._prebuild)
 
     def _cancel_prebuild(self):
@@ -214,7 +246,7 @@ class RulesPage(ctk.CTkFrame):
     def _prebuild(self):
         """Построить ещё не построенные вкладки заранее, под открытой: первый щелчок по ним тоже мгновенный."""
         self._prebuild_id = None
-        missing = [tab for tab in ("base", "tactics") if getattr(self, tab) is None]
+        missing = [tab for tab in TABS if getattr(self, TAB_ATTRS[tab]) is None]
         if missing:
             self._tab_widget(missing[0])
             self._tab_widget(self.tab).lift()
@@ -226,7 +258,7 @@ class RulesPage(ctk.CTkFrame):
 
     def rebuild_base(self):
         """Построить вкладки заново из формы («Восстановить», «Не сохранять»)."""
-        for name in ("base", "tactics"):
+        for name in TAB_ATTRS.values():
             tab = getattr(self, name)
             if tab is not None:
                 tab.destroy()
@@ -304,12 +336,34 @@ class RulesPage(ctk.CTkFrame):
         self._tg_window = TelegramWindow(self, self.lang, dict(self.form["telegram"]), on_save)
 
     def add_condition(self, room):
-        """«+ Условие» — окно нового правила с этой стихией. Пока старое (новое — шаг 5в); правило оно пишет само."""
-        from ui.rule_builder_dialog import RuleBuilderDialog
+        """«+ Условие» на «Базе и комнатах» — окно «Новое правило» с этой стихией (шаг 5в). Правило — в форму
+        (во вкладку «Правила и перехваты»), в файл его пишет «Сохранить настройки»."""
+        self.open_rule_editor(room, notify=True)
 
-        def on_rule_saved(rule_name, _room):
-            self.log(f"[GUI] Rule '{rule_name}' added!\n")
-        RuleBuilderDialog(self.controller, room, on_rule_saved)
+    def open_rule_editor(self, room, index=None, notify=False):
+        """Окно «Новое правило» (index — изменить правило стихии room с этим номером). notify — после сохранения
+        уведомление, куда попало правило (открывали не из вкладки правил)."""
+        from ui.rule_editor import RuleEditor
+        if self._editor is not None and not self._editor.done:
+            self._editor.lift()
+            return
+        if room in self.broken_rules:
+            Toast(self, self.text("ri_broken").format(room=room), kind="error")
+            return
+        original = self.rules[room][index] if index is not None else None
+
+        def on_save(new_room, rule):
+            # Пока окно было открыто, список мог обновиться (правила бота с диска) — правило ищем заново
+            old_index = rules_list.locate(self.rules, room, original) if original is not None else None
+            old_room = room if old_index is not None else None
+            place = rules_list.put(self.rules, new_room, rule, old_room=old_room, index=old_index)
+            if self.intercepts is not None:
+                self.intercepts.rule_put(new_room, place, old_room, old_index)
+            self.changed()
+            if notify:
+                title = rules_list.title_and_sub(rule, self.lang)[0]
+                Toast(self, self.text("ri_added").format(name=title), kind="success")
+        self._editor = RuleEditor(self, self.lang, room, on_save, rule=original)
 
     # ── Сохранение ──────────────────────────────────────────────────────────
     def save(self):
@@ -331,6 +385,7 @@ class RulesPage(ctk.CTkFrame):
                 else:
                     failed.append(room)
                     self.log(f"[ОШИБКА] Сохранение прервано: файл bot_data/rules/{room}.yml поврежден!\n")
+        failed += self._save_rules()
         self.saved = copy.deepcopy(self.form)
         self.profile_state = rules_store.OK
         self.changed()
@@ -342,10 +397,26 @@ class RulesPage(ctk.CTkFrame):
         Toast(self, self.text("rb_saved_toast"), kind="success")
         return True
 
+    def _save_rules(self):
+        """Правила стихий, где их поменяли (ui/rules_list.py: save_rules). Возвращает стихии с битым файлом."""
+        written, broken, added = rules_list.save_rules(self.saved_rules, self.rules)
+        for room in broken:
+            self.log(f"[ОШИБКА] Правила не сохранены: файл bot_data/rules/{room}.yml поврежден!\n")
+        if written:
+            names = ", ".join(rules_list.ROOM_NAMES_RU[room] for room in written)
+            self.log(f"[GUI] Правила сохранены: {names}.\n")
+        if added:
+            count = sum(len(rules) for rules in added.values())
+            self.log(f"[GUI] Пока окно было открыто, бот запомнил правил: {count}. Они добавлены наверх списка.\n")
+            if self.intercepts is not None:
+                self.intercepts.rebuild()
+        return broken
+
     def discard(self):
         """«Не сохранять»: форма — как в файлах."""
         self.form = copy.deepcopy(self.saved)
         self.teams = copy.deepcopy(self.saved_teams)
+        self.rules = copy.deepcopy(self.saved_rules)
         self.field_errors = {}
         self.rebuild_base()
         self.changed()
@@ -413,4 +484,5 @@ class RulesPage(ctk.CTkFrame):
             child.destroy()
         self.base = None
         self.tactics = None
+        self.intercepts = None
         self._build()

@@ -33,6 +33,14 @@ class RulesEngine:
                 drop_obsolete_rules(path, self.rules_cache[r])
             else:
                 self.rules_cache[r] = {}
+        line = disabled_rules_line(self.rules_cache)
+        if line:
+            print(line)
+
+    def active_rules(self, room_type):
+        """Правила стихии, которые бот берёт: выключенные тумблером (enabled: false) пропускаются (задача 15, шаг 5в)."""
+        rules = self.rules_cache.get(room_type, {}).get("rules", []) or []
+        return [rule for rule in rules if rule_enabled(rule)]
 
     def is_room_forbidden(self, room_type, current_state=None):
         """
@@ -42,8 +50,7 @@ class RulesEngine:
         if current_state is None:
             current_state = {}
             
-        room_data = self.rules_cache.get(room_type, {})
-        rules = room_data.get("rules", [])
+        rules = self.active_rules(room_type)
         
         for rule in rules:
             if rule.get("action") == "skip":
@@ -80,8 +87,7 @@ class RulesEngine:
 
     def forbidden_titans(self, room_type, enemies, current_state=None):
         """Чёрный список титанов комнаты: правила skip, которые сейчас срабатывают."""
-        rules = self.rules_cache.get(room_type, {}).get("rules", [])
-        return self._get_forbidden_titans(rules, enemies, current_state or {})
+        return self._get_forbidden_titans(self.active_rules(room_type), enemies, current_state or {})
 
     def battle_decision(self, room_type, enemies, current_state=None):
         """
@@ -93,7 +99,7 @@ class RulesEngine:
             current_state = {}
 
         room_data = self.rules_cache.get(room_type, {})
-        rules = room_data.get("rules", [])
+        rules = self.active_rules(room_type)
         
         # 0. АБСОЛЮТНЫЙ ПРИОРИТЕТ: Формируем Черный список умирающих титанов
         forbidden_titans = self._get_forbidden_titans(rules, enemies, current_state)
@@ -158,7 +164,7 @@ class RulesEngine:
         Правила skip и [STOP] не входят. Нужно для выбора запасного пака (tactics.py)."""
         room_data = self.rules_cache.get(room_type, {})
         packs = []
-        for rule in room_data.get("rules", []) or []:
+        for rule in self.active_rules(room_type):
             team = rule.get("team") or []
             if rule.get("action") == "skip" or not team or team == ["STOP"]:
                 continue
@@ -182,7 +188,7 @@ class RulesEngine:
         """Правило отхила, которое сработает за дверью этой стихии (задача 9б, выбор двери): условие по ХП
         без привязки к врагам выполняется, а в паке есть и раненые титаны условия, и лекарь (healers).
         Возвращает название правила или "". Правила с врагами не берутся: врагов за дверью бот ещё не видел."""
-        rules = self.rules_cache.get(room_type, {}).get("rules", []) or []
+        rules = self.active_rules(room_type)
         forbidden = self._get_forbidden_titans(rules, [], current_state)
         for rule in rules:
             condition = rule.get("condition") or {}
@@ -212,7 +218,8 @@ class RulesEngine:
     def add_golden_rule(self, room_type, enemies, team, wins, battles, avg_hp):
         """«Золотое правило» (задача 9б): пак много раз побеждал этот состав врагов — ставить его против них.
         Не добавляется, если против этих врагов уже есть правило (ваше или запомненное: его бот не трогает)
-        или пак ставится по ситуации (базовый, отхил). Возвращает правило или None."""
+        или пак ставится по ситуации (базовый, отхил). Выключенное правило тоже считается: иначе выключенное
+        «золотое правило» возвращалось бы при каждом запуске (задача 15, шаг 5в). Возвращает правило или None."""
         enemies = sorted(enemies)
         if sorted(team) in self.situational_packs(room_type):
             return None
@@ -250,9 +257,9 @@ class RulesEngine:
         Правила отхила (titan_hp_below), которые сработали ИЗ-ЗА этого боя:
         до боя ХП-условие не выполнялось, после боя выполняется, и один из титанов
         условия только что дрался (он в fighters). Возвращает названия через запятую или "".
-        Правила skip и условия по энергии не учитываются.
+        Правила skip и условия по энергии не учитываются, выключенные — тоже.
         """
-        rules = self.rules_cache.get(room_type, {}).get("rules", [])
+        rules = self.active_rules(room_type)
         fired = []
         for rule in rules:
             if rule.get("action") == "skip":
@@ -329,6 +336,8 @@ class RulesEngine:
           Пустое (проиграл базовый пак) — получится анти-пак против этих врагов.
         success_loss — наибольшая потеря ХП в удачном бою. Больше общего допуска — правило получает свой допуск.
         Правило с тем же условием не дублируется: у него меняется пак, и оно поднимается на 1-е место.
+        Выключенные правила (enabled: false) бот не трогает (ваш ответ, задача 15, шаг 5в): обновляется только включённое,
+        а если пак тот же, что у выключенного правила с этим условием, — правило не запоминается (вы этот пак выключили).
         """
         if not enemies:
             print("[ОБУЧЕНИЕ] Враги не распознаны — правило не сохраняю: без врагов оно срабатывало бы в каждой комнате.")
@@ -353,8 +362,16 @@ class RulesEngine:
             data["rules"] = []
         rules = data["rules"]
 
-        same = next((i for i, r in enumerate(rules)
-                     if r.get("action") != "skip" and same_condition(r.get("condition", {}), condition)), None)
+        def alike(r):
+            return r.get("action") != "skip" and same_condition(r.get("condition", {}), condition)
+
+        switched_off = next((r for r in rules if alike(r) and not rule_enabled(r)
+                             and sorted(r.get("team") or []) == sorted(team)), None)
+        if switched_off is not None:
+            print(f"[ОБУЧЕНИЕ] Пак {team} уже есть в выключенном правиле '{switched_off.get('name', new_rule['name'])}' — "
+                  "не запоминаю (правило выключено во вкладке «Правила и перехваты»).")
+            return None
+        same = next((i for i, r in enumerate(rules) if alike(r) and rule_enabled(r)), None)
         if same is None:
             rules.insert(0, new_rule)
             print(f"[ОБУЧЕНИЕ] Новое правило '{new_rule['name']}': пак {team}. Сохранено на 1-е место.")
@@ -421,6 +438,29 @@ def drop_obsolete_rules(path, data):
     with open(tmp, 'w', encoding='utf-8') as f:
         yaml.dump(data, f, allow_unicode=True, sort_keys=False)
     os.replace(tmp, path)
+
+
+ROOM_NAMES_RU = {"earth": "Земля", "water": "Вода", "fire": "Огонь", "mix": "Смешанная"}
+
+
+def rule_enabled(rule):
+    """Правило включено. Выключенное тумблером во вкладке «Правила и перехваты» — с пометкой enabled: false
+    (задача 15, шаг 5в); правила без пометки включены."""
+    return not (isinstance(rule, dict) and rule.get("enabled") is False)
+
+
+def disabled_rules_line(rules_cache):
+    """Строка лога при запуске: какие правила выключены (бот их пропускает). Нет выключенных — ""."""
+    parts, count = [], 0
+    for room, data in rules_cache.items():
+        rules = data.get("rules") if isinstance(data, dict) else None
+        names = [f"'{r.get('name', '?')}'" for r in rules or [] if isinstance(r, dict) and not rule_enabled(r)]
+        if names:
+            count += len(names)
+            parts.append(f"{ROOM_NAMES_RU.get(room, room)}: {', '.join(names)}")
+    if not count:
+        return ""
+    return f"[ПРАВИЛА] Выключено правил: {count}, бот их пропускает. " + "; ".join(parts)
 
 
 def titan_name_ru(titan):

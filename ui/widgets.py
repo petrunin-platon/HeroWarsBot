@@ -509,13 +509,25 @@ class PlainLabel(tk.Label):
                          bg=bg or C["bg_surface"], bd=0, highlightthickness=0, padx=0, pady=0, **kwargs)
 
 
+def shared_photo(master, key, make):
+    """Картинка Tk (ImageTk.PhotoImage) одна на окно программы, а не на каждый виджет: в длинных списках (правила —
+    шаг 5в) одинаковых значков и квадратов титанов сотни, и создание картинок заметно тормозило постройку.
+    Картинка Tk принадлежит своему окну (интерпретатору Tk), поэтому запас — у корня окна: новое окно — новый запас.
+    make() — картинка PIL. Виджет, который её показывает, держит ссылку сам (если запас её когда-нибудь выбросит)."""
+    root = master._root()
+    cache = root.__dict__.setdefault("_shared_photos", {})
+    photo = cache.get(key)
+    if photo is None:
+        photo = cache[key] = ImageTk.PhotoImage(make(), master=root)
+    return photo
+
+
 def plain_icon(master, name, color, size, box=None, tint=None, bg=None, radius=8):
     """Иконка для обычной надписи Tk (ImageTk.PhotoImage, в настоящих пикселях с учётом масштаба Windows).
     box — сторона квадрата-подложки цвета tint со скруглением radius (значок стихии 40×40), фон вокруг — bg."""
     scale = ctk.ScalingTracker.get_widget_scaling(master)
-    return ImageTk.PhotoImage(_plain_icon_picture(name, color.upper(), round(size * scale),
-                                                  round(box * scale) if box else 0, tint, bg, round(radius * scale)),
-                              master=master)
+    args = (name, color.upper(), round(size * scale), round(box * scale) if box else 0, tint, bg, round(radius * scale))
+    return shared_photo(master, ("icon",) + args, lambda: _plain_icon_picture(*args))
 
 
 @lru_cache(maxsize=128)
@@ -538,21 +550,30 @@ class TitanTile(tk.Label):
     (рамка цветом стихии, фон — оттенок стихии, картинка или две буквы, подсказка с именем), но одна обычная
     надпись Tk с готовой картинкой. У TitanAvatar внутри два холста CustomTkinter, и при прокрутке и раскрытии
     списков Windows перерисовывает каждый отдельно — элементы дорисовывались с задержкой (проверка шага 5а).
-    bg — цвет того, на чём квадрат стоит (уголки скругления — его цвета)."""
+    bg — цвет того, на чём квадрат стоит (уголки скругления — его цвета). dim — бледный (выключенное правило, шаг 5в)."""
 
-    def __init__(self, master, titan, lang="RU", size=None, bg=None, command=None):
+    def __init__(self, master, titan, lang="RU", size=None, bg=None, command=None, dim=False):
         self.titan = titan
         self.lang = lang
         self.command = command
         scale = ctk.ScalingTracker.get_widget_scaling(master)   # масштаб Windows: картинка — в настоящих пикселях
         px = round((size or S["avatar"]) * scale)
         path = theme.titan_icon_path(titan)
-        picture = _tile_picture(titan, px, max(1, round(S["avatar_border"] * scale)), bg or C["bg_surface"],
-                                str(path) if path else None, path.stat().st_mtime if path else 0)
-        self.photo = ImageTk.PhotoImage(picture, master=master)  # картинка Tk принадлежит окну — не кэшируем её
+        bg = bg or C["bg_surface"]
+        args = (titan, px, max(1, round(S["avatar_border"] * scale)), bg, str(path) if path else None,
+                path.stat().st_mtime if path else 0)
+
+        def picture():
+            tile = _tile_picture(*args)
+            if dim:
+                tile = Image.blend(Image.new("RGBA", tile.size, _rgb(bg) + (255,)), tile, theme.RULE_DIM)
+            return tile
+        self.photo = shared_photo(master, ("tile", dim) + args, picture)
         text = "" if path else theme.initials(titan_name(lang, titan))
-        super().__init__(master, image=self.photo, text=text, compound="center", bg=bg or C["bg_surface"],
-                         fg=C["text"], font=(theme.FONT_FAMILY, -round(12 * scale), "bold"), bd=0,
+        font_px = round((12 if px >= 30 * scale else 10) * scale)
+        super().__init__(master, image=self.photo, text=text, compound="center", bg=bg,
+                         fg=theme.blend(C["text"], bg, theme.RULE_DIM) if dim else C["text"],
+                         font=(theme.FONT_FAMILY, -font_px, "bold"), bd=0,
                          highlightthickness=0, padx=0, pady=0, width=px, height=px)
         self.tooltip = Tooltip(self, lambda: titan_name(self.lang, self.titan))
         if command:
@@ -585,6 +606,192 @@ def _tile_picture(titan, px, border, bg, path, mtime):
         offset = (big - side_big) // 2
         img.alpha_composite(pic, (offset, offset))
     return img.resize((px, px), Image.LANCZOS)
+
+
+def _rgb(color):
+    return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def text_width(widget, font, text):
+    """Ширина надписи в пикселях (шрифт обычной надписи Tk — scaled_font). Без именованного шрифта Tk: его не надо
+    удалять, и он не копится."""
+    return int(widget.tk.call("font", "measure", scaled_font(widget, font), "-displayof", widget, text))
+
+
+def pill_label(master, text, font, fg, fill, bg, height=20, radius=4, pad_x=7):
+    """Значок с надписью на скруглённой подложке («Смешанная», «ЛЕЧЕНИЕ», «Спросить вас» в строке правила, шаг 5в):
+    обычная надпись Tk поверх готовой картинки подложки — без своего холста, как TitanTile (длинные списки)."""
+    scale = ctk.ScalingTracker.get_widget_scaling(master)
+    w = text_width(master, font, text) + round(2 * pad_x * scale)
+    args = (w, round(height * scale), fill, bg, round(radius * scale))
+    photo = shared_photo(master, ("pill",) + args, lambda: _pill_picture(*args))
+    label = tk.Label(master, image=photo, text=text, compound="center", fg=fg, bg=bg,
+                     font=scaled_font(master, font), bd=0, highlightthickness=0, padx=0, pady=0)
+    label.photo = photo
+    return label
+
+
+@lru_cache(maxsize=64)
+def _pill_picture(w, h, fill, bg, radius):
+    k = 4
+    img = Image.new("RGBA", (w * k, h * k), _rgb(bg) + (255,))
+    ImageDraw.Draw(img).rounded_rectangle((0, 0, w * k - 1, h * k - 1), radius=radius * k, fill=_rgb(fill) + (255,))
+    return img.resize((w, h), Image.LANCZOS)
+
+
+class ElidedLabel(PlainLabel):
+    """Надпись в одну строку, которая не раздвигает строку списка: длинный текст обрезается по ширине с «…»,
+    полный — в подсказке. Ширину надписи задаёт сетка (sticky="ew"), текст подгоняется при изменении ширины."""
+
+    def __init__(self, master, text="", font=None, **kwargs):
+        super().__init__(master, "", font=font, width=1, anchor="w", **kwargs)
+        self._font = font or F["text"]
+        self.full = text
+        self._fitted_for = None
+        self.tooltip = Tooltip(self, lambda: self.full if self.cget("text") != self.full else "")
+        self.bind("<Configure>", lambda _e: self.fit(), add="+")
+
+    def set_full(self, text):
+        self.full = text
+        self._fitted_for = None
+        self.fit()
+
+    def fit(self):
+        width = self.winfo_width()
+        if width <= 1 or width == self._fitted_for:
+            return
+        self._fitted_for = width
+        text = self.full
+        if text_width(self, self._font, text) > width:
+            low, high = 0, len(text)
+            while low < high:   # самая длинная начальная часть, которая влезает вместе с «…»
+                mid = (low + high + 1) // 2
+                if text_width(self, self._font, text[:mid].rstrip() + "…") <= width:
+                    low = mid
+                else:
+                    high = mid - 1
+            text = text[:low].rstrip() + "…"
+        if self.cget("text") != text:
+            self.configure(text=text)
+
+
+class PlainSwitch(tk.Label):
+    """Лёгкий тумблер 36×20 для строк длинного списка (макет 03c, «Вкл.»): картинка, без своего холста.
+    command(включён) — после щелчка; set_on() — без вызова command."""
+
+    def __init__(self, master, value=False, command=None, bg=None, tooltip=None):
+        self._bg = bg or C["bg_elevated"]
+        scale = ctk.ScalingTracker.get_widget_scaling(master)
+        size = (round(36 * scale), round(20 * scale))
+        self._pictures = {on: shared_photo(master, ("switch", on, self._bg) + size,
+                                           lambda on=on: _switch_picture(*size, on, self._bg)) for on in (True, False)}
+        super().__init__(master, bg=self._bg, bd=0, highlightthickness=0, padx=0, pady=0, cursor="hand2")
+        self.command = command
+        self.on = None
+        self.set_on(value)
+        self.bind("<Button-1>", self._clicked, add="+")
+        self.tooltip = Tooltip(self, tooltip) if tooltip else None
+
+    def set_on(self, value):
+        value = bool(value)
+        if value != self.on:
+            self.on = value
+            self.configure(image=self._pictures[value])
+
+    def _clicked(self, _event=None):
+        self.set_on(not self.on)
+        if self.command:
+            self.command(self.on)
+
+
+@lru_cache(maxsize=8)
+def _switch_picture(w, h, on, bg):
+    k = 4
+    img = Image.new("RGBA", (w * k, h * k), _rgb(bg) + (255,))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((0, 0, w * k - 1, h * k - 1), radius=h * k // 2,
+                           fill=_rgb(C["blue"] if on else C["border_strong"]) + (255,))
+    pad = 2 * h * k // 20
+    knob = h * k - 2 * pad
+    x = w * k - pad - knob if on else pad
+    draw.ellipse((x, pad, x + knob - 1, pad + knob - 1), fill=_rgb(C["white"] if on else C["text_secondary"]) + (255,))
+    return img.resize((w, h), Image.LANCZOS)
+
+
+class RoundedBackdrop(tk.Label):
+    """Скруглённая подложка с рамкой 1 px под содержимым рамки Tk (строка длинного списка, шаг 5в): готовая картинка
+    вместо холста CustomTkinter. Ставится первой в рамку (place во всю рамку), содержимое кладётся поверх; при новом
+    размере рамки — картинка этого размера (одна на окно для всех строк одного размера)."""
+
+    def __init__(self, master, fill, border, outer, radius=8):
+        super().__init__(master, bg=outer, bd=0, highlightthickness=0, padx=0, pady=0)
+        self._look = (fill, border, outer, round(radius * ctk.ScalingTracker.get_widget_scaling(master)))
+        self._size = None
+        self.photo = None
+        self.place(x=0, y=0, relwidth=1, relheight=1)
+        master.bind("<Configure>", self._fit, add="+")
+
+    def _fit(self, event):
+        size = (event.width, event.height)
+        if size == self._size or min(size) < 4:
+            return
+        self._size = size
+        key = ("backdrop",) + size + self._look
+        cache = self._root().__dict__.setdefault("_shared_photos", {})
+        if key not in cache:   # размеров при изменении окна много — старые подложки не копим
+            for old in [k for k in cache if k[0] == "backdrop"][:-8]:
+                del cache[old]
+        self.photo = shared_photo(self, key, lambda: _backdrop_picture(*size, *self._look))
+        self.configure(image=self.photo)
+
+
+def _backdrop_picture(w, h, fill, border, outer, radius):
+    k = 3
+    img = Image.new("RGBA", (w * k, h * k), _rgb(outer) + (255,))
+    ImageDraw.Draw(img).rounded_rectangle((0, 0, w * k - 1, h * k - 1), radius=radius * k, fill=_rgb(fill) + (255,),
+                                          outline=_rgb(border) + (255,), width=k)
+    return img.resize((w, h), Image.LANCZOS)
+
+
+class PlainIconButton(tk.Label):
+    """Лёгкая кнопка-значок для строк длинного списка (↑↓, карандаш, ✕ в «Правилах и перехватах»): картинка без
+    своего холста. Наведение меняет только цвет фона; недоступная — бледный значок и щелчок не работает."""
+
+    def __init__(self, master, icon_name, command=None, size=14, bg=None, hover=None, color=None, tooltip=None,
+                 pad=8, pad_y=8):
+        self._bg = bg or C["bg_elevated"]
+        self._hover = hover or T["hover_elevated"]
+        self._pictures = {state: plain_icon(master, icon_name, c, size)
+                          for state, c in (("on", color or C["text_secondary"]), ("off", C["border_focus"]))}
+        scale = ctk.ScalingTracker.get_widget_scaling(master)
+        # У надписи-картинки Tk padx не работает: место вокруг значка задаёт ширина и высота (в пикселях)
+        super().__init__(master, image=self._pictures["on"], bg=self._bg, bd=0, highlightthickness=0,
+                         width=round((size + 2 * pad) * scale), height=round((size + 2 * pad_y) * scale),
+                         cursor="hand2")
+        self.command = command
+        self.enabled = True
+        self._look = self._bg
+        self.bind("<Button-1>", self._clicked, add="+")
+        self.bind("<Enter>", lambda _e: self._paint(True), add="+")
+        self.bind("<Leave>", lambda _e: self._paint(False), add="+")
+        self.tooltip = Tooltip(self, tooltip) if tooltip else None
+
+    def _paint(self, hovering):
+        look = self._hover if hovering and self.enabled else self._bg
+        if look != self._look:
+            self._look = look
+            self.configure(bg=look)
+
+    def _clicked(self, _event=None):
+        if self.enabled and self.command:
+            self.command()
+
+    def set_enabled(self, enabled):
+        if enabled != self.enabled:
+            self.enabled = enabled
+            self.configure(image=self._pictures["on" if enabled else "off"], cursor="hand2" if enabled else "")
+            if not enabled:
+                self._paint(False)
 
 
 class Chip(ctk.CTkFrame):
