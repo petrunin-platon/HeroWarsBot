@@ -5,7 +5,7 @@
 Каркас — по design/README.md («Каркас окна»): слева полоска 64 px (логотип, 6 разделов с подсказками, Telegram, язык),
 сверху шапка 56 px (название раздела, плашка телефона, три кнопки), ниже — страница. С шага 3 главная новая
 (ui/main_page.py), с шага 5а — «Мастер правил» (ui/rules_page.py), с шага 6 — «Аналитика» (ui/analytics_page.py)
-и «Статистика» (ui/stats_page.py), остальные страницы пока — старые вкладки, их заменят следующие шаги. Для них окно — прежний
+и «Статистика» (ui/stats_page.py), с шага 7 — «О программе» (ui/about_page.py), остальные страницы пока — старые вкладки, их заменят следующие шаги. Для них окно — прежний
 controller: current_lang, frames, select_frame; главная для них — frames["dash"] с append_log().
 
 Связь с ботом не меняется (протокол тот же): бота запускает, читает и останавливает главная через ui/bot_link.py.
@@ -34,7 +34,7 @@ from customtkinter.windows.widgets.core_widget_classes import DropdownMenu
 from config import APP_VERSION, GAME_WINDOW_TITLE, PAUSE_FLAG_FILE
 from i18n import LANGUAGES, get_text
 from ui import hud_place, phone, theme, ui_settings
-from ui.about_tab import AboutFrame
+from ui.about_page import AboutPage
 from ui.analytics_page import AnalyticsPage
 from ui.freeze_guard import FreezeGuard
 from ui.guide_tab import GuideFrame
@@ -60,7 +60,7 @@ PAGES = (
     ("analytics", AnalyticsPage, "activity", "btn_analytics", "btn_analytics"),
     ("stats", StatsPage, "chart-no-axes-column", "btn_stats", "page_title_stats"),
     ("guide", GuideFrame, "book-open", "btn_guide", "btn_guide"),
-    ("about", AboutFrame, "info", "btn_about", "btn_about"),
+    ("about", AboutPage, "info", "btn_about", "btn_about"),
 )
 DRAIN_MS = 100          # как часто окно забирает события из очереди
 RESTART_PAUSE_MS = 1000  # перезапуск scrcpy: пауза между остановкой и запуском (как в старом окне)
@@ -246,8 +246,8 @@ class App(ctk.CTk):
         self._show_frame(frame_name)
 
     def _show_frame(self, frame_name):
-        if frame_name == "stats":
-            self.frames["stats"].refresh_data()
+        if frame_name in ("stats", "about"):
+            self.frames[frame_name].refresh_data()   # цифры статистики и состояние компонентов — при каждом показе
         for frame in self.frames.values():
             frame.grid_forget()
         frame = self.frames[frame_name]
