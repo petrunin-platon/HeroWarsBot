@@ -1,14 +1,19 @@
 """«О программе» нового окна (задача 15, шаг 7; макет design/mockups/07_about) — вместо ui/about_tab.py.
 
-Сверху карточка программы: значок, название, версия (config.APP_VERSION) и «Beta», слоган, описание и четыре кнопки:
-«Проверить обновления» (открывает страницу релизов на GitHub — ваш ответ 7.1), «Папка бота» (папка, откуда запущена программа:
-там profile.yml и bot_data/), «Написать автору», «GitHub проекта». Ниже «Автор и лицензия» и «Состояние компонентов»
-(ADB и scrcpy ищутся в PATH, как их запускает бот; база шаблонов — assets_db.py или папка assets/; проверка в фоне при каждом показе
-страницы). Внизу «Поддержать проект»: кошельки (на экране сокращены, кнопка копирует полный адрес), донат в Telegram
-(приложение и браузер), Boosty и ЮMoney. Адреса и ссылки — ui/about_data.py (без Tk).
+Сверху карточка программы: значок, название, версия (config.APP_VERSION) и «Beta», слоган, под ними — описание крупным
+текстом без плашки (ваше решение 23.10.2026) и четыре кнопки: «Проверить обновления» (открывает страницу релизов на GitHub —
+ваш ответ 7.1), «Папка бота» (папка, откуда запущена программа: там profile.yml и bot_data/), «Написать автору»,
+«GitHub проекта». Ниже «Автор и лицензия» и «Состояние компонентов» (ADB и scrcpy ищутся в PATH, как их запускает бот; база
+шаблонов — assets_db.py или папка assets/; проверка в фоне при каждом показе страницы). Внизу «Поддержать проект»: кошельки
+(полный адрес на экране и кнопка «Копировать» — ваше решение 23.10.2026), донат в Telegram (приложение и браузер), Boosty и ЮMoney.
+Адреса и ссылки — ui/about_data.py (без Tk), репозиторий и почта автора — config.py.
 
-Страница длиннее окна — прокручивается. Строки и надписи — обычные виджеты Tk на готовых подложках (RoundedBackdrop),
-CustomTkinter — только карточки и кнопки: при прокрутке в Windows ничего не дорисовывается с задержкой.
+Ссылка или почта не открылись (в Windows без почтовой программы mailto: не работает) — адрес кладётся в буфер обмена,
+и об этом пишет уведомление.
+
+Окно в Windows не должно оставлять следов при прокрутке и смене вкладок: на странице нет ни одного элемента CustomTkinter
+со своим холстом, кроме самой прокрутки. Карточки, кнопки и строки — обычные рамки и надписи Tk на готовых скруглённых
+подложках (widgets.plain_card, PlainButton, RoundedBackdrop); наведение меняет только цвет подложки и надписи.
 Окно в интернет не ходит: все кнопки открывают ссылки в браузере.
 """
 import queue
@@ -21,12 +26,14 @@ import customtkinter as ctk
 from config import APP_VERSION
 from i18n import get_text
 from ui import about_data, theme
-from ui.widgets import (Button, Card, ClickFrame, IconButton, PlainLabel, RoundedBackdrop, Toast, pill_label, plain_icon)
+from ui.widgets import (PlainButton, PlainClickFrame, PlainLabel, RoundedBackdrop, Toast, Tooltip, pill_label,
+                        plain_card, plain_icon)
 
 C = theme.COLORS
 T = theme.TINTS
 F = theme.FONTS
 S = theme.SIZES
+PAGE = C["bg_primary"]
 BG = C["bg_surface"]
 ELEV = C["bg_elevated"]
 POLL_MS = 100
@@ -46,16 +53,15 @@ def icon_label(master, name, color, size, bg, box=None, tint=None, radius=8):
     return label
 
 
-class DonateButton(ClickFrame):
+class DonateButton(PlainClickFrame):
     """Кнопка прямого перевода (макет: цветной квадрат со значком, название, стрелка «открыть»). Наведение — только цвет рамки."""
 
     def __init__(self, master, color, text, command):
-        super().__init__(master, command=command, fg_color=ELEV, border_width=1, border_color=C["border"],
-                         corner_radius=8, height=48, width=10)
+        super().__init__(master, command=command, bg=BG, height=px(master, 48), cursor="hand2")
         self.grid_propagate(False)          # высота 48 — по макету, а не по содержимому
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
-        self._look = None
+        self.backdrop = RoundedBackdrop(self, ELEV, C["border"], BG, radius=8)
         self.mark = icon_label(self, "heart-filled", C["white"], 16, bg=ELEV, box=32, tint=color)
         self.mark.grid(row=0, column=0, padx=(8, 12))
         self.title = PlainLabel(self, text, font=F["body"], color=C["text"], bg=ELEV, anchor="w")
@@ -65,13 +71,9 @@ class DonateButton(ClickFrame):
         for part in (self.mark, self.title, self.arrow):
             part.configure(cursor="hand2")
         self.bind_parts(self.mark, self.title, self.arrow)
-        self._paint()
 
     def _paint(self):
-        look = C["border_focus"] if self._hovering else C["border"]
-        if look != self._look:
-            self._look = look
-            self.configure(border_color=look)
+        self.backdrop.restyle(ELEV, C["border_focus"] if self._hovering else C["border"])
 
 
 class AboutPage(ctk.CTkScrollableFrame):
@@ -102,63 +104,71 @@ class AboutPage(ctk.CTkScrollableFrame):
         self._texts.append((widget, key))
         return widget
 
-    def open_url(self, url):
-        url = about_data.safe_url(url)
-        if url:
-            webbrowser.open(url)
+    # ── Ссылки и буфер обмена ───────────────────────────────────────────────
+    def open_url(self, url, copy_text=None):
+        """Открыть ссылку. Не открылась (нет программы для ссылки) — положить copy_text (или саму ссылку) в буфер обмена."""
+        if not about_data.launch(url, opener=webbrowser.open):
+            self.copy(copy_text or url, "ab_open_failed", kind="warning")
+
+    def copy(self, text, message="ab_copied", kind="success"):
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        Toast(self, self.text(message), kind=kind)
+
+    def _wrap(self, label):
+        """Перенос строк надписи — по её ширине (width=1: надпись не раздвигает рамку, а сжимается с ней)."""
+        def fit(event):
+            if event.width > 50 and int(float(label.cget("wraplength") or 0)) != event.width:
+                label.configure(wraplength=event.width)
+        label.configure(wraplength=px(self, 560))
+        label.bind("<Configure>", fit, add="+")
+
+    def _button(self, parent, key, kind, icon_name, command, outer=BG, **kwargs):
+        button = PlainButton(parent, "", kind=kind, icon_name=icon_name, command=command, outer=outer, **kwargs)
+        return self.tr(button, key)
 
     # ── Карточка программы ──────────────────────────────────────────────────
     def _build_hero(self):
-        card = Card(self, width=10, height=10)
+        card = plain_card(self, PAGE)
         card.grid(row=0, column=0, sticky="ew", padx=(24, 12), pady=(24, 16))
         card.grid_columnconfigure(1, weight=1)
-        pad = 20
         icon_label(card, "shield-check", C["green"], 32, bg=BG, box=64, tint=ELEV, radius=14).grid(
-            row=0, column=0, sticky="n", padx=(pad, pad), pady=pad)
+            row=0, column=0, sticky="n", padx=(20, 20), pady=(20, 0))
 
-        body = tk.Frame(card, bg=BG)
-        body.grid(row=0, column=1, sticky="nsew", pady=pad)
-        body.grid_columnconfigure(0, weight=1)
-        title = tk.Frame(body, bg=BG)
+        head = tk.Frame(card, bg=BG)
+        head.grid(row=0, column=1, sticky="ew", pady=(20, 0))
+        head.grid_columnconfigure(0, weight=1)
+        title = tk.Frame(head, bg=BG)
         title.grid(row=0, column=0, sticky="w")
         PlainLabel(title, about_data.PROJECT_NAME, font=F["app_name"], color=C["text"], bg=BG).pack(side="left")
         pill_label(title, f"v{APP_VERSION}", F["mono"], C["text_secondary"], ELEV, BG, height=22).pack(
             side="left", padx=(10, 0))
         pill_label(title, about_data.STAGE, F["label_bold"], C["warning"], T["warning_on_surface"], BG, height=22).pack(
             side="left", padx=(10, 0))
-        slogan = self.tr(PlainLabel(body, "", font=F["body"], color=C["text"], bg=BG, anchor="w", justify="left",
-                                        width=1), "ab_slogan")
-        slogan.grid(row=1, column=0, sticky="ew", pady=(10, 0))
-        self._wrap(slogan, body, 0)
-        plate = tk.Frame(body, bg=BG)
-        plate.grid(row=2, column=0, sticky="ew", pady=(10, 0))
-        RoundedBackdrop(plate, ELEV, C["border"], BG, radius=8)
-        text = self.tr(PlainLabel(plate, "", font=F["text"], color=C["text_secondary"], bg=ELEV, anchor="w",
-                                      justify="left", width=1), "ab_text")
-        text.pack(fill="x", padx=px(self, 16), pady=px(self, 14))
-        self._wrap(text, plate, 2 * 16 + 2)
+        slogan = self.tr(PlainLabel(head, "", font=F["body"], color=C["text"], bg=BG, anchor="w", justify="left",
+                                    width=1), "ab_slogan")
+        slogan.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        self._wrap(slogan)
+
+        # Описание — просто текст под значком и названием, от левого края значка (без плашки)
+        text = self.tr(PlainLabel(card, "", font=F["about_text"], color=C["text_secondary"], bg=BG, anchor="nw",
+                                  justify="left", width=1), "ab_text")
+        text.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(16, 20))
+        self._wrap(text)
 
         buttons = tk.Frame(card, bg=BG)
-        buttons.grid(row=0, column=2, sticky="n", padx=(pad, pad), pady=pad)
+        buttons.grid(row=0, column=2, rowspan=2, sticky="n", padx=(0, 20), pady=20)
         buttons.grid_columnconfigure(0, weight=1, minsize=px(self, BUTTONS_WIDTH))
         for i, (key, kind, icon_name, command) in enumerate((
                 ("ab_check_updates", "secondary", "refresh-cw", lambda: self.open_url(about_data.RELEASES_URL)),
                 ("ab_open_folder", "secondary", "folder", self.open_folder),
-                ("about_btn_mail", "blue", "send", lambda: self.open_url(about_data.mail_url())),
+                ("about_btn_mail", "blue", "send", self.write_to_author),
                 ("about_btn_github", "secondary", "code", lambda: self.open_url(about_data.GITHUB_URL)))):
-            button = Button(buttons, "", kind=kind, icon_name=icon_name, icon_size=15, pad_x=12, anchor="w",
-                            command=command)
+            button = self._button(buttons, key, kind, icon_name, command, anchor="w")
             button.grid(row=i, column=0, sticky="ew", pady=(0 if i == 0 else 8, 0))
-            self.tr(button, key)
 
-    def _wrap(self, label, frame, indent):
-        """Подгонять перенос строк надписи под ширину рамки (width=1 у надписи: она не раздвигает рамку, а сжимается с ней)."""
-        def fit(event):
-            width = event.width - px(self, indent)
-            if width > 50 and int(float(label.cget("wraplength") or 0)) != width:
-                label.configure(wraplength=width)
-        label.configure(wraplength=px(self, 560))
-        frame.bind("<Configure>", fit, add="+")
+    def write_to_author(self):
+        self.open_url(about_data.mail_url(), copy_text=about_data.EMAIL)
 
     def open_folder(self):
         if not about_data.open_folder(about_data.program_folder()):
@@ -166,7 +176,7 @@ class AboutPage(ctk.CTkScrollableFrame):
 
     # ── Автор, лицензия, компоненты ─────────────────────────────────────────
     def _info_card(self, column, title_key):
-        card = Card(self.pair, width=10, height=10)
+        card = plain_card(self.pair, PAGE)
         card.grid(row=0, column=column, sticky="nsew", padx=(0, 8) if column == 0 else (8, 0))
         card.grid_columnconfigure(0, weight=1)
         self.tr(PlainLabel(card, "", font=F["card_title"], color=C["text"], bg=BG, anchor="w"), title_key).grid(
@@ -189,7 +199,7 @@ class AboutPage(ctk.CTkScrollableFrame):
         return line
 
     def _build_info(self):
-        self.pair = tk.Frame(self, bg=C["bg_primary"])
+        self.pair = tk.Frame(self, bg=PAGE)
         self.pair.grid(row=1, column=0, sticky="ew", padx=(24, 12), pady=(0, 16))
         self.pair.grid_columnconfigure((0, 1), weight=1, uniform="info")
 
@@ -199,7 +209,7 @@ class AboutPage(ctk.CTkScrollableFrame):
         line = self._info_row(author, 2, "mail", label="Email")
         link = PlainLabel(line, about_data.EMAIL, font=F["text"], color=C["blue_text"], bg=ELEV, cursor="hand2")
         link.grid(row=0, column=3, padx=(8, 12))
-        link.bind("<Button-1>", lambda _e: self.open_url(about_data.mail_url()), add="+")
+        link.bind("<Button-1>", lambda _e: self.write_to_author(), add="+")
         line = self._info_row(author, 3, "file-text", label_key="ab_license")
         PlainLabel(line, about_data.LICENSE_NAME, font=F["text"], color=C["text"], bg=ELEV).grid(
             row=0, column=3, padx=(8, 12))
@@ -227,11 +237,11 @@ class AboutPage(ctk.CTkScrollableFrame):
         inner.pack(fill="both", expand=True, padx=px(self, 14), pady=px(self, 14))
         inner.grid_columnconfigure(0, weight=1)
         self.tr(PlainLabel(inner, "", font=F["button_bold"], color=C["text"], bg=ELEV, anchor="w"),
-                    title_key).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+                title_key).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
         return inner
 
     def _build_support(self):
-        card = Card(self, width=10, height=10)
+        card = plain_card(self, PAGE)
         card.grid(row=2, column=0, sticky="ew", padx=(24, 12), pady=(0, 24))
         card.grid_columnconfigure(0, weight=1)
         head = tk.Frame(card, bg=BG)
@@ -240,11 +250,11 @@ class AboutPage(ctk.CTkScrollableFrame):
         icon_label(head, "heart", C["gold"], 20, bg=BG, box=40, tint=T["gold_on_surface"], radius=10).grid(
             row=0, column=0, rowspan=2, sticky="n", padx=(0, 14))
         self.tr(PlainLabel(head, "", font=F["dialog_title"], color=C["gold"], bg=BG, anchor="w"),
-                    "ab_support_title").grid(row=0, column=1, sticky="w")
+                "ab_support_title").grid(row=0, column=1, sticky="w")
         text = self.tr(PlainLabel(head, "", font=F["text"], color=C["text_secondary"], bg=BG, anchor="w",
-                                      justify="left", width=1), "ab_support_text")
+                                  justify="left", width=1), "ab_support_text")
         text.grid(row=1, column=1, sticky="ew", pady=(6, 0))
-        self._wrap(text, head, 40 + 14 + 6)
+        self._wrap(text)
 
         panels = tk.Frame(card, bg=BG)
         panels.grid(row=1, column=0, sticky="ew", padx=20, pady=(16, 0))
@@ -257,7 +267,7 @@ class AboutPage(ctk.CTkScrollableFrame):
         direct.grid(row=2, column=0, sticky="ew", padx=20, pady=(16, 20))
         direct.grid_columnconfigure((0, 1), weight=1, uniform="direct")
         self.tr(PlainLabel(direct, "", font=F["button_bold"], color=C["text"], bg=BG, anchor="w"),
-                    "ab_direct").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+                "ab_direct").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
         self.donate_buttons = {}
         for column, (key, text_key, url) in enumerate(about_data.DIRECT_DONATE):
             button = DonateButton(direct, theme.DONATE_COLORS[key], "", lambda u=url: self.open_url(u))
@@ -266,22 +276,23 @@ class AboutPage(ctk.CTkScrollableFrame):
             self.donate_buttons[key] = button
 
     def _build_crypto(self, panel):
-        panel.grid_columnconfigure(1, weight=1)
-        panel.grid_columnconfigure(0, weight=0)
+        """Кошелёк: подпись, под ней полный адрес и кнопка «Копировать» (адрес длинный — рядом с подписью он бы обрезался)."""
+        panel.grid_columnconfigure(0, weight=1)
         self.wallet_buttons = {}
-        for i, (key, label, address) in enumerate(about_data.WALLETS, start=1):
+        for i, (key, label, address) in enumerate(about_data.WALLETS):
+            top = 1 + 2 * i
             PlainLabel(panel, label, font=F["text"], color=C["text_secondary"], bg=ELEV, anchor="w").grid(
-                row=i, column=0, sticky="w", padx=(0, 12), pady=(0 if i == 1 else 8, 0))
+                row=top, column=0, columnspan=2, sticky="w", pady=(0 if i == 0 else 12, 4))
             pill = tk.Frame(panel, bg=ELEV, height=px(self, 34))
-            pill.grid(row=i, column=1, sticky="ew", pady=(0 if i == 1 else 8, 0))
+            pill.grid(row=top + 1, column=0, sticky="ew")
             pill.pack_propagate(False)
             RoundedBackdrop(pill, C["bg_primary"], C["border"], ELEV, radius=6)
-            PlainLabel(pill, about_data.shorten(address), font=F["mono"], color=C["text"], bg=C["bg_primary"],
-                       anchor="w").pack(fill="both", expand=True, padx=px(self, 10))
-            button = IconButton(panel, "copy", size=34, icon_size=14, fg_color="transparent", hover_color=T["hover_elevated"],
-                                border_color=C["border_strong"], tooltip=lambda: self.text("ab_copy"),
-                                command=lambda a=address: self.copy(a))
-            button.grid(row=i, column=2, padx=(8, 0), pady=(0 if i == 1 else 8, 0))
+            PlainLabel(pill, address, font=F["mono"], color=C["text"], bg=C["bg_primary"], anchor="w").pack(
+                fill="both", expand=True, padx=px(self, 10))
+            button = PlainButton(panel, "", kind="outline", icon_name="copy", icon_size=14, height=34, width=34,
+                                 pad_x=0, icon_gap=0, outer=ELEV, command=lambda a=address: self.copy(a),
+                                 tooltip=lambda: self.text("ab_copy"))
+            button.grid(row=top + 1, column=1, padx=(8, 0))
             self.wallet_buttons[key] = button
 
     def _build_telegram(self, panel):
@@ -291,21 +302,12 @@ class AboutPage(ctk.CTkScrollableFrame):
             pad = (0 if i == 1 else 8, 0)
             PlainLabel(panel, currency, font=F["mono"], color=C["text_secondary"], bg=ELEV, anchor="w").grid(
                 row=i, column=0, sticky="w", padx=(0, 12), pady=pad)
-            app = Button(panel, "", kind="blue", height=34, font=F["label_bold"], pad_x=8,
-                         command=lambda u=app_url: self.open_url(u))
+            app = self._button(panel, "ab_app", "blue", None, lambda u=app_url: self.open_url(u), outer=ELEV,
+                               height=34, pad_x=8, font=F["label_bold"])
             app.grid(row=i, column=1, sticky="ew", padx=(0, 4), pady=pad)
-            web = Button(panel, "", kind="secondary", height=34, font=F["label"], pad_x=8, fg_color="transparent",
-                         border_color=C["border_strong"], hover_color=T["hover_elevated"],
-                         command=lambda u=web_url: self.open_url(u))
+            web = self._button(panel, "ab_browser", "outline", None, lambda u=web_url: self.open_url(u), outer=ELEV,
+                               height=34, pad_x=8, font=F["label"])
             web.grid(row=i, column=2, sticky="ew", padx=(4, 0), pady=pad)
-            self.tr(app, "ab_app")
-            self.tr(web, "ab_browser")
-
-    def copy(self, address):
-        """Полный адрес — в буфер обмена (на экране он сокращён)."""
-        self.clipboard_clear()
-        self.clipboard_append(address)
-        Toast(self, self.text("ab_copied"), kind="success")
 
     # ── Состояние компонентов ───────────────────────────────────────────────
     def refresh_data(self):
@@ -329,23 +331,31 @@ class AboutPage(ctk.CTkScrollableFrame):
         self._render_components()
 
     def _render_components(self):
+        """Строки состояния. Перерисовываются только те, что поменялись: страницу показывают при каждом входе в раздел."""
         for key, (mark, name) in self._status.items():
             ok = None if self.found is None else self.found.get(key, False)
             if ok is None:
-                mark.configure(image="")
-                name.configure(text=self.text("ab_checking"), fg=C["text_muted"])
-                continue
-            word = {"templates": ("ab_loaded", "ab_not_loaded")}.get(key, ("ab_found", "ab_not_found"))[0 if ok else 1]
-            color = C["success"] if ok else C["danger_text"]
-            mark.photo = plain_icon(self, "check" if ok else "x", color, 13)
-            mark.configure(image=mark.photo)
-            name.configure(text=self.text(word), fg=color)
+                text, color, picture = self.text("ab_checking"), C["text_muted"], ""
+            else:
+                word = {"templates": ("ab_loaded", "ab_not_loaded")}.get(key, ("ab_found", "ab_not_found"))[0 if ok else 1]
+                color = C["success"] if ok else C["danger_text"]
+                text = self.text(word)
+                picture = plain_icon(self, "check" if ok else "x", color, 13)
+            if name.cget("text") != text or name.cget("fg") != color:
+                name.configure(text=text, fg=color)
+            if str(mark.cget("image")) != str(picture):
+                mark.photo = picture
+                mark.configure(image=picture)
 
     # ── Язык и закрытие ─────────────────────────────────────────────────────
     def update_language(self, lang):
         self.lang = lang
         for widget, key in self._texts:
-            widget.configure(text=theme.plain_text(get_text(lang, key)))
+            text = theme.plain_text(get_text(lang, key))
+            if isinstance(widget, PlainButton):
+                widget.set_text(text)
+            elif widget.cget("text") != text:
+                widget.configure(text=text)
         self._render_components()
 
     def destroy(self):

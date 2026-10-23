@@ -1,25 +1,30 @@
-"""Что показывает «О программе» (задача 15, шаг 7): адреса и ссылки, сокращённые адреса кошельков, состояние компонентов,
-папка программы. Без Tk — проверяется тестами (tests/test_ui_about.py).
+"""Что показывает «О программе» (задача 15, шаг 7): адреса и ссылки, кошельки, состояние компонентов,
+папка программы, открытие ссылок. Без Tk — проверяется тестами (tests/test_ui_about.py).
 
 Адреса и ссылки — те же, что в старой вкладке ui/about_tab.py (она остаётся для start_old.bat до шага 9).
 «Проверить обновления» открывает страницу релизов на GitHub (ваш ответ на вопрос 7.1, 23.10.2026): окно само в интернет не ходит.
+
+Репозиторий (GITHUB_REPO) и почта автора (AUTHOR_EMAIL) — в config.py: бот переехал — меняется одна строка там.
 """
 import importlib.util
 import os
 import shutil
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
-GITHUB_URL = "https://github.com/petrunin-platon/HeroWarsBot"
+from config import AUTHOR_EMAIL, GITHUB_REPO
+
+GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 RELEASES_URL = GITHUB_URL + "/releases"
 AUTHOR = "Platon Petrunin"
-EMAIL = "petrunin.platon@gmail.com"
+EMAIL = AUTHOR_EMAIL
 LICENSE_NAME = "PolyForm Noncommercial 1.0.0"
 PROJECT_NAME = "Hero Wars: Knowledge Engine Bot"
 STAGE = "Beta"
 
-# Кошельки: (ключ, подпись, полный адрес). Копируется полный адрес, на экране — сокращённый (макет 07)
+# Кошельки: (ключ, подпись, полный адрес). На экране и в буфер обмена — полный адрес (ваше решение 23.10.2026)
 WALLETS = (
     ("usdt", "USDT · TRC20", "TSK3ozZMWCST1a6gbmZ5AfRvK8XAX2xjin"),
     ("btc", "Bitcoin · BTC", "bc1qsu52cvfn4aqcay3mjasyah4hcx73npqvn5re3p"),
@@ -47,13 +52,6 @@ COMPONENTS = (
 )
 
 
-def shorten(address, head=6, tail=6):
-    """Адрес кошелька для экрана: TSK3oz…X2xjin. Короткий адрес не трогаем."""
-    if len(address) <= head + tail + 1:
-        return address
-    return f"{address[:head]}…{address[-tail:]}"
-
-
 def mail_url():
     return f"mailto:{EMAIL}"
 
@@ -63,6 +61,19 @@ def safe_url(url):
     if not url or "ВСТАВЬ" in url:
         return None
     return url if url.startswith(("http", "mailto:")) else "https://" + url
+
+
+def launch(url, opener=None):
+    """Открыть ссылку (или mailto:) в браузере / почтовой программе. True — система приняла команду, False — не получилось:
+    нет программы для ссылки (в Windows без почтовой программы mailto: не открывается) или ошибка. Тогда окно кладёт ссылку
+    в буфер обмена и пишет об этом."""
+    url = safe_url(url)
+    if not url:
+        return False
+    try:
+        return bool((opener or webbrowser.open)(url))
+    except Exception:
+        return False
 
 
 def program_folder():

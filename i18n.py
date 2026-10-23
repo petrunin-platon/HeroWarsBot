@@ -605,6 +605,7 @@ TRANSLATIONS = {
         "ab_copy": "Скопировать",
         "ab_copied": "Адрес скопирован",
         "ab_folder_fail": "Не удалось открыть папку",
+        "ab_open_failed": "Не удалось открыть — скопировано в буфер обмена",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Всего боёв в базе логов",
@@ -1310,6 +1311,7 @@ TRANSLATIONS = {
         "ab_copy": "Copy",
         "ab_copied": "Address copied",
         "ab_folder_fail": "Could not open the folder",
+        "ab_open_failed": "Could not open it — copied to the clipboard",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Battles in the log base",
@@ -2014,6 +2016,7 @@ TRANSLATIONS = {
         "ab_copy": "Скопіювати",
         "ab_copied": "Адресу скопійовано",
         "ab_folder_fail": "Не вдалося відкрити папку",
+        "ab_open_failed": "Не вдалося відкрити — скопійовано в буфер обміну",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Усього боїв у базі логів",
@@ -2718,6 +2721,7 @@ TRANSLATIONS = {
         "ab_copy": "Kopieren",
         "ab_copied": "Adresse kopiert",
         "ab_folder_fail": "Ordner konnte nicht geöffnet werden",
+        "ab_open_failed": "Konnte nicht geöffnet werden – in die Zwischenablage kopiert",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Kämpfe in der Log-Basis",
@@ -3422,6 +3426,7 @@ TRANSLATIONS = {
         "ab_copy": "Copiar",
         "ab_copied": "Dirección copiada",
         "ab_folder_fail": "No se pudo abrir la carpeta",
+        "ab_open_failed": "No se pudo abrir: copiado al portapapeles",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Batallas en la base de registros",
@@ -4126,6 +4131,7 @@ TRANSLATIONS = {
         "ab_copy": "Copier",
         "ab_copied": "Adresse copiée",
         "ab_folder_fail": "Impossible d'ouvrir le dossier",
+        "ab_open_failed": "Impossible d'ouvrir — copié dans le presse-papiers",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Combats dans la base des journaux",
@@ -4830,6 +4836,7 @@ TRANSLATIONS = {
         "ab_copy": "Kopiuj",
         "ab_copied": "Adres skopiowany",
         "ab_folder_fail": "Nie udało się otworzyć folderu",
+        "ab_open_failed": "Nie udało się otworzyć — skopiowano do schowka",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Walk w bazie logów",
@@ -5534,6 +5541,7 @@ TRANSLATIONS = {
         "ab_copy": "Copiar",
         "ab_copied": "Endereço copiado",
         "ab_folder_fail": "Não foi possível abrir a pasta",
+        "ab_open_failed": "Não foi possível abrir — copiado para a área de transferência",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Batalhas na base de registros",
@@ -6238,6 +6246,7 @@ TRANSLATIONS = {
         "ab_copy": "Kopyala",
         "ab_copied": "Adres kopyalandı",
         "ab_folder_fail": "Klasör açılamadı",
+        "ab_open_failed": "Açılamadı — panoya kopyalandı",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Kayıt tabanındaki savaşlar",
@@ -6942,6 +6951,7 @@ TRANSLATIONS = {
         "ab_copy": "复制",
         "ab_copied": "地址已复制",
         "ab_folder_fail": "无法打开文件夹",
+        "ab_open_failed": "无法打开，已复制到剪贴板",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "日志库中的战斗总数",
@@ -7646,6 +7656,7 @@ TRANSLATIONS = {
         "ab_copy": "복사",
         "ab_copied": "주소를 복사했습니다",
         "ab_folder_fail": "폴더를 열 수 없습니다",
+        "ab_open_failed": "열 수 없어 클립보드에 복사했습니다",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "로그 기록의 전투 수",
@@ -8350,6 +8361,7 @@ TRANSLATIONS = {
         "ab_copy": "コピー",
         "ab_copied": "アドレスをコピーしました",
         "ab_folder_fail": "フォルダを開けませんでした",
+        "ab_open_failed": "開けませんでした — クリップボードにコピーしました",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "ログ内の戦闘数",
@@ -9054,6 +9066,7 @@ TRANSLATIONS = {
         "ab_copy": "Көшіру",
         "ab_copied": "Мекенжай көшірілді",
         "ab_folder_fail": "Қалтаны ашу мүмкін болмады",
+        "ab_open_failed": "Ашу мүмкін болмады — буферге көшірілді",
 
         # Аналитика и Статистика нового окна (задача 15, шаг 6)
         "an_total": "Лог базасындағы шайқастар",

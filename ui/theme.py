@@ -240,6 +240,7 @@ MONO_FAMILY = "Consolas"
 FONTS = {
     "page_title": (FONT_FAMILY, 18, "bold"),   # заголовок в шапке
     "app_name": (FONT_FAMILY, 22, "bold"),     # название программы в карточке «О программе»
+    "about_text": (FONT_FAMILY, 16),           # описание под названием в «О программе»
     "section": (FONT_FAMILY, 15, "bold"),      # заголовок карточки/раздела
     "card_title": (FONT_FAMILY, 14, "bold"),
     "dialog_title": (FONT_FAMILY, 16, "bold"),
