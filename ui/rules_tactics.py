@@ -71,11 +71,6 @@ def titan_items(lang):
     return [(t, titan_name(lang, t)) for t in ALL_TITANS]
 
 
-def titan_icons():
-    styles = {t: theme.element_style(theme.element_of(t)) for t in ALL_TITANS}
-    return {t: (style["icon"], style["color"]) for t, style in styles.items()}
-
-
 def titan_order(titan):
     return ALL_TITANS.index(titan) if titan in ALL_TITANS else len(ALL_TITANS)
 
@@ -557,7 +552,7 @@ class ThresholdDialog(ctk.CTkToplevel):
             row=0, column=0, sticky="w", pady=(0, 6))
         free = [t for t in ALL_TITANS if t not in personal]
         start = titan or (free[0] if free else ALL_TITANS[0])
-        self.titans = Dropdown(body, titan_items(lang), start, icons=titan_icons(), breaks=COLUMN_BREAKS, width=10,
+        self.titans = Dropdown(body, titan_items(lang), start, titans=True, lang=lang, breaks=COLUMN_BREAKS, width=10,
                                bg_color=BG)
         self.titans.grid(row=1, column=0, sticky="ew")
         if titan:

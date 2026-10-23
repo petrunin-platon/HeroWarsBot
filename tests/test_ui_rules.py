@@ -527,7 +527,7 @@ def test_titan_tile_is_one_light_widget(app, monkeypatch):
     tile = widgets.TitanTile(app, "araji", lang="RU")
     assert isinstance(tile, tk.Label) and not tile.winfo_children()             # без холстов CustomTkinter
     assert tile.cget("image") and tile.tooltip is not None
-    monkeypatch.setattr(theme, "titan_icon_path", lambda titan: None)
+    monkeypatch.setattr(theme, "titan_icon_source", lambda titan: None)
     blank = widgets.TitanTile(app, "araji", lang="RU", bg=theme.COLORS["bg_primary"])
     assert blank.cget("text") == "Ар" and blank.cget("bg") == theme.COLORS["bg_primary"]
     tile.destroy()

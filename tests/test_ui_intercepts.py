@@ -385,7 +385,11 @@ def test_new_rule_from_editor(app, workdir):
     editor = open_editor(app, page)
     assert editor.values["room"] == "mix" and not editor.save_button.cget("state") == "normal"
     assert editor.problem_label.cget("text") == "Выберите состав: от 3 до 5 титанов"
+    # Макет 03d (шаг 8): в поле «Титан» — квадрат титана с картинкой, а не значок стихии
+    picture = editor.titan_menu._icon_label
+    assert editor.titan_menu.titans and picture.cget("image") and picture.cget("text") == ""
     editor.room_menu._chosen("Огонь")
+    assert editor.titan_menu.titans and editor.titan_menu._icon_label.cget("image")   # список титанов — новый, квадрат тоже
     editor._trigger_chosen("По врагам")
     pump(app)
     assert editor.enemy_panel.winfo_ismapped() and not editor.number_panel.winfo_ismapped()

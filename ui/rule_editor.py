@@ -149,7 +149,7 @@ class RuleEditor(ctk.CTkToplevel):
         self.value_caption = caption(self.number_panel, "")
         self.value_caption.grid(row=0, column=1, sticky="w", padx=(12, 0), pady=(0, 6))
         self.titan_menu = Dropdown(self.number_panel, self._titan_items(), v["titan"], command=self._titan_chosen,
-                                   icons=self._titan_icons(), breaks=self._titan_breaks(), width=10, bg_color=BG)
+                                   titans=True, lang=self.lang, breaks=self._titan_breaks(), width=10, bg_color=BG)
         self.titan_menu.grid(row=1, column=0, sticky="ew")
         self.value_entry = NumberEntry(self.number_panel, v["value"], width=120)
         self.value_entry.configure(bg_color=BG)
@@ -223,13 +223,6 @@ class RuleEditor(ctk.CTkToplevel):
     def _titan_items(self):
         return [(t, titan_name(self.lang, t)) for t in theme.room_titans(self.values["room"])]
 
-    def _titan_icons(self):
-        icons = {}
-        for t in theme.room_titans(self.values["room"]):
-            style = theme.element_style(theme.element_of(t))
-            icons[t] = (style["icon"], style["color"])
-        return icons
-
     def _titan_breaks(self):
         """Длинный список (смешанная) — колонками по стихиям, как в «Авто-тактике»."""
         if self.values["room"] in ("earth", "water", "fire"):
@@ -241,8 +234,8 @@ class RuleEditor(ctk.CTkToplevel):
         rules_list.fit_room(self.values, room)
         self.titan_menu.destroy()
         self.titan_menu = Dropdown(self.number_panel, self._titan_items(), self.values["titan"],
-                                   command=self._titan_chosen, icons=self._titan_icons(), breaks=self._titan_breaks(),
-                                   width=10, bg_color=BG)
+                                   command=self._titan_chosen, titans=True, lang=self.lang,
+                                   breaks=self._titan_breaks(), width=10, bg_color=BG)
         self.titan_menu.grid(row=1, column=0, sticky="ew")
         self._show_pack()
         self._check()
