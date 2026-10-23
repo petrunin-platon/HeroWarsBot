@@ -5,7 +5,8 @@
 ваш ответ 7.1), «Папка бота» (папка, откуда запущена программа: там profile.yml и bot_data/), «Написать автору»,
 «GitHub проекта». Ниже «Автор и лицензия» и «Состояние компонентов» (ADB и scrcpy ищутся в PATH, как их запускает бот; база
 шаблонов — assets_db.py или папка assets/; проверка в фоне при каждом показе страницы). Внизу «Поддержать проект»: кошельки
-(полный адрес на экране и кнопка «Копировать» — ваше решение 23.10.2026), донат в Telegram (приложение и браузер), Boosty и ЮMoney.
+(три строки, как у доната в Telegram: подпись, поле с полным адресом, «Копировать»; адрес можно выделить двойным щелчком и
+скопировать правой кнопкой мыши — ваше решение 23.10.2026), донат в Telegram (приложение и браузер), Boosty и ЮMoney.
 Адреса и ссылки — ui/about_data.py (без Tk), репозиторий и почта автора — config.py.
 
 Ссылка или почта не открылись (в Windows без почтовой программы mailto: не работает) — адрес кладётся в буфер обмена,
@@ -26,8 +27,8 @@ import customtkinter as ctk
 from config import APP_VERSION
 from i18n import get_text
 from ui import about_data, theme
-from ui.widgets import (PlainButton, PlainClickFrame, PlainLabel, RoundedBackdrop, Toast, Tooltip, pill_label,
-                        plain_card, plain_icon)
+from ui.widgets import (PlainButton, PlainClickFrame, PlainLabel, RoundedBackdrop, Toast, pill_label, plain_card,
+                        plain_icon, scaled_font)
 
 C = theme.COLORS
 T = theme.TINTS
@@ -276,24 +277,61 @@ class AboutPage(ctk.CTkScrollableFrame):
             self.donate_buttons[key] = button
 
     def _build_crypto(self, panel):
-        """Кошелёк: подпись, под ней полный адрес и кнопка «Копировать» (адрес длинный — рядом с подписью он бы обрезался)."""
-        panel.grid_columnconfigure(0, weight=1)
+        """Три строки, как у доната в Telegram справа: подпись, поле с полным адресом, «Копировать». Адрес длиннее поля — не беда:
+        в поле можно щёлкнуть дважды (выделится весь адрес) и скопировать правой кнопкой мыши, а можно кнопкой справа."""
+        panel.grid_columnconfigure(0, weight=0, minsize=px(self, 104))
+        panel.grid_columnconfigure(1, weight=1)
         self.wallet_buttons = {}
-        for i, (key, label, address) in enumerate(about_data.WALLETS):
-            top = 1 + 2 * i
+        self.wallet_fields = {}
+        self.wallet_menu = tk.Menu(self, tearoff=False, bg=ELEV, fg=C["text"], activebackground=C["blue_button"],
+                                   activeforeground=C["white"], bd=0)
+        self.wallet_menu.add_command(label="", command=self._copy_chosen_wallet)
+        self._chosen_wallet = None
+        for i, (key, label, address) in enumerate(about_data.WALLETS, start=1):
+            pad = (0 if i == 1 else 8, 0)
             PlainLabel(panel, label, font=F["text"], color=C["text_secondary"], bg=ELEV, anchor="w").grid(
-                row=top, column=0, columnspan=2, sticky="w", pady=(0 if i == 0 else 12, 4))
+                row=i, column=0, sticky="w", padx=(0, 12), pady=pad)
             pill = tk.Frame(panel, bg=ELEV, height=px(self, 34))
-            pill.grid(row=top + 1, column=0, sticky="ew")
-            pill.pack_propagate(False)
+            pill.grid(row=i, column=1, sticky="ew", pady=pad)
+            pill.grid_propagate(False)
             RoundedBackdrop(pill, C["bg_primary"], C["border"], ELEV, radius=6)
-            PlainLabel(pill, address, font=F["mono"], color=C["text"], bg=C["bg_primary"], anchor="w").pack(
-                fill="both", expand=True, padx=px(self, 10))
+            field = tk.Entry(pill, font=scaled_font(self, F["mono"]), fg=C["text"], bg=C["bg_primary"],
+                             readonlybackground=C["bg_primary"], selectbackground=C["blue_button"],
+                             selectforeground=C["white"], relief="flat", bd=0, highlightthickness=0, exportselection=True)
+            field.insert(0, address)
+            field.configure(state="readonly")   # править нельзя, выделять и копировать — можно
+            field.place(x=px(self, 10), rely=0.5, anchor="w", relwidth=1, width=-px(self, 20))
+            field.bind("<Double-Button-1>", lambda e, f=field: self._select_all(f), add="+")
+            field.bind("<Button-3>", lambda e, f=field, k=key: self._wallet_menu(e, f, k), add="+")
+            self.wallet_fields[key] = field
             button = PlainButton(panel, "", kind="outline", icon_name="copy", icon_size=14, height=34, width=34,
                                  pad_x=0, icon_gap=0, outer=ELEV, command=lambda a=address: self.copy(a),
                                  tooltip=lambda: self.text("ab_copy"))
-            button.grid(row=top + 1, column=1, padx=(8, 0))
+            button.grid(row=i, column=2, padx=(8, 0), pady=pad)
             self.wallet_buttons[key] = button
+
+    @staticmethod
+    def _select_all(field):
+        field.focus_set()
+        field.select_range(0, "end")
+        return "break"
+
+    def _wallet_menu(self, event, field, key):
+        """Правая кнопка мыши по адресу: выделить его целиком и предложить «Копировать»."""
+        self._select_all(field)
+        self._chosen_wallet = key
+        try:
+            self.wallet_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                self.wallet_menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _copy_chosen_wallet(self):
+        address = next((a for k, _l, a in about_data.WALLETS if k == self._chosen_wallet), None)
+        if address:
+            self.copy(address)
 
     def _build_telegram(self, panel):
         panel.grid_columnconfigure(0, weight=0)
@@ -357,6 +395,7 @@ class AboutPage(ctk.CTkScrollableFrame):
             elif widget.cget("text") != text:
                 widget.configure(text=text)
         self._render_components()
+        self.wallet_menu.entryconfigure(0, label=self.text("ctx_copy"))
 
     def destroy(self):
         if self._poll_id:

@@ -186,8 +186,8 @@ def test_page_like_mockup(page):
     assert hasattr(description.master, "backdrop")                       # лежит прямо на карточке, не на своей плашке
     # кошельки — полным адресом
     from ui import about_data
-    shown = {w.cget("text") for w in walk(page) if w.__class__.__name__ == "PlainLabel"}
-    assert all(address in shown for _k, _l, address in about_data.WALLETS)
+    assert {k: f.get() for k, f in page.wallet_fields.items()} == {k: a for k, _l, a in about_data.WALLETS}
+    assert len({b.grid_info()["row"] for b in page.wallet_buttons.values()}) == 3        # по строке на кошелёк, как у Telegram
 
 
 @needs_gui
@@ -222,6 +222,28 @@ def test_copy_button_puts_full_address_to_clipboard(page):
         assert page.clipboard_get() == address
     assert Toast._open and Toast._open[-1].top is not None
     Toast.close_all(page.winfo_toplevel())
+
+
+@needs_gui
+def test_wallet_field_selects_and_copies(page):
+    """Адрес в поле: не правится, двойной щелчок выделяет весь, правая кнопка предлагает «Копировать»."""
+    from ui import about_data
+    from ui.widgets import Toast
+    key, _label, address = about_data.WALLETS[2]
+    field = page.wallet_fields[key]
+    assert str(field.cget("state")) == "readonly"
+    assert field.bind("<Double-Button-1>")                      # Tk не даёт сыграть двойной щелчок событием — зовём обработчик
+    page._select_all(field)
+    pump(page, 0.1)
+    assert field.selection_get() == address
+    page._chosen_wallet = key
+    page._copy_chosen_wallet()
+    assert page.clipboard_get() == address
+    assert page.wallet_menu.entrycget(0, "label") == "Копировать"
+    Toast.close_all(page.winfo_toplevel())
+    # три кошелька — три строки в тех же рядах, что RUB / EUR / USD справа
+    wallet_rows = [page.wallet_buttons[k].grid_info()["row"] for k in ("usdt", "btc", "eth")]
+    assert wallet_rows == [1, 2, 3]
 
 
 @needs_gui
