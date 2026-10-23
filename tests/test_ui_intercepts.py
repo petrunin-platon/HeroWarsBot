@@ -588,7 +588,9 @@ def test_long_list_is_light(app, workdir):
     app.update()
     tab.choose(None)
     app.update()
-    assert time.perf_counter() - started < 0.5                   # фильтр не перестраивает строки
+    # Фильтр не перестраивает строки: два переключения ~0,4 с, перестройка 48 строк была бы ~1,8 с. Лимит 0,5 с был
+    # впритык (в облаке и до шага 8 выходило 0,42–0,45 с) и падал от любой нагрузки — главное же ниже: строки те же.
+    assert time.perf_counter() - started < 1.0
     assert [row for items in tab.rows.values() for row in items] == rows
 
 
